@@ -15,6 +15,7 @@ import DualCertificate4 from './operations/pages/certificates/DualCertificate4';
 // Bookkeeping Section
 import BookkeepingDashboard from './bookkeeping/dashboard/components/BookkeepingDashboard';
 import PaymentReceiptEntries from './bookkeeping/payment-receipt/components/PaymentReceiptEntries';
+import NewStepper from './bookkeeping/payment-receipt/components/NewStepper';
 import InvoiceGeneration from './bookkeeping/invoice-generation/components/InvoiceGeneration';
 import ProformaGstInvoice from './bookkeeping/invoice-generation/components/ProformaGstInvoice';
 import ProformaInvoice from './bookkeeping/invoice-generation/components/ProformaInvoice';
@@ -22,7 +23,6 @@ import CompaniesLedger from './bookkeeping/companies-ledger/components/Companies
 import DailyMonthlyYearlyLedger from './bookkeeping/periodic-ledger/components/DailyMonthlyYearlyLedger';
 import SummaryReport from './bookkeeping/summary-report/components/SummaryReport';
 import RateListEntries from './bookkeeping/ratelists-entries/components/RateListEntries';
-import SelectedCourses from './bookkeeping/payment-receipt/components/SelectedCourses';
 
 // Database Section
 import DatabaseDashboard from './database/pages/DatabaseDashboard';
@@ -47,6 +47,7 @@ function App() {
         {/* Bookkeeping Section */}
         <Route path="/bookkeeping" element={<BookkeepingDashboard />} />
         <Route path="/bookkeeping/payment-receipt" element={<PaymentReceiptEntries />} />
+        <Route path="/bookkeeping/new-invoice-stepper" element={<NewStepper />} />
         <Route path="/bookkeeping/invoice-generation" element={<InvoiceGeneration />} />
         <Route path="/bookkeeping/tax-invoice" element={<ProformaGstInvoice />} />
         <Route path="/bookkeeping/proforma-invoice" element={<ProformaInvoice />} />
@@ -54,8 +55,7 @@ function App() {
         <Route path="/bookkeeping/ledger" element={<DailyMonthlyYearlyLedger />} />
         <Route path="/bookkeeping/summary-report" element={<SummaryReport />} />
         <Route path="/bookkeeping/ratelist-entries" element={<RateListEntries />} />
-        <Route path="/bookkeeping/selected-courses" element={<SelectedCourses />} />
-
+        
         {/* Database Section */}
         <Route path="/database" element={<DatabaseDashboard />} />
       </Routes>

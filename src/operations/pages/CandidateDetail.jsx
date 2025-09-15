@@ -32,15 +32,6 @@ function CandidateDetails() {
   const jsonFile = location.state?.jsonFile;
   const sessionId = location.state?.sessionId;
 
-  // Company names list - same as used in Payment Receipt and Rate List
-  const companyNames = [
-    'ABC Maritime Training',
-    'XYZ Shipping Company',
-    'Marine Safety Institute',
-    'Offshore Training Center',
-    'Coastal Academy',
-    'Deep Sea Training'
-  ];
 
   const [formData, setFormData] = useState({
     lastName: "",
@@ -54,7 +45,6 @@ function CandidateDetails() {
     email: "",
     phone: "",
     companyName: "",
-    partyName: "", // New field for company selection
     vendorName: "",
     paymentStatus: "",
     rollNo: "",
@@ -182,7 +172,7 @@ function CandidateDetails() {
 const handleChange = (e) => {
   const { id, value } = e.target;
 
-  const isDropdown = ["vendorName", "paymentStatus", "partyName"].includes(id);
+  const isDropdown = ["vendorName", "paymentStatus"].includes(id);
 
   // force uppercase here before saving to state
   const updatedFormData = {
@@ -196,46 +186,10 @@ const handleChange = (e) => {
   localStorage.setItem("candidateData", JSON.stringify(updatedFormData));
   window.dispatchEvent(new CustomEvent("candidateDataUpdated", { detail: updatedFormData }));
 
-  if (id === "partyName" && value) {
-    updateCertificateSelectionsWithCompany(value);
-  }
 };
 
   
 
-  // Function to update certificate selections with selected company
-  const updateCertificateSelectionsWithCompany = async (selectedCompany) => {
-    try {
-      // Get current candidate data
-      const candidateData = {
-        firstName: formData.firstName,
-        lastName: formData.lastName
-      };
-
-      // Only update if we have candidate name data
-      if (candidateData.firstName && candidateData.lastName) {
-        console.log(`[CANDIDATE] Updating certificates for ${candidateData.firstName} ${candidateData.lastName} with company: ${selectedCompany}`);
-
-        // This will be used when certificates are generated
-        // The certificate generation process will check for this company selection
-        localStorage.setItem('selectedCompanyForCandidate', JSON.stringify({
-          candidateName: `${candidateData.firstName} ${candidateData.lastName}`,
-          companyName: selectedCompany,
-          timestamp: new Date().toISOString()
-        }));
-
-        // Dispatch event for real-time updates
-        window.dispatchEvent(new CustomEvent('companySelectedForCandidate', {
-          detail: {
-            candidateName: `${candidateData.firstName} ${candidateData.lastName}`,
-            companyName: selectedCompany
-          }
-        }));
-      }
-    } catch (error) {
-      console.error('[CANDIDATE] Error updating certificate selections with company:', error);
-    }
-  };
 
   const handleFileChange = async (e) => {
     const file = e.target.files[0];
@@ -337,7 +291,6 @@ const handleChange = (e) => {
     email: <Mail size={16} />,
     phone: <Phone size={16} />,
     companyName: <Building2 size={16} />,
-    partyName: <Building2 size={16} />,
     vendorName: <Building2 size={16} />,
     paymentStatus: <CreditCard size={16} />,
     rollNo: <Wallet size={16} />,
@@ -550,7 +503,6 @@ const handleChange = (e) => {
                 ["email", "Email ID", "email", "off"],
                 ["phone", "Phone No.", "tel", "off"],
                 ["companyName", "Company Joining Name", "text", "off"],
-                ["partyName", "Party Name (Company)", "select", "off"],
                 ["rollNo", "ROLL NO", "text", "off"],
               ].map(([id, label, type = "text", autocomplete = "off"], index) => (
                 <motion.div
@@ -573,36 +525,18 @@ const handleChange = (e) => {
                     {label}:
                   </label>
                   <div className="relative">
-                    {type === "select" && id === "partyName" ? (
-                      <select
-                        id={id}
-                        name={id}
-                        value={formData[id]}
-                        onChange={handleChange}
-                        required
-                        className="w-full text-sm bg-white border-2 border-gray-200 rounded-xl px-4 py-3 focus:outline-none focus:border-blue-500 transition-colors duration-200 hover:border-blue-300 shadow-sm"
-                      >
-                        <option value="">Select Company</option>
-                        {companyNames.map(company => (
-                          <option key={company} value={company}>
-                            {company}
-                          </option>
-                        ))}
-                      </select>
-                    ) : (
-                      <input
-                        type={type}
-                        id={id}
-                        name={id}
-                        value={formData[id]}
-                        onChange={handleChange}
-                        autoComplete={autocomplete}
-                        required
-                        className="w-full text-sm bg-white border-2 border-gray-200 rounded-xl px-4 py-3 focus:outline-none focus:border-blue-500 transition-colors duration-200 hover:border-blue-300 shadow-sm"
-                        placeholder={`Enter ${label.toLowerCase()}`}
-                        
-                      />
-                    )}
+                    <input
+                      type={type}
+                      id={id}
+                      name={id}
+                      value={formData[id]}
+                      onChange={handleChange}
+                      autoComplete={autocomplete}
+                      required
+                      className="w-full text-sm bg-white border-2 border-gray-200 rounded-xl px-4 py-3 focus:outline-none focus:border-blue-500 transition-colors duration-200 hover:border-blue-300 shadow-sm"
+                      placeholder={`Enter ${label.toLowerCase()}`}
+
+                    />
                   </div>
                 </motion.div>
               ))}

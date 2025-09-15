@@ -127,7 +127,7 @@ function DualCertificate() {
         lastName: candidateData.lastName,
         certificateName: certificateName,
         // Use company from candidate details (partyName field)
-        companyName: candidateData.partyName || "",
+        companyName: "", // Will be set later when B2B customer is selected in invoice process
         // Get rate data from localStorage for amount calculation
         rateData: JSON.parse(localStorage.getItem('courseRates') || '{}')
       };

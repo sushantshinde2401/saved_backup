@@ -1,8 +1,7 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { CreditCard, ArrowLeft } from 'lucide-react';
+import { CreditCard, ArrowLeft, Receipt, FileText } from 'lucide-react';
 import PaymentEntries from './PaymentEntries';
-import ReceiptEntries from './ReceiptEntries';
 
 function PaymentReceiptEntries() {
   const navigate = useNavigate();
@@ -32,9 +31,28 @@ function PaymentReceiptEntries() {
 
       {/* Main Content */}
       <div className="max-w-7xl mx-auto px-4 py-8">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        <div className="grid grid-cols-1 gap-8">
+          {/* Receipt Entry Section */}
+          <div className="bg-white rounded-xl shadow-lg p-6">
+            <div className="flex items-center mb-6">
+              <Receipt className="w-8 h-8 text-green-700 mr-3" />
+              <h2 className="text-2xl font-bold text-gray-800">
+                ReceiptEntries Invoice Creation
+              </h2>
+            </div>
+            <p className="text-gray-600 mb-4">
+              Create professional invoices with our 6-step guided process
+            </p>
+            <button
+              onClick={() => navigate('/bookkeeping/new-invoice-stepper')}
+              className="w-full bg-green-600 hover:bg-green-700 text-white py-3 px-4 rounded-lg transition-colors font-semibold flex items-center justify-center gap-2"
+            >
+              <FileText className="w-5 h-5" />
+              Start New Invoice (6 Steps)
+            </button>
+          </div>
+
           <PaymentEntries />
-          <ReceiptEntries />
         </div>
       </div>
     </div>

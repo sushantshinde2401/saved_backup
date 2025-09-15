@@ -6,15 +6,9 @@ import { motion, AnimatePresence } from 'framer-motion';
 function RateListEntries() {
   const navigate = useNavigate();
 
-  // Company names - same as companies ledger
-  const companyNames = [
-    'ABC Maritime Training',
-    'XYZ Shipping Company',
-    'Marine Safety Institute',
-    'Offshore Training Center',
-    'Coastal Academy',
-    'Deep Sea Training'
-  ];
+  // State for B2B customers
+  const [b2bCustomers, setB2bCustomers] = useState([]);
+  const [loadingCustomers, setLoadingCustomers] = useState(true);
 
   // Default courses with sample rates - Updated to match certificate names
   const defaultCourses = [
@@ -29,20 +23,39 @@ function RateListEntries() {
   const [editValue, setEditValue] = useState('');
   const [isLoading, setIsLoading] = useState(true);
 
+  // Load B2B customers
+  const loadB2BCustomers = async () => {
+    try {
+      const response = await fetch('http://localhost:5000/get-b2b-customers');
+      if (response.ok) {
+        const result = await response.json();
+        const customers = result.data || [];
+        setB2bCustomers(customers);
+        return customers;
+      }
+    } catch (error) {
+      console.error('Error loading B2B customers:', error);
+    }
+    return [];
+  };
+
   // Load rate data from localStorage on component mount
   useEffect(() => {
-    const loadRateData = () => {
+    const loadData = async () => {
+      const customers = await loadB2BCustomers();
+      setLoadingCustomers(false);
+
       const savedRates = localStorage.getItem('courseRates');
       if (savedRates) {
         setRateData(JSON.parse(savedRates));
       } else {
-        // Initialize with default rates
+        // Initialize with default rates for B2B customers
         const initialRates = {};
-        companyNames.forEach(company => {
-          initialRates[company] = {};
+        customers.forEach(customer => {
+          initialRates[customer.company_name] = {};
           defaultCourses.forEach(course => {
             // Generate sample rates between 15000-50000
-            initialRates[company][course.name] = Math.floor(Math.random() * 35000) + 15000;
+            initialRates[customer.company_name][course.name] = Math.floor(Math.random() * 35000) + 15000;
           });
         });
         setRateData(initialRates);
@@ -51,7 +64,7 @@ function RateListEntries() {
       setIsLoading(false);
     };
 
-    loadRateData();
+    loadData();
   }, []);
 
   // Save rate data to localStorage
@@ -102,10 +115,12 @@ function RateListEntries() {
     }).format(amount);
   };
 
-  if (isLoading) {
+  if (isLoading || loadingCustomers) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-indigo-900 via-purple-900 to-pink-900 flex items-center justify-center">
-        <div className="text-white text-xl">Loading rate data...</div>
+        <div className="text-white text-xl">
+          {loadingCustomers ? 'Loading B2B customers...' : 'Loading rate data...'}
+        </div>
       </div>
     );
   }
@@ -155,9 +170,9 @@ function RateListEntries() {
                   <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky left-0 bg-gray-50 z-10">
                     Course / Company
                   </th>
-                  {companyNames.map((company, index) => (
-                    <th key={index} className="px-6 py-4 text-center text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[180px]">
-                      {company}
+                  {b2bCustomers.map((customer, index) => (
+                    <th key={customer.id || index} className="px-6 py-4 text-center text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[180px]">
+                      {customer.company_name}
                     </th>
                   ))}
                 </tr>
@@ -177,7 +192,8 @@ function RateListEntries() {
                         <div className="text-xs text-gray-500">{course.description}</div>
                       </div>
                     </td>
-                    {companyNames.map((company, companyIndex) => {
+                    {b2bCustomers.map((customer, companyIndex) => {
+                      const company = customer.company_name;
                       const cellKey = `${company}-${course.name}`;
                       const isEditing = editingCell === cellKey;
                       const rate = rateData[company]?.[course.name] || 0;
@@ -234,7 +250,7 @@ function RateListEntries() {
           <div className="bg-gray-50 px-6 py-4 border-t border-gray-200">
             <div className="flex items-center justify-between">
               <div className="text-sm text-gray-600">
-                <span className="font-medium">{defaultCourses.length}</span> courses × <span className="font-medium">{companyNames.length}</span> companies = <span className="font-medium">{defaultCourses.length * companyNames.length}</span> rate entries
+                <span className="font-medium">{defaultCourses.length}</span> courses × <span className="font-medium">{b2bCustomers.length}</span> companies = <span className="font-medium">{defaultCourses.length * b2bCustomers.length}</span> rate entries
               </div>
               <div className="text-xs text-gray-500">
                 All changes are saved automatically • Last updated: {new Date().toLocaleString()}
