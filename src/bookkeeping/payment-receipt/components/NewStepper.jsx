@@ -32,7 +32,6 @@ import INVOICE_REFERENCE from './steps/INVOICE_REFERENCE';
 // Initial state
 const initialState = {
   currentStep: 1,
-  selectedNav: 'ReceiptInvoiceData', // 'ReceiptInvoiceData', 'ReceivedPayment', 'INVOICE_REFERENCE'
   formData: {
     // Step 1: Organization Info (from CompanyDetailsStep)
     companyAccountNumber: '',
@@ -121,8 +120,6 @@ function stepperReducer(state, action) {
       return { ...state, isUploadingInvoice: action.payload };
     case 'SET_UPLOADING_RECEIPT':
       return { ...state, isUploadingReceipt: action.payload };
-    case 'SET_SELECTED_NAV':
-      return { ...state, selectedNav: action.payload };
     default:
       return state;
   }
@@ -340,63 +337,6 @@ function NewStepper() {
     }
   };
 
-  // Clear data functions for each step
-  const clearStep1Data = () => {
-    const step1Fields = ['companyAccountNumber', 'companyName', 'gstNumber', 'companyAddress', 'stateCode', 'bankName', 'branch', 'ifscCode', 'swiftCode'];
-    step1Fields.forEach(field => dispatch({ type: 'UPDATE_FORM_DATA', field, value: '' }));
-  };
-
-  const clearStep2Data = () => {
-    const step2Fields = ['customerType', 'selectedB2BCustomer', 'selectedB2BCustomerName', 'b2bCustomerGstNumber', 'b2bCustomerAddress', 'b2bPhoneNumber', 'b2bCustomerStateCode', 'b2bEmail', 'b2cFullName', 'b2cPhoneNumber', 'b2cEmail', 'b2cAddress', 'b2cCity', 'b2cState', 'b2cPincode', 'b2cDateOfBirth', 'b2cGender'];
-    step2Fields.forEach(field => dispatch({ type: 'UPDATE_FORM_DATA', field, value: '' }));
-  };
-
-  const clearStep3Data = () => {
-    const step3Fields = ['partyName', 'invoiceNumber', 'dateReceived', 'amountReceived', 'applyGST', 'paymentType', 'selectedCourses', 'deliveryNote'];
-    step3Fields.forEach(field => {
-      if (field === 'selectedCourses') {
-        dispatch({ type: 'UPDATE_FORM_DATA', field, value: [] });
-      } else if (field === 'applyGST') {
-        dispatch({ type: 'UPDATE_FORM_DATA', field, value: false });
-      } else {
-        dispatch({ type: 'UPDATE_FORM_DATA', field, value: '' });
-      }
-    });
-  };
-
-  const clearStep4Data = () => {
-    const step4Fields = ['dispatchDocNo', 'deliveryNoteDate', 'dispatchThrough', 'destination', 'termsOfDelivery'];
-    step4Fields.forEach(field => dispatch({ type: 'UPDATE_FORM_DATA', field, value: '' }));
-  };
-
-  // Clear all stepper data
-  const clearAllStepperData = () => {
-    const allFields = [
-      // Step 1
-      'companyAccountNumber', 'companyName', 'gstNumber', 'companyAddress', 'stateCode', 'bankName', 'branch', 'ifscCode', 'swiftCode',
-      // Step 2
-      'customerType', 'selectedB2BCustomer', 'selectedB2BCustomerName', 'b2bCustomerGstNumber', 'b2bCustomerAddress', 'b2bPhoneNumber', 'b2bCustomerStateCode', 'b2bEmail', 'b2cFullName', 'b2cPhoneNumber', 'b2cEmail', 'b2cAddress', 'b2cCity', 'b2cState', 'b2cPincode', 'b2cDateOfBirth', 'b2cGender',
-      // Step 3
-      'partyName', 'invoiceNumber', 'dateReceived', 'amountReceived', 'applyGST', 'paymentType', 'selectedCourses', 'deliveryNote',
-      // Step 4
-      'dispatchDocNo', 'deliveryNoteDate', 'dispatchThrough', 'destination', 'termsOfDelivery'
-    ];
-
-    allFields.forEach(field => {
-      if (field === 'selectedCourses') {
-        dispatch({ type: 'UPDATE_FORM_DATA', field, value: [] });
-      } else if (field === 'applyGST') {
-        dispatch({ type: 'UPDATE_FORM_DATA', field, value: false });
-      } else {
-        dispatch({ type: 'UPDATE_FORM_DATA', field, value: '' });
-      }
-    });
-
-    // Reset saved data states
-    dispatch({ type: 'SET_SAVED_INVOICE_DATA', payload: null });
-    dispatch({ type: 'SET_SAVED_RECEIPT_DATA', payload: null });
-  };
-
   // Navigation functions
   const nextStep = async () => {
     if (state.currentStep < 7) {
@@ -421,20 +361,6 @@ function NewStepper() {
 
   const goToStep = (stepId) => {
     dispatch({ type: 'SET_CURRENT_STEP', payload: stepId });
-  };
-
-  // Handle navigation selection
-  const handleNavSelection = (navOption) => {
-    dispatch({ type: 'SET_SELECTED_NAV', payload: navOption });
-
-    // Set current step based on navigation option
-    if (navOption === 'ReceiptInvoiceData') {
-      dispatch({ type: 'SET_CURRENT_STEP', payload: 1 });
-    } else if (navOption === 'ReceivedPayment') {
-      dispatch({ type: 'SET_CURRENT_STEP', payload: 6 });
-    } else if (navOption === 'INVOICE_REFERENCE') {
-      dispatch({ type: 'SET_CURRENT_STEP', payload: 7 });
-    }
   };
 
   // Validation for each step
@@ -712,24 +638,6 @@ function NewStepper() {
   };
 
 
-  // Navigation options
-  const navOptions = [
-    { id: 'ReceiptInvoiceData', label: 'Receipt Invoice Data', icon: FileText, steps: [1, 2, 3, 4, 5] },
-    { id: 'ReceivedPayment', label: 'Received Payment', icon: Receipt, steps: [6] },
-    { id: 'INVOICE_REFERENCE', label: 'Invoice Reference', icon: FileCheck, steps: [7] }
-  ];
-
-  // Get steps to display based on selected navigation
-  const getStepsToDisplay = () => {
-    const selectedOption = navOptions.find(option => option.id === state.selectedNav);
-    return selectedOption ? selectedOption.steps : [1, 2, 3, 4, 5];
-  };
-
-  // Get filtered steps for progress display
-  const getFilteredSteps = () => {
-    const stepsToShow = getStepsToDisplay();
-    return steps.filter(step => stepsToShow.includes(step.id));
-  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-indigo-900">
@@ -748,142 +656,110 @@ function NewStepper() {
               <FileText className="w-8 h-8 text-green-300" />
               <div>
                 <h1 className="text-2xl font-bold text-white">New Invoice Stepper</h1>
-                <p className="text-green-200 text-sm">Create invoice with 7-step process</p>
+                <p className="text-green-200 text-sm">Create invoice with 6-step process</p>
               </div>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Main Content with Sidebar */}
-      <div className="flex min-h-[calc(100vh-80px)]">
-        {/* Navigation Sidebar */}
-        <div className="w-80 bg-white/10 backdrop-blur-sm border-r border-white/20 p-6">
-          <h3 className="text-white font-semibold text-lg mb-6">Navigation</h3>
-          <div className="space-y-3">
-            {navOptions.map((option) => (
-              <button
-                key={option.id}
-                onClick={() => handleNavSelection(option.id)}
-                className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${
-                  state.selectedNav === option.id
-                    ? 'bg-green-600 text-white shadow-lg'
-                    : 'bg-white/10 text-white hover:bg-white/20'
-                }`}
-              >
-                <option.icon className="w-5 h-5" />
-                <span className="font-medium">{option.label}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Main Content Area */}
-        <div className="flex-1 p-6">
-          <div className="bg-white/95 backdrop-blur-sm rounded-2xl shadow-xl overflow-hidden">
-            {/* Progress Header */}
-            <div className="bg-gradient-to-r from-green-600 to-green-700 p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-2xl font-bold text-white">
-                  {navOptions.find(option => option.id === state.selectedNav)?.label || 'Create New Invoice'}
-                </h2>
-                <span className="text-green-100 text-sm">
-                  Step {state.currentStep} of {getFilteredSteps().length} ({state.selectedNav})
-                </span>
-              </div>
-
-              {/* Progress Steps */}
-              <div className="flex items-center space-x-4 overflow-x-auto">
-                {getFilteredSteps().map((step, index) => (
-                  <React.Fragment key={step.id}>
-                    <motion.div
-                      className={`flex items-center space-x-2 cursor-pointer ${state.currentStep >= step.id ? 'text-white' : 'text-green-200'} hover:text-white transition-colors`}
-                      initial={{ opacity: 0, x: -20 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      transition={{ delay: index * 0.1 }}
-                      onClick={() => goToStep(step.id)}
-                    >
-                      <div className={`p-2 rounded-full transition-all duration-200 ${state.currentStep >= step.id ? 'bg-white text-green-600 hover:bg-green-100' : 'bg-green-500 text-green-100 hover:bg-green-400'}`}>
-                        {state.currentStep > step.id ? (
-                          <CheckCircle className="w-5 h-5" />
-                        ) : (
-                          <step.icon className="w-5 h-5" />
-                        )}
-                      </div>
-                      <div className="hidden sm:block">
-                        <p className="font-semibold text-sm">{step.title}</p>
-                        <p className="text-xs opacity-75">{step.description}</p>
-                      </div>
-                    </motion.div>
-                    {index < getFilteredSteps().length - 1 && (
-                      <ChevronRight className={`w-5 h-5 ${state.currentStep > step.id ? 'text-white' : 'text-green-300'}`} />
-                    )}
-                  </React.Fragment>
-                ))}
-              </div>
+      {/* Main Content */}
+      <div className="max-w-6xl mx-auto p-6">
+        <div className="bg-white/95 backdrop-blur-sm rounded-2xl shadow-xl overflow-hidden">
+          {/* Progress Header */}
+          <div className="bg-gradient-to-r from-green-600 to-green-700 p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-2xl font-bold text-white">Create New Invoice</h2>
+              <span className="text-green-100 text-sm">Step {state.currentStep} of 7</span>
             </div>
+
+            {/* Progress Steps */}
+            <div className="flex items-center space-x-4 overflow-x-auto">
+              {steps.map((step, index) => (
+                <React.Fragment key={step.id}>
+                  <motion.div
+                    className={`flex items-center space-x-2 cursor-pointer ${state.currentStep >= step.id ? 'text-white' : 'text-green-200'} hover:text-white transition-colors`}
+                    initial={{ opacity: 0, x: -20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: index * 0.1 }}
+                    onClick={() => goToStep(step.id)}
+                  >
+                    <div className={`p-2 rounded-full transition-all duration-200 ${state.currentStep >= step.id ? 'bg-white text-green-600 hover:bg-green-100' : 'bg-green-500 text-green-100 hover:bg-green-400'}`}>
+                      {state.currentStep > step.id ? (
+                        <CheckCircle className="w-5 h-5" />
+                      ) : (
+                        <step.icon className="w-5 h-5" />
+                      )}
+                    </div>
+                    <div className="hidden sm:block">
+                      <p className="font-semibold text-sm">{step.title}</p>
+                      <p className="text-xs opacity-75">{step.description}</p>
+                    </div>
+                  </motion.div>
+                  {index < steps.length - 1 && (
+                    <ChevronRight className={`w-5 h-5 ${state.currentStep > step.id ? 'text-white' : 'text-green-300'}`} />
+                  )}
+                </React.Fragment>
+              ))}
+            </div>
+          </div>
 
           {/* Form Content */}
           <div className="p-8">
             <AnimatePresence mode="wait">
-              {getStepsToDisplay().includes(1) && state.currentStep === 1 && (
+              {state.currentStep === 1 && (
                 <motion.div key="step1" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} transition={{ duration: 0.3 }}>
                   <OrgInfoStep
                     formData={state.formData}
                     onInputChange={handleInputChange}
-                    onClearData={clearStep1Data}
                     loadingCompanyDetails={state.loadingCompanyDetails}
                     companyAccounts={state.companyAccounts}
                   />
                 </motion.div>
               )}
 
-              {getStepsToDisplay().includes(2) && state.currentStep === 2 && (
+              {state.currentStep === 2 && (
                 <motion.div key="step2" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} transition={{ duration: 0.3 }}>
                   <ClientInfoStep
                     formData={state.formData}
                     onInputChange={handleInputChange}
-                    onClearData={clearStep2Data}
                     customers={state.customers}
                   />
                 </motion.div>
               )}
 
-              {getStepsToDisplay().includes(3) && state.currentStep === 3 && (
+              {state.currentStep === 3 && (
                 <motion.div key="step3" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} transition={{ duration: 0.3 }}>
                   <BillingInfoStep
                     formData={state.formData}
                     onInputChange={handleInputChange}
-                    onClearData={clearStep3Data}
                     availableCertificates={state.availableCertificates}
                     rateData={state.rateData}
                   />
                 </motion.div>
               )}
 
-              {getStepsToDisplay().includes(4) && state.currentStep === 4 && (
+              {state.currentStep === 4 && (
                 <motion.div key="step4" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} transition={{ duration: 0.3 }}>
                   <InvoiceDetailsStep
                     formData={state.formData}
                     onInputChange={handleInputChange}
-                    onClearData={clearStep4Data}
                   />
                 </motion.div>
               )}
 
-              {getStepsToDisplay().includes(5) && state.currentStep === 5 && (
+              {state.currentStep === 5 && (
                 <motion.div key="step5" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} transition={{ duration: 0.3 }}>
                   <FinalizeStep
                     formData={state.formData}
                     onUploadInvoiceData={saveInvoiceData}
-                    onClearAllData={clearAllStepperData}
                     savedInvoiceData={state.savedInvoiceData}
                     isUploadingInvoice={state.isUploadingInvoice}
                   />
                 </motion.div>
               )}
 
-              {getStepsToDisplay().includes(6) && state.currentStep === 6 && (
+              {state.currentStep === 6 && (
                 <motion.div key="step6" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} transition={{ duration: 0.3 }}>
                   <ReceivedPayment
                     formData={state.formData}
@@ -895,7 +771,7 @@ function NewStepper() {
                 </motion.div>
               )}
 
-              {getStepsToDisplay().includes(7) && state.currentStep === 7 && (
+              {state.currentStep === 7 && (
                 <motion.div key="step7" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} transition={{ duration: 0.3 }}>
                   <INVOICE_REFERENCE formData={state.formData} />
                 </motion.div>
@@ -906,9 +782,9 @@ function NewStepper() {
             <div className="flex justify-between items-center mt-12 pt-8 border-t border-gray-200">
               <button
                 onClick={prevStep}
-                disabled={state.currentStep === Math.min(...getStepsToDisplay())}
+                disabled={state.currentStep === 1}
                 className={`px-8 py-3 rounded-xl font-semibold transition-all ${
-                  state.currentStep === Math.min(...getStepsToDisplay())
+                  state.currentStep === 1
                     ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
                     : 'bg-gray-600 hover:bg-gray-700 text-white'
                 }`}
@@ -917,7 +793,7 @@ function NewStepper() {
               </button>
 
               <div className="flex gap-4">
-                {state.currentStep < Math.max(...getStepsToDisplay()) ? (
+                {state.currentStep < 7 ? (
                   <button
                     onClick={() => {
                       const errors = validateCurrentStep();
@@ -944,7 +820,6 @@ function NewStepper() {
           </div>
         </div>
       </div>
-    </div>
 
       {/* Toast Container */}
       <ToastContainer

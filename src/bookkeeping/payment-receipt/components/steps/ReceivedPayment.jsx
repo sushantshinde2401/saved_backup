@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { FileCheck, Upload, CheckCircle, RotateCcw } from 'lucide-react';
+import { FileCheck, Upload, CheckCircle } from 'lucide-react';
 
 function ReceivedPayment({ formData, onInputChange, onUploadReceiptData, savedReceiptData, isUploadingReceipt }) {
   // Local state for payment details to prevent auto-filling from previous steps
@@ -10,25 +10,6 @@ function ReceivedPayment({ formData, onInputChange, onUploadReceiptData, savedRe
     deliveryNote: ''
   });
 
-  // Load persisted data on component mount
-  useEffect(() => {
-    const persistedData = JSON.parse(localStorage.getItem('receivedPaymentData') || '{}');
-    if (persistedData && Object.keys(persistedData).length > 0) {
-      setPaymentDetails(persistedData);
-      // Also update the main form data
-      Object.keys(persistedData).forEach(field => {
-        onInputChange(field, persistedData[field]);
-      });
-    }
-  }, []);
-
-  // Save data to localStorage whenever paymentDetails changes
-  useEffect(() => {
-    if (paymentDetails.amountReceived || paymentDetails.paymentType || paymentDetails.dateReceived || paymentDetails.deliveryNote) {
-      localStorage.setItem('receivedPaymentData', JSON.stringify(paymentDetails));
-    }
-  }, [paymentDetails]);
-
   // Update local state when user inputs change
   const handleLocalChange = (field, value) => {
     setPaymentDetails(prev => ({
@@ -37,23 +18,6 @@ function ReceivedPayment({ formData, onInputChange, onUploadReceiptData, savedRe
     }));
     // Also update the main form data
     onInputChange(field, value);
-  };
-
-  // Clear data function
-  const handleClearData = () => {
-    const clearedData = {
-      amountReceived: '',
-      paymentType: '',
-      dateReceived: '',
-      deliveryNote: ''
-    };
-    setPaymentDetails(clearedData);
-    // Clear from localStorage
-    localStorage.removeItem('receivedPaymentData');
-    // Also clear from main form data
-    Object.keys(clearedData).forEach(field => {
-      onInputChange(field, clearedData[field]);
-    });
   };
 
   const handleUploadReceiptData = async () => {
@@ -85,6 +49,7 @@ function ReceivedPayment({ formData, onInputChange, onUploadReceiptData, savedRe
       // Error is handled in the parent component
     }
   };
+
   return (
     <div className="space-y-8">
       <div className="text-center mb-8">
@@ -195,16 +160,6 @@ function ReceivedPayment({ formData, onInputChange, onUploadReceiptData, savedRe
         </div>
       </div>
 
-      {/* Clear Data Button */}
-      <div className="flex justify-end mt-8 pt-6 border-t border-gray-200">
-        <button
-          onClick={handleClearData}
-          className="flex items-center gap-2 px-6 py-3 bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 rounded-xl transition-colors font-semibold"
-        >
-          <RotateCcw className="w-4 h-4" />
-          Clear Data
-        </button>
-      </div>
     </div>
   );
 }

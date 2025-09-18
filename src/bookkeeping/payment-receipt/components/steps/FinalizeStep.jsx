@@ -2,7 +2,7 @@ import React, { useState, useRef } from 'react';
 import { Download, Eye, Upload, FileText, CheckCircle, X, Printer, Save } from 'lucide-react';
 import InvoicePreview from '../InvoicePreview';
 
-function FinalizeStep({ formData, onUploadInvoiceData, onClearAllData, savedInvoiceData, isUploadingInvoice }) {
+function FinalizeStep({ formData, onUploadInvoiceData, savedInvoiceData, isUploadingInvoice }) {
   const [showPreview, setShowPreview] = useState(false);
   const [previewData, setPreviewData] = useState(null);
   const invoiceRef = useRef();
@@ -102,11 +102,7 @@ function FinalizeStep({ formData, onUploadInvoiceData, onClearAllData, savedInvo
     }
 
     try {
-      const result = await onUploadInvoiceData();
-      // Clear all stepper data after successful upload
-      if (result) {
-        onClearAllData();
-      }
+      await onUploadInvoiceData();
     } catch (error) {
       // Error is handled in the parent component
     }

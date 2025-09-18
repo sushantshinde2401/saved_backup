@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Receipt, DollarSign, Calendar, FileText, User, RotateCcw } from 'lucide-react';
+import { Receipt, DollarSign, Calendar, FileText, User } from 'lucide-react';
 
-function BillingInfoStep({ formData, onInputChange, onClearData, availableCertificates, rateData }) {
+function BillingInfoStep({ formData, onInputChange, availableCertificates, rateData }) {
   const [calculatedAmount, setCalculatedAmount] = useState(0);
   const [rateWarning, setRateWarning] = useState('');
   const [availableCompanies, setAvailableCompanies] = useState([]);
@@ -303,17 +303,6 @@ function BillingInfoStep({ formData, onInputChange, onClearData, availableCertif
           </div>
         </div>
       )}
-
-      {/* Clear Data Button */}
-      <div className="flex justify-end mt-8 pt-6 border-t border-gray-200">
-        <button
-          onClick={onClearData}
-          className="flex items-center gap-2 px-6 py-3 bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 rounded-xl transition-colors font-semibold"
-        >
-          <RotateCcw className="w-4 h-4" />
-          Clear Data
-        </button>
-      </div>
     </div>
   );
 }
