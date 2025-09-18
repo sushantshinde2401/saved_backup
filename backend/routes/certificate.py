@@ -194,6 +194,32 @@ def get_certificate_selections_for_receipt():
         print(f"[ERROR] Failed to get certificate selections: {e}")
         return jsonify({"error": str(e)}), 500
 
+@certificate_bp.route('/create-receipt-invoice-table', methods=['POST'])
+def create_receipt_invoice_table():
+    """Check receipt invoice table status"""
+    try:
+        from database.db_connection import execute_query
+        
+        # Check if tables exist
+        check_query = """
+            SELECT table_name FROM information_schema.tables 
+            WHERE table_schema = 'public' 
+            AND table_name IN ('receiptinvoicedata', 'receiptamountreceived')
+        """
+        
+        result = execute_query(check_query)
+        existing_tables = [row['table_name'] for row in result] if result else []
+        
+        return jsonify({
+            "status": "success",
+            "message": "Receipt invoice tables status checked",
+            "existing_tables": existing_tables,
+            "tables_exist": len(existing_tables) == 2
+        }), 200
+        
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 @certificate_bp.route('/update-certificate-company-data', methods=['POST'])
 def update_certificate_company_data():
     """Update certificate selections with company name and amount data"""

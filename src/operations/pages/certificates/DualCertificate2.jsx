@@ -187,7 +187,7 @@ function DualCertificate2() {
   const fetchCandidateData = async () => {
     try {
       console.log("[CANDIDATE] Fetching current candidate data for STSDSD course...");
-      const response = await fetch('http://localhost:5000/get-current-candidate-for-certificate');
+      const response = await fetch('http://localhost:5000/candidate/get-current-candidate-for-certificate');
       if (response.ok) {
         const result = await response.json();
         if (result.status === 'success' && result.data) {

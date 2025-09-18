@@ -34,7 +34,7 @@ graph TB
     subgraph "Database (PostgreSQL)"
         C1[candidates table]
         C2[candidate_uploads table]
-        C3[b2bcandidatedetails table]
+        C3[b2bcustomersdetails table]
         C4[company_details table]
     end
 
@@ -628,7 +628,7 @@ flowchart TD
     subgraph "PostgreSQL Tables"
         DB1[candidates<br/>Consolidated candidate data]
         DB2[candidate_uploads<br/>File upload records]
-        DB3[b2bcandidatedetails<br/>B2B customer data]
+        DB3[b2bcustomersdetails<br/>B2B customer data]
         DB4[company_details<br/>Company account data]
     end
 
@@ -746,7 +746,7 @@ flowchart TD
     end
 
     subgraph "Bookkeeping → Database"
-        B4[B2B Customers] --> C4[b2bcandidatedetails]
+        B4[B2B Customers] --> C4[b2bcustomersdetails]
         B5[Company Accounts] --> C5[company_details]
         B6[Receipt Data] --> C6[localStorage]
     end
@@ -793,7 +793,7 @@ flowchart TD
 ### Database Tables
 - **candidates**: Consolidated candidate information
 - **candidate_uploads**: Individual file upload records
-- **b2bcandidatedetails**: B2B customer information
+- **b2bcustomersdetails**: B2B customer information
 - **company_details**: Company account information
 
 ### File Organization

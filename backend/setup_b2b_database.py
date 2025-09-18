@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 B2B Customer Details Database Setup Script
-This script creates the b2bcandidatedetails table and inserts sample data.
+This script creates the b2bcustomersdetails table and inserts sample data.
 """
 
 import os
@@ -68,7 +68,7 @@ def test_b2b_table():
 
         with conn.cursor() as cursor:
             # Test basic query
-            cursor.execute("SELECT COUNT(*) FROM b2bcandidatedetails")
+            cursor.execute("SELECT COUNT(*) FROM b2bcustomersdetails")
             count = cursor.fetchone()[0]
             print(f"[DB] ✅ B2B table test successful. Current records: {count}")
 
@@ -88,7 +88,7 @@ def main():
     try:
         # Step 1: Create B2B table
         print("\n[STEP 1] Creating B2B customer details table...")
-        table_sql_path = os.path.join(os.path.dirname(__file__), "create_b2bcandidatedetails_table.sql")
+        table_sql_path = os.path.join(os.path.dirname(__file__), "create_b2bcustomersdetails_table.sql")
         run_sql_file(table_sql_path)
 
         # Step 2: Insert sample data

@@ -71,7 +71,7 @@ function CandidateDetails() {
       if (!dataToUse) {
         console.log("Fetching OCR data from structured_passport_data.json");
         try {
-          const res = await fetch(`http://127.0.0.1:5000/get-candidate-data/structured_passport_data.json`);
+          const res = await fetch(`http://127.0.0.1:5000/candidate/get-candidate-data/structured_passport_data.json`);
           if (res.ok) {
             const result = await res.json();
             dataToUse = result.data;
@@ -241,7 +241,7 @@ const handleChange = (e) => {
 
       console.log("[SUBMIT] Sending candidate data to backend:", submissionData);
       
-      const res = await fetch("http://127.0.0.1:5000/save-candidate-data", {
+      const res = await fetch("http://127.0.0.1:5000/candidate/save-candidate-data", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(submissionData),

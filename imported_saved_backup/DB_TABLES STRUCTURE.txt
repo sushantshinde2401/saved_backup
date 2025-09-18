@@ -1,0 +1,209 @@
+---
+config:
+  look: classic
+  layout: elk
+title: Sample title
+---
+erDiagram
+	direction TB
+	candidates {
+		candidate_id int PK ""  
+                candidate_name 
+		candidate_folder string  ""  
+		candidate_folder_path string  ""  
+		json_data string  "" 
+                created_at timestamp  "" 
+	}
+
+
+	ReceiptInvoiceData {
+		
+	      	candidate_id int FK ""  
+from(Step 1)  | company_details string  ""  (company name and account no will save )
+
+
+from(Step 2)  |	customer_details string  ""  (customer name,phone number)
+
+
+from(Step 3)  |	course_selection string  ""  
+                {
+                "party_name": "",
+                "invoice_no": "",(i want invoice number will be the primary key (PK))
+                "date_received": "",
+                "amount_received": ,
+                "discount_amount": ,
+                "gst_applied": ,
+                "gst_rate": ,
+                "final_amount": ,
+                "selected_courses": ["Course A", "Course B", "Course C"]
+                }
+                
+
+from(Step 4)  | InvoiceDetails ""
+                 
+                 {
+                "delivery_note": "DN-2025-001",
+                "dispatch_doc_no": "1048",
+                "delivery_note_date": "2025-09-15",
+                "dispatch_through": "Courier",
+                "destination": "Mumbai Port",
+                "terms_of_delivery": "FOB"
+                 }
+                 
+                 created_at timestamp  ""  
+	}
+
+
+
+from(Step 6)  	ReceiptAmountReceived {
+		receipt_amount_id SERIAL PRIMARY KEY,
+                candidate_id INT NOT NULL REFERENCES candidates(candidate_id),
+
+                received_amount NUMERIC(12,2) NOT NULL,
+                payment_type VARCHAR(50) NOT NULL,
+                date_of_transaction DATE NOT NULL,
+                remark TEXT,
+
+               invoice_reference VARCHAR(100) NOT NULL,
+               created_at TIMESTAMP DEFAULT NOW() 
+	}
+	PaymentEntry {
+		payment_entry_id int PK ""  
+		candidate_id int FK ""  
+		payment_date date  ""  
+		payment_mode string  ""  
+		amount float  ""  
+		receipt_reference string  ""  
+		created_at timestamp  ""  
+	}
+	CompanyLedger {
+		ledger_id int PK ""  
+		candidate_id int FK ""  
+		debit float  ""  
+		credit float  ""  
+		balance float  ""  
+		created_at timestamp  ""  
+	}
+	candidate_table||--o{receiptinvoicedata_table:"has"
+	candidate_table||--o{receiptamountreceived_table:"has"
+	candidate_table||--o{paymententry_table:"has"
+	candidate_table||--o{companyLedger_table:"has"
+	receiptinvoicedata_table||--o{receiptamountreceived_table:"relates"
+	receiptinvoicedata_table||--o{companyLedger_table:"relates"
+	receiptamountreceived_table||--o{receiptinvoicedata_table:"relates"
+	receiptamountreceived_table||--o{companyLedger_table:"relates"
+	paymententry_table||--o{companyLedger_table:"relates"
+
+
+
+
+
+
+
+Step 1 – Candidate Creation
+
+A new candidate is created in the candidates table.
+
+This table stores:
+
+candidate_id (Primary Key)
+
+Candidate’s basic details (candidate_name, candidate_folder, path, json_data, created_at).
+
+
+
+Step 2 – Company & Customer Details
+
+For each candidate, a new ReceiptInvoiceData record is created.
+
+This contains details from multiple steps of your form flow:
+
+Company details → Company name & account number.
+
+Customer details → Customer name & phone number.
+
+Course selection & invoice info → Includes:
+
+invoice_no (Primary Key for invoices).
+
+Party name, invoice date, amount, discount, GST, final amount.
+
+selected_courses (stored as an array/JSON).
+
+Invoice details → Delivery note, dispatch doc no., delivery date, dispatch through, destination, terms of delivery.
+
+
+
+Step 3 – Receipt (Amount Received)
+
+A record is created in the ReceiptAmountReceived table.
+
+It stores:
+
+Unique receipt_amount_id (Primary Key).
+
+candidate_id (Foreign Key → candidates).
+
+Amount received, payment type, transaction date, remark.
+
+invoice_reference (links to invoice_no in ReceiptInvoiceData).
+
+This ties receipts directly to invoices and candidates.
+
+
+
+Step 4 – Payment Entry
+
+Payments are recorded in the PaymentEntry table.
+
+Contains:
+
+payment_entry_id (Primary Key).
+
+candidate_id (Foreign Key → candidates).
+
+Payment details (date, mode, amount).
+
+receipt_reference (link back to receipts).
+
+This ensures all payments are traceable against candidates and receipts.
+
+
+
+Step 5 – Company Ledger
+
+Financial transactions are maintained in the CompanyLedger table.
+
+Stores:
+
+Debit, credit, balance for a candidate.
+
+Linked to both ReceiptInvoiceData and ReceiptAmountReceived.
+
+This table ensures the accounting side stays balanced (tracking money in/out).
+
+
+
+Step 6 – Relationships
+
+candidates → owns → ReceiptInvoiceData, ReceiptAmountReceived, PaymentEntry, CompanyLedger.
+
+ReceiptInvoiceData → relates to → ReceiptAmountReceived and CompanyLedger.
+
+ReceiptAmountReceived → relates to → ReceiptInvoiceData and CompanyLedger.
+
+PaymentEntry → relates to → CompanyLedger.
+
+
+
+👉 In simple terms:
+
+Candidate is the root entity.
+
+Candidate creates invoices (ReceiptInvoiceData).
+
+Receipts (ReceiptAmountReceived) record payments received against invoices.
+
+Payments (PaymentEntry) record how money is paid.
+
+Ledger (CompanyLedger) keeps the financial balance updated across invoices, receipts, and payments.

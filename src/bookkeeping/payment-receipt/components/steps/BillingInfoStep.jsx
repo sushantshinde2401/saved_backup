@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Receipt, DollarSign, Calendar, FileText, User } from 'lucide-react';
+import { Receipt, DollarSign, Calendar, FileText, User, RotateCcw } from 'lucide-react';
 
-function BillingInfoStep({ formData, onInputChange, availableCertificates, rateData }) {
+function BillingInfoStep({ formData, onInputChange, onClearData, availableCertificates, rateData }) {
   const [calculatedAmount, setCalculatedAmount] = useState(0);
   const [rateWarning, setRateWarning] = useState('');
   const [availableCompanies, setAvailableCompanies] = useState([]);
@@ -120,12 +120,10 @@ function BillingInfoStep({ formData, onInputChange, availableCertificates, rateD
 
   const calculateFinalAmount = () => {
     const amount = parseFloat(formData.amountReceived) || 0;
-    const discount = parseFloat(formData.discountAmount) || 0;
-    const baseAmount = amount - discount;
     if (formData.applyGST) {
-      return (baseAmount + (baseAmount * 0.18)).toFixed(2);
+      return (amount + (amount * 0.18)).toFixed(2);
     }
-    return baseAmount.toFixed(2);
+    return amount.toFixed(2);
   };
 
   return (
@@ -203,21 +201,6 @@ function BillingInfoStep({ formData, onInputChange, availableCertificates, rateD
           )}
         </div>
 
-        {/* Discount Amount */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            <DollarSign className="w-4 h-4 inline mr-1" />
-            Discount Amount
-          </label>
-          <input
-            type="number"
-            value={formData.discountAmount || ''}
-            onChange={(e) => onInputChange('discountAmount', e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-            placeholder="Enter discount amount"
-            min="0"
-          />
-        </div>
 
         {/* Apply GST Checkbox */}
         <div className="md:col-span-2 flex items-center">
@@ -235,14 +218,13 @@ function BillingInfoStep({ formData, onInputChange, availableCertificates, rateD
         <div className="md:col-span-2">
           <label className="block text-sm font-medium text-gray-700 mb-2">
             <DollarSign className="w-4 h-4 inline mr-1" />
-            Final Amount {formData.applyGST ? '(After Discount & GST)' : '(After Discount)'}
+            Final Amount {formData.applyGST ? '(After GST)' : ''}
           </label>
           <div className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-green-50 text-green-800 font-bold text-lg">
             ₹{calculateFinalAmount()}
           </div>
           <p className="text-sm text-gray-600 mt-1">
-            Base: ₹{(parseFloat(formData.amountReceived) || 0).toLocaleString('en-IN')} -
-            Discount: ₹{(parseFloat(formData.discountAmount) || 0).toLocaleString('en-IN')}
+            Base: ₹{(parseFloat(formData.amountReceived) || 0).toLocaleString('en-IN')}
             {formData.applyGST && ' + GST (18%)'}
           </p>
         </div>
@@ -321,6 +303,17 @@ function BillingInfoStep({ formData, onInputChange, availableCertificates, rateD
           </div>
         </div>
       )}
+
+      {/* Clear Data Button */}
+      <div className="flex justify-end mt-8 pt-6 border-t border-gray-200">
+        <button
+          onClick={onClearData}
+          className="flex items-center gap-2 px-6 py-3 bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 rounded-xl transition-colors font-semibold"
+        >
+          <RotateCcw className="w-4 h-4" />
+          Clear Data
+        </button>
+      </div>
     </div>
   );
 }

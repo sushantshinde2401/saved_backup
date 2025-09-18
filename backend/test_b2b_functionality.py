@@ -65,7 +65,7 @@ def test_b2b_endpoints():
     print("  - Form fields auto-populate when customer is selected")
 
     print("\n[TEST] Database Schema:")
-    print("  - Table: b2bcandidatedetails")
+    print("  - Table: b2bcustomersdetails")
     print("  - 10 sample customers ready for insertion")
     print("  - Proper indexes for efficient querying")
 

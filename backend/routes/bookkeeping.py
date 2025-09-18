@@ -13,7 +13,7 @@ def get_b2b_customers():
         query = """
             SELECT id, company_name, gst_number, contact_person, phone_number,
                    email, address, city, state, state_code, pincode
-            FROM b2bcandidatedetails
+            FROM b2bcustomersdetails
             ORDER BY company_name ASC
         """
 
@@ -204,7 +204,7 @@ def get_b2b_customer(customer_id):
         query = """
             SELECT id, company_name, gst_number, contact_person, phone_number,
                    email, address, city, state, state_code, pincode
-            FROM b2bcandidatedetails
+            FROM b2bcustomersdetails
             WHERE id = %s
         """
 
@@ -527,5 +527,283 @@ def get_customers():
         return jsonify({
             "error": str(e),
             "message": "Failed to retrieve customers",
+            "status": "error"
+        }), 500
+
+@bookkeeping_bp.route('/receipt-invoice-data', methods=['POST'])
+def create_receipt_invoice_data():
+    """Create a new receipt invoice data record"""
+    try:
+        data = request.get_json()
+
+        required_fields = ['invoice_no', 'candidate_id', 'company_name', 'company_account_number']
+        for field in required_fields:
+            if field not in data:
+                return jsonify({
+                    "error": f"Missing required field: {field}",
+                    "message": f"Field '{field}' is required",
+                    "status": "validation_error"
+                }), 400
+
+        # Use the existing database function
+        from database.db_connection import insert_receipt_invoice_data
+        result = insert_receipt_invoice_data(data)
+
+        return jsonify({
+            "status": "success",
+            "data": {"invoice_no": result},
+            "message": f"Receipt invoice data created successfully with invoice: {result}"
+        }), 201
+
+    except Exception as e:
+        logger.error(f"[RECEIPT_INVOICE] Failed to create receipt invoice data: {e}")
+        return jsonify({
+            "error": str(e),
+            "message": "Failed to create receipt invoice data record",
+            "status": "error"
+        }), 500
+
+@bookkeeping_bp.route('/receipt-amount-received', methods=['POST'])
+def create_receipt_amount_received():
+    """Create a new receipt amount received record"""
+    try:
+        data = request.get_json()
+
+        required_fields = ['candidate_id', 'amount_received', 'payment_type', 'transaction_date', 'invoice_reference']
+        for field in required_fields:
+            if field not in data:
+                return jsonify({
+                    "error": f"Missing required field: {field}",
+                    "message": f"Field '{field}' is required",
+                    "status": "validation_error"
+                }), 400
+
+        query = """
+            INSERT INTO ReceiptAmountReceived (
+                candidate_id, amount_received, payment_type, transaction_date,
+                remark, invoice_reference
+            ) VALUES (%s, %s, %s, %s, %s, %s)
+            RETURNING receipt_amount_id
+        """
+
+        result = execute_query(query, (
+            data['candidate_id'],
+            data['amount_received'],
+            data['payment_type'],
+            data['transaction_date'],
+            data.get('remark'),
+            data['invoice_reference']
+        ))
+
+        if result:
+            receipt_id = result[0]['receipt_amount_id']
+            logger.info(f"[RECEIPT] Created receipt amount received record ID: {receipt_id}")
+            return jsonify({
+                "status": "success",
+                "data": {"receipt_amount_id": receipt_id},
+                "message": f"Receipt amount received record created successfully with ID: {receipt_id}"
+            }), 201
+        else:
+            return jsonify({
+                "error": "Failed to create record",
+                "message": "No ID returned from insert operation",
+                "status": "error"
+            }), 500
+
+    except Exception as e:
+        logger.error(f"[RECEIPT] Failed to create receipt amount received: {e}")
+        return jsonify({
+            "error": str(e),
+            "message": "Failed to create receipt amount received record",
+            "status": "error"
+        }), 500
+
+@bookkeeping_bp.route('/receipt-amount-received', methods=['GET'])
+def get_receipt_amount_received():
+    """Get receipt amount received records with optional filtering"""
+    try:
+        # Get query parameters
+        candidate_id = request.args.get('candidate_id', type=int)
+        invoice_reference = request.args.get('invoice_reference')
+        limit = request.args.get('limit', 50, type=int)
+        offset = request.args.get('offset', 0, type=int)
+
+        # Build query based on filters
+        if candidate_id:
+            query = """
+                SELECT * FROM ReceiptAmountReceived
+                WHERE candidate_id = %s
+                ORDER BY created_at DESC
+                LIMIT %s OFFSET %s
+            """
+            params = (candidate_id, limit, offset)
+        elif invoice_reference:
+            query = """
+                SELECT * FROM ReceiptAmountReceived
+                WHERE invoice_reference = %s
+                ORDER BY created_at DESC
+                LIMIT %s OFFSET %s
+            """
+            params = (invoice_reference, limit, offset)
+        else:
+            query = """
+                SELECT * FROM ReceiptAmountReceived
+                ORDER BY created_at DESC
+                LIMIT %s OFFSET %s
+            """
+            params = (limit, offset)
+
+        results = execute_query(query, params)
+
+        if results:
+            receipts = []
+            for row in results:
+                receipts.append({
+                    'receipt_amount_id': row['receipt_amount_id'],
+                    'candidate_id': row['candidate_id'],
+                    'amount_received': float(row['amount_received']) if row['amount_received'] else 0,
+                    'payment_type': row['payment_type'],
+                    'transaction_date': str(row['transaction_date']) if row['transaction_date'] else None,
+                    'remark': row['remark'],
+                    'invoice_reference': row['invoice_reference'],
+                    'created_at': str(row['created_at'])
+                })
+
+            logger.info(f"[RECEIPT] Retrieved {len(receipts)} receipt amount received records")
+            return jsonify({
+                "status": "success",
+                "data": receipts,
+                "message": f"Retrieved {len(receipts)} receipt amount received records successfully",
+                "total": len(receipts)
+            }), 200
+        else:
+            return jsonify({
+                "status": "success",
+                "data": [],
+                "message": "No receipt amount received records found",
+                "total": 0
+            }), 200
+
+    except Exception as e:
+        logger.error(f"[RECEIPT] Failed to retrieve receipt amount received: {e}")
+        return jsonify({
+            "error": str(e),
+            "message": "Failed to retrieve receipt amount received records",
+            "status": "error"
+        }), 500
+
+@bookkeeping_bp.route('/receipt-amount-received/<int:receipt_id>', methods=['GET'])
+def get_receipt_amount_received_by_id(receipt_id):
+    """Get a specific receipt amount received record by ID"""
+    try:
+        query = "SELECT * FROM ReceiptAmountReceived WHERE receipt_amount_id = %s"
+        results = execute_query(query, (receipt_id,))
+
+        if results and len(results) > 0:
+            receipt = results[0]
+            receipt_data = {
+                'receipt_amount_id': receipt['receipt_amount_id'],
+                'candidate_id': receipt['candidate_id'],
+                'amount_received': float(receipt['amount_received']) if receipt['amount_received'] else 0,
+                'payment_type': receipt['payment_type'],
+                'transaction_date': str(receipt['transaction_date']) if receipt['transaction_date'] else None,
+                'remark': receipt['remark'],
+                'invoice_reference': receipt['invoice_reference'],
+                'created_at': str(receipt['created_at'])
+            }
+
+            logger.info(f"[RECEIPT] Retrieved receipt amount received record ID: {receipt_id}")
+            return jsonify({
+                "status": "success",
+                "data": receipt_data,
+                "message": f"Retrieved receipt amount received record ID: {receipt_id}"
+            }), 200
+        else:
+            return jsonify({
+                "error": "Receipt not found",
+                "message": f"No receipt amount received record found with ID: {receipt_id}",
+                "status": "not_found"
+            }), 404
+
+    except Exception as e:
+        logger.error(f"[RECEIPT] Failed to retrieve receipt amount received ID {receipt_id}: {e}")
+        return jsonify({
+            "error": str(e),
+            "message": "Failed to retrieve receipt amount received record",
+            "status": "error"
+        }), 500
+
+@bookkeeping_bp.route('/receipt-amount-received/<int:receipt_id>', methods=['PUT'])
+def update_receipt_amount_received(receipt_id):
+    """Update a receipt amount received record"""
+    try:
+        data = request.get_json()
+
+        if not data:
+            return jsonify({
+                "error": "No data provided",
+                "message": "Request body is required",
+                "status": "validation_error"
+            }), 400
+
+        # Build dynamic update query
+        update_fields = []
+        params = []
+
+        allowed_fields = ['candidate_id', 'amount_received', 'payment_type', 'transaction_date', 'remark', 'invoice_reference']
+        for field in allowed_fields:
+            if field in data:
+                update_fields.append(f"{field} = %s")
+                params.append(data[field])
+
+        if not update_fields:
+            return jsonify({
+                "error": "No valid fields to update",
+                "message": "At least one valid field must be provided",
+                "status": "validation_error"
+            }), 400
+
+        update_clause = ", ".join(update_fields)
+        query = f"""
+            UPDATE ReceiptAmountReceived
+            SET {update_clause}
+            WHERE receipt_amount_id = %s
+        """
+        params.append(receipt_id)
+
+        execute_query(query, params, fetch=False)
+
+        logger.info(f"[RECEIPT] Updated receipt amount received record ID: {receipt_id}")
+        return jsonify({
+            "status": "success",
+            "message": f"Receipt amount received record ID {receipt_id} updated successfully"
+        }), 200
+
+    except Exception as e:
+        logger.error(f"[RECEIPT] Failed to update receipt amount received ID {receipt_id}: {e}")
+        return jsonify({
+            "error": str(e),
+            "message": "Failed to update receipt amount received record",
+            "status": "error"
+        }), 500
+
+@bookkeeping_bp.route('/receipt-amount-received/<int:receipt_id>', methods=['DELETE'])
+def delete_receipt_amount_received(receipt_id):
+    """Delete a receipt amount received record"""
+    try:
+        query = "DELETE FROM ReceiptAmountReceived WHERE receipt_amount_id = %s"
+        execute_query(query, (receipt_id,), fetch=False)
+
+        logger.info(f"[RECEIPT] Deleted receipt amount received record ID: {receipt_id}")
+        return jsonify({
+            "status": "success",
+            "message": f"Receipt amount received record ID {receipt_id} deleted successfully"
+        }), 200
+
+    except Exception as e:
+        logger.error(f"[RECEIPT] Failed to delete receipt amount received ID {receipt_id}: {e}")
+        return jsonify({
+            "error": str(e),
+            "message": "Failed to delete receipt amount received record",
             "status": "error"
         }), 500

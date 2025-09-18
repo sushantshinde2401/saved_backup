@@ -2,7 +2,7 @@ import React, { useState, useRef } from 'react';
 import { Download, Eye, Upload, FileText, CheckCircle, X, Printer, Save } from 'lucide-react';
 import InvoicePreview from '../InvoicePreview';
 
-function FinalizeStep({ formData, onSubmit, isSubmitting }) {
+function FinalizeStep({ formData, onUploadInvoiceData, onClearAllData, savedInvoiceData, isUploadingInvoice }) {
   const [showPreview, setShowPreview] = useState(false);
   const [previewData, setPreviewData] = useState(null);
   const invoiceRef = useRef();
@@ -42,7 +42,6 @@ function FinalizeStep({ formData, onSubmit, isSubmitting }) {
 
       // Financial Details
       amountReceived: parseFloat(formData.amountReceived) || 0,
-      discountAmount: parseFloat(formData.discountAmount) || 0,
       applyGST: formData.applyGST || false,
       finalAmount: calculateFinalAmount(),
 
@@ -64,12 +63,10 @@ function FinalizeStep({ formData, onSubmit, isSubmitting }) {
 
   const calculateFinalAmount = () => {
     const amount = parseFloat(formData.amountReceived) || 0;
-    const discount = parseFloat(formData.discountAmount) || 0;
-    const baseAmount = amount - discount;
     if (formData.applyGST) {
-      return baseAmount + (baseAmount * 0.18);
+      return amount + (amount * 0.18);
     }
-    return baseAmount;
+    return amount;
   };
 
   const handlePreview = () => {
@@ -84,17 +81,35 @@ function FinalizeStep({ formData, onSubmit, isSubmitting }) {
     }
   };
 
-  const handleUpload = async () => {
-    const invoiceData = prepareInvoiceData();
+  const handleUploadInvoiceData = async () => {
+    if (savedInvoiceData) {
+      // Data already saved, show message
+      return;
+    }
 
-    // Prepare data for backend upload (similar to invoice-generation)
-    const uploadData = {
-      ...invoiceData,
-      timestamp: new Date().toISOString(),
-      status: 'generated'
-    };
+    // Validate required fields before upload
+    const errors = [];
+    if (!formData.invoiceNumber) errors.push('Invoice Number is required');
+    if (!formData.companyName) errors.push('Company Name is required');
+    if (!formData.companyAccountNumber) errors.push('Company Account Number is required');
+    if (!formData.selectedCourses || formData.selectedCourses.length === 0) {
+      errors.push('At least one course must be selected');
+    }
 
-    onSubmit(uploadData);
+    if (errors.length > 0) {
+      alert(`Please fix the following errors before uploading:\n${errors.join('\n')}`);
+      return;
+    }
+
+    try {
+      const result = await onUploadInvoiceData();
+      // Clear all stepper data after successful upload
+      if (result) {
+        onClearAllData();
+      }
+    } catch (error) {
+      // Error is handled in the parent component
+    }
   };
 
   return (
@@ -175,31 +190,41 @@ function FinalizeStep({ formData, onSubmit, isSubmitting }) {
         </div>
       </div>
 
-      {/* Upload to Backend */}
+      {/* Upload Invoice Data */}
       <div className="bg-white border border-gray-200 rounded-lg p-6">
         <div className="text-center">
-          <Upload className="w-12 h-12 text-purple-600 mx-auto mb-4" />
-          <h4 className="text-lg font-semibold text-gray-800 mb-2">Upload to Database</h4>
+          <Save className="w-12 h-12 text-purple-600 mx-auto mb-4" />
+          <h4 className="text-lg font-semibold text-gray-800 mb-2">Upload Invoice Data</h4>
           <p className="text-gray-600 text-sm mb-4">
-            Save the invoice data to the Database system 
+            Save Steps 1-4 data to ReceiptInvoiceData table
+            {savedInvoiceData && (
+              <span className="block text-green-600 font-medium mt-1">
+                ✓ Data uploaded successfully (Invoice: {savedInvoiceData.invoice_no})
+              </span>
+            )}
           </p>
           <button
-            onClick={handleUpload}
-            disabled={isSubmitting}
+            onClick={handleUploadInvoiceData}
+            disabled={isUploadingInvoice || savedInvoiceData}
             className={`w-full py-3 px-4 rounded-lg transition-colors font-semibold flex items-center justify-center gap-2 ${
-              isSubmitting
+              isUploadingInvoice || savedInvoiceData
                 ? 'bg-gray-400 cursor-not-allowed'
                 : 'bg-purple-600 hover:bg-purple-700 text-white'
             }`}
           >
-            {isSubmitting ? (
+            {isUploadingInvoice ? (
               <>
                 <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
                 Uploading...
               </>
+            ) : savedInvoiceData ? (
+              <>
+                <CheckCircle className="w-5 h-5" />
+                Data Uploaded
+              </>
             ) : (
               <>
-                <Upload className="w-5 h-5" />
+                <Save className="w-5 h-5" />
                 Upload Data
               </>
             )}

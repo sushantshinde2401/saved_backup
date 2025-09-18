@@ -4,17 +4,8 @@
     "firstName": "BHUSHAN",
     "lastName": "JADHAV",
     "certificateName": "H2S Training",
-    "companyName": "Automotive Parts Ltd",
-    "amount": 4800,
-    "timestamp": "2025-09-12T14:27:44.168269"
-  },
-  {
-    "id": "bosiet_001",
-    "firstName": "BHUSHAN",
-    "lastName": "JADHAV",
-    "certificateName": "BOSIET Training",
-    "companyName": "Automotive Parts Ltd",
+    "companyName": "Global Manufacturing Corp",
     "amount": 2000,
-    "timestamp": "2025-09-12T14:27:52.536863"
+    "timestamp": "2025-09-17T15:13:41.854649"
   }
 ]

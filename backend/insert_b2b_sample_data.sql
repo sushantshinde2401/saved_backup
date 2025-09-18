@@ -1,7 +1,7 @@
--- Script to insert 10 sample B2B customers into b2bcandidatedetails table
+-- Script to insert 10 sample B2B customers into b2bcustomersdetails table
 -- This script can be run multiple times safely (uses INSERT with ON CONFLICT)
 
-INSERT INTO b2bcandidatedetails (company_name, gst_number, contact_person, phone_number, email, address, city, state, state_code, pincode) VALUES
+INSERT INTO b2bcustomersdetails (company_name, gst_number, contact_person, phone_number, email, address, city, state, state_code, pincode) VALUES
 ('Tech Solutions India Pvt Ltd', '22AAAAA0000A1Z5', 'Rajesh Kumar', '+91-9876543210', 'rajesh.kumar@techsolutions.com', '123 Business Park, Sector 18', 'Gurgaon', 'Haryana', '06', '122001'),
 ('Global Manufacturing Corp', '07BBBBB0000B2Y4', 'Priya Sharma', '+91-8765432109', 'priya.sharma@globalmfg.com', '456 Industrial Area, Phase 2', 'Faridabad', 'Haryana', '06', '121001'),
 ('Digital Services Hub', '29CCCCC0000C3X3', 'Amit Patel', '+91-7654321098', 'amit.patel@digitalservices.in', '789 Tech Tower, BKC', 'Mumbai', 'Maharashtra', '27', '400051'),
@@ -18,7 +18,7 @@ DO $$
 DECLARE
     inserted_count INTEGER;
 BEGIN
-    SELECT COUNT(*) INTO inserted_count FROM b2bcandidatedetails;
+    SELECT COUNT(*) INTO inserted_count FROM b2bcustomersdetails;
     RAISE NOTICE 'Sample B2B customer data insertion completed';
     RAISE NOTICE 'Total B2B customers in database: %', inserted_count;
     RAISE NOTICE '';

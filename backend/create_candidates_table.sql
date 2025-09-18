@@ -3,7 +3,7 @@
 
 -- Create the table if it doesn't exist
 CREATE TABLE IF NOT EXISTS candidates (
-    id SERIAL PRIMARY KEY,
+    candidate_id SERIAL PRIMARY KEY,
     candidate_name VARCHAR(100) UNIQUE NOT NULL,
     candidate_folder VARCHAR(255),
     candidate_folder_path VARCHAR(500),
@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS candidates (
 CREATE INDEX IF NOT EXISTS idx_candidates_candidate_name ON candidates(candidate_name);
 CREATE INDEX IF NOT EXISTS idx_candidates_created_at ON candidates(created_at);
 CREATE INDEX IF NOT EXISTS idx_candidates_json_data ON candidates USING GIN(json_data);
+CREATE INDEX IF NOT EXISTS idx_candidates_candidate_id ON candidates(candidate_id);
 
 -- Add comments for documentation
 COMMENT ON TABLE candidates IS 'Stores unique candidate information with consolidated data';
@@ -33,7 +34,7 @@ DO $$
 BEGIN
     RAISE NOTICE 'candidates table created successfully with indexes and constraints';
     RAISE NOTICE 'Table structure:';
-    RAISE NOTICE '- id: SERIAL PRIMARY KEY';
+    RAISE NOTICE '- candidate_id: SERIAL PRIMARY KEY';
     RAISE NOTICE '- candidate_name: VARCHAR(100) UNIQUE NOT NULL';
     RAISE NOTICE '- candidate_folder: VARCHAR(255)';
     RAISE NOTICE '- candidate_folder_path: VARCHAR(500)';
@@ -44,4 +45,5 @@ BEGIN
     RAISE NOTICE '- idx_candidates_candidate_name';
     RAISE NOTICE '- idx_candidates_created_at';
     RAISE NOTICE '- idx_candidates_json_data (GIN index)';
+    RAISE NOTICE '- idx_candidates_candidate_id';
 END $$;

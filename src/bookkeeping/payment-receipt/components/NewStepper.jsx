@@ -32,6 +32,7 @@ import INVOICE_REFERENCE from './steps/INVOICE_REFERENCE';
 // Initial state
 const initialState = {
   currentStep: 1,
+  selectedNav: 'ReceiptInvoiceData', // 'ReceiptInvoiceData', 'ReceivedPayment', 'INVOICE_REFERENCE'
   formData: {
     // Step 1: Organization Info (from CompanyDetailsStep)
     companyAccountNumber: '',
@@ -68,7 +69,6 @@ const initialState = {
     invoiceNumber: '',
     dateReceived: '',
     amountReceived: '',
-    discountAmount: '',
     applyGST: false,
     paymentType: '',
     selectedCourses: [],
@@ -84,7 +84,10 @@ const initialState = {
   availableCertificates: [],
   rateData: {},
   loadingCompanyDetails: false,
-  isSubmitting: false
+  savedInvoiceData: null, // Store the saved invoice data from steps 1-4
+  savedReceiptData: null,   // Store the saved receipt data from step 6
+  isUploadingInvoice: false, // Loading state for invoice data upload
+  isUploadingReceipt: false  // Loading state for receipt data upload
 };
 
 // Reducer function
@@ -110,8 +113,16 @@ function stepperReducer(state, action) {
       return { ...state, rateData: action.payload };
     case 'SET_LOADING_COMPANY_DETAILS':
       return { ...state, loadingCompanyDetails: action.payload };
-    case 'SET_SUBMITTING':
-      return { ...state, isSubmitting: action.payload };
+    case 'SET_SAVED_INVOICE_DATA':
+      return { ...state, savedInvoiceData: action.payload };
+    case 'SET_SAVED_RECEIPT_DATA':
+      return { ...state, savedReceiptData: action.payload };
+    case 'SET_UPLOADING_INVOICE':
+      return { ...state, isUploadingInvoice: action.payload };
+    case 'SET_UPLOADING_RECEIPT':
+      return { ...state, isUploadingReceipt: action.payload };
+    case 'SET_SELECTED_NAV':
+      return { ...state, selectedNav: action.payload };
     default:
       return state;
   }
@@ -329,9 +340,75 @@ function NewStepper() {
     }
   };
 
+  // Clear data functions for each step
+  const clearStep1Data = () => {
+    const step1Fields = ['companyAccountNumber', 'companyName', 'gstNumber', 'companyAddress', 'stateCode', 'bankName', 'branch', 'ifscCode', 'swiftCode'];
+    step1Fields.forEach(field => dispatch({ type: 'UPDATE_FORM_DATA', field, value: '' }));
+  };
+
+  const clearStep2Data = () => {
+    const step2Fields = ['customerType', 'selectedB2BCustomer', 'selectedB2BCustomerName', 'b2bCustomerGstNumber', 'b2bCustomerAddress', 'b2bPhoneNumber', 'b2bCustomerStateCode', 'b2bEmail', 'b2cFullName', 'b2cPhoneNumber', 'b2cEmail', 'b2cAddress', 'b2cCity', 'b2cState', 'b2cPincode', 'b2cDateOfBirth', 'b2cGender'];
+    step2Fields.forEach(field => dispatch({ type: 'UPDATE_FORM_DATA', field, value: '' }));
+  };
+
+  const clearStep3Data = () => {
+    const step3Fields = ['partyName', 'invoiceNumber', 'dateReceived', 'amountReceived', 'applyGST', 'paymentType', 'selectedCourses', 'deliveryNote'];
+    step3Fields.forEach(field => {
+      if (field === 'selectedCourses') {
+        dispatch({ type: 'UPDATE_FORM_DATA', field, value: [] });
+      } else if (field === 'applyGST') {
+        dispatch({ type: 'UPDATE_FORM_DATA', field, value: false });
+      } else {
+        dispatch({ type: 'UPDATE_FORM_DATA', field, value: '' });
+      }
+    });
+  };
+
+  const clearStep4Data = () => {
+    const step4Fields = ['dispatchDocNo', 'deliveryNoteDate', 'dispatchThrough', 'destination', 'termsOfDelivery'];
+    step4Fields.forEach(field => dispatch({ type: 'UPDATE_FORM_DATA', field, value: '' }));
+  };
+
+  // Clear all stepper data
+  const clearAllStepperData = () => {
+    const allFields = [
+      // Step 1
+      'companyAccountNumber', 'companyName', 'gstNumber', 'companyAddress', 'stateCode', 'bankName', 'branch', 'ifscCode', 'swiftCode',
+      // Step 2
+      'customerType', 'selectedB2BCustomer', 'selectedB2BCustomerName', 'b2bCustomerGstNumber', 'b2bCustomerAddress', 'b2bPhoneNumber', 'b2bCustomerStateCode', 'b2bEmail', 'b2cFullName', 'b2cPhoneNumber', 'b2cEmail', 'b2cAddress', 'b2cCity', 'b2cState', 'b2cPincode', 'b2cDateOfBirth', 'b2cGender',
+      // Step 3
+      'partyName', 'invoiceNumber', 'dateReceived', 'amountReceived', 'applyGST', 'paymentType', 'selectedCourses', 'deliveryNote',
+      // Step 4
+      'dispatchDocNo', 'deliveryNoteDate', 'dispatchThrough', 'destination', 'termsOfDelivery'
+    ];
+
+    allFields.forEach(field => {
+      if (field === 'selectedCourses') {
+        dispatch({ type: 'UPDATE_FORM_DATA', field, value: [] });
+      } else if (field === 'applyGST') {
+        dispatch({ type: 'UPDATE_FORM_DATA', field, value: false });
+      } else {
+        dispatch({ type: 'UPDATE_FORM_DATA', field, value: '' });
+      }
+    });
+
+    // Reset saved data states
+    dispatch({ type: 'SET_SAVED_INVOICE_DATA', payload: null });
+    dispatch({ type: 'SET_SAVED_RECEIPT_DATA', payload: null });
+  };
+
   // Navigation functions
-  const nextStep = () => {
+  const nextStep = async () => {
     if (state.currentStep < 7) {
+      // Check if data upload is required and completed before proceeding
+      if (state.currentStep === 5 && !state.savedInvoiceData) {
+        toast.error('Please upload the invoice data before proceeding to the next step.');
+        return;
+      } else if (state.currentStep === 6 && !state.savedReceiptData) {
+        toast.error('Please upload the receipt data before proceeding to the next step.');
+        return;
+      }
+
       dispatch({ type: 'SET_CURRENT_STEP', payload: state.currentStep + 1 });
     }
   };
@@ -344,6 +421,20 @@ function NewStepper() {
 
   const goToStep = (stepId) => {
     dispatch({ type: 'SET_CURRENT_STEP', payload: stepId });
+  };
+
+  // Handle navigation selection
+  const handleNavSelection = (navOption) => {
+    dispatch({ type: 'SET_SELECTED_NAV', payload: navOption });
+
+    // Set current step based on navigation option
+    if (navOption === 'ReceiptInvoiceData') {
+      dispatch({ type: 'SET_CURRENT_STEP', payload: 1 });
+    } else if (navOption === 'ReceivedPayment') {
+      dispatch({ type: 'SET_CURRENT_STEP', payload: 6 });
+    } else if (navOption === 'INVOICE_REFERENCE') {
+      dispatch({ type: 'SET_CURRENT_STEP', payload: 7 });
+    }
   };
 
   // Validation for each step
@@ -387,12 +478,161 @@ function NewStepper() {
     return errors;
   };
 
-  // Handle final submission
-  const handleSubmit = async (invoiceData) => {
-    dispatch({ type: 'SET_SUBMITTING', payload: true });
+  // Get current candidate ID from the most recent candidate
+  const getCurrentCandidateId = async () => {
     try {
-      // Upload to backend (similar to invoice-generation endpoints)
-      const response = await fetch('http://localhost:5000/save-invoice', {
+      const response = await fetch('http://localhost:5000/candidate/get-current-candidate-for-certificate');
+      if (response.ok) {
+        const result = await response.json();
+        if (result.status === 'success' && result.data) {
+          // The data doesn't have candidate_id, so we need to search by name
+          const firstName = result.data.firstName;
+          const lastName = result.data.lastName;
+          const passport = result.data.passport;
+          if (firstName && lastName && passport) {
+            const searchResponse = await fetch(`http://localhost:5000/candidate/search-candidates?q=${encodeURIComponent(firstName)}&field=firstName`);
+            if (searchResponse.ok) {
+              const searchResult = await searchResponse.json();
+              if (searchResult.data && searchResult.data.length > 0) {
+                // Find the one that matches
+                const candidate = searchResult.data.find(c =>
+                  c.json_data?.lastName === lastName && c.json_data?.passport === passport
+                );
+                if (candidate) {
+                  return candidate.candidate_id || candidate.id;
+                }
+              }
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.warn('Failed to get current candidate ID:', error);
+    }
+    return 1; // Fallback
+  };
+
+  // Get or create candidate ID based on customer type
+  const getCandidateId = async () => {
+    try {
+      if (state.formData.customerType === 'B2C') {
+        // For B2C, try to search for existing candidate first
+        if (state.formData.b2cPhoneNumber) {
+          try {
+            const searchResponse = await fetch(`http://localhost:5000/candidate/search-candidates?q=${encodeURIComponent(state.formData.b2cPhoneNumber)}&field=phone`);
+            if (searchResponse.ok) {
+              const searchResult = await searchResponse.json();
+              if (searchResult.data && searchResult.data.length > 0) {
+                console.log('Found existing candidate:', searchResult.data[0]);
+                return searchResult.data[0].candidate_id || searchResult.data[0].id;
+              }
+            }
+          } catch (searchError) {
+            console.warn('Search failed, proceeding to create:', searchError);
+          }
+        }
+
+        // Create new candidate if not found
+        const candidateData = {
+          firstName: state.formData.b2cFullName || 'Unknown',
+          lastName: '',
+          passport: state.formData.b2cPhoneNumber || `B2C_${Date.now()}`, // Unique identifier
+          dob: state.formData.b2cDateOfBirth || '',
+          email: state.formData.b2cEmail || '',
+          phone: state.formData.b2cPhoneNumber || '',
+          address: state.formData.b2cAddress || '',
+          city: state.formData.b2cCity || '',
+          state: state.formData.b2cState || '',
+          pincode: state.formData.b2cPincode || '',
+          gender: state.formData.b2cGender || ''
+        };
+
+        const response = await fetch('http://localhost:5000/candidate/save-candidate-data', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(candidateData),
+        });
+
+        if (response.ok) {
+          const result = await response.json();
+          console.log('Created new candidate:', result);
+          return result.candidate_id;
+        } else {
+          const errorText = await response.text();
+          console.error('Candidate creation failed:', response.status, errorText);
+          throw new Error(`Failed to create candidate: ${response.status} ${errorText}`);
+        }
+      } else if (state.formData.customerType === 'B2B') {
+        // For B2B, try to search for existing candidate first
+        if (state.formData.selectedB2BCustomerName) {
+          try {
+            const searchResponse = await fetch(`http://localhost:5000/candidate/search-candidates?q=${encodeURIComponent(state.formData.selectedB2BCustomerName)}&field=firstName`);
+            if (searchResponse.ok) {
+              const searchResult = await searchResponse.json();
+              if (searchResult.data && searchResult.data.length > 0) {
+                console.log('Found existing B2B candidate:', searchResult.data[0]);
+                return searchResult.data[0].candidate_id || searchResult.data[0].id;
+              }
+            }
+          } catch (searchError) {
+            console.warn('B2B search failed:', searchError);
+          }
+        }
+
+        // For B2B, use the current candidate ID instead of creating new
+        console.log('No existing candidate found for B2B customer, using current candidate ID');
+        return await getCurrentCandidateId();
+      }
+    } catch (error) {
+      console.error('Error in getCandidateId:', error);
+      // Fallback: try to use a default candidate or show error
+      toast.error(`Failed to get candidate ID: ${error.message}. Using fallback.`);
+      return 1; // Fallback to existing behavior
+    }
+    return 1; // Fallback
+  };
+
+  // Save Steps 1-4 data to ReceiptInvoiceData table
+  const saveInvoiceData = async () => {
+    dispatch({ type: 'SET_UPLOADING_INVOICE', payload: true });
+    try {
+      // Get dynamic candidate ID with fallback
+      let candidateId = 1; // Default fallback
+      try {
+        candidateId = await getCandidateId();
+      } catch (candidateError) {
+        console.warn('Candidate ID retrieval failed, using default:', candidateError);
+        toast.warn('Using default candidate ID due to backend connectivity issues');
+      }
+
+      // Prepare data for ReceiptInvoiceData table
+      const invoiceData = {
+        invoice_no: state.formData.invoiceNumber,
+        candidate_id: candidateId,
+        company_name: state.formData.companyName,
+        company_account_number: state.formData.companyAccountNumber,
+        customer_name: state.formData.customerType === 'B2B' ? state.formData.selectedB2BCustomerName : state.formData.b2cFullName,
+        customer_phone: state.formData.customerType === 'B2B' ? state.formData.b2bPhoneNumber : state.formData.b2cPhoneNumber,
+        party_name: state.formData.partyName,
+        invoice_date: state.formData.dateReceived,
+        amount: parseFloat(state.formData.amountReceived) || 0,
+        gst_applied: 0, // TODO: Calculate GST applied if needed
+        gst: 0, // TODO: Calculate GST if needed
+        final_amount: parseFloat(state.formData.amountReceived) || 0, // TODO: Calculate final amount
+        selected_courses: state.formData.selectedCourses || [],
+        delivery_note: state.formData.deliveryNote || '',
+        dispatch_doc_no: state.formData.dispatchDocNo || '',
+        delivery_date: state.formData.deliveryNoteDate || null,
+        dispatch_through: state.formData.dispatchThrough || '',
+        destination: state.formData.destination || '',
+        terms_of_delivery: state.formData.termsOfDelivery || ''
+      };
+
+      console.log('Sending invoice data:', invoiceData);
+
+      const response = await fetch('http://localhost:5000/receipt-invoice-data', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -401,18 +641,94 @@ function NewStepper() {
       });
 
       if (response.ok) {
-        toast.success('Invoice uploaded successfully!');
-        // Move to confirmation step
-        dispatch({ type: 'SET_CURRENT_STEP', payload: 7 });
+        const result = await response.json();
+        dispatch({ type: 'SET_SAVED_INVOICE_DATA', payload: result.data });
+        toast.success('Invoice data saved successfully!');
+        return result.data;
       } else {
-        throw new Error('Failed to upload invoice');
+        const errorText = await response.text();
+        console.error('Invoice save failed:', response.status, errorText);
+        throw new Error(`Failed to save invoice data: ${response.status} ${errorText}`);
       }
     } catch (error) {
-      console.error('Error uploading invoice:', error);
-      toast.error('Error uploading invoice. Please try again.');
+      console.error('Error saving invoice data:', error);
+      toast.error(`Error saving invoice data: ${error.message}`);
+      throw error;
     } finally {
-      dispatch({ type: 'SET_SUBMITTING', payload: false });
+      dispatch({ type: 'SET_UPLOADING_INVOICE', payload: false });
     }
+  };
+
+  // Save Step 6 data to ReceiptAmountReceived table
+  const saveReceiptData = async () => {
+    dispatch({ type: 'SET_UPLOADING_RECEIPT', payload: true });
+    try {
+      // Get dynamic candidate ID with fallback (reuse the same logic)
+      let candidateId = 1; // Default fallback
+      try {
+        candidateId = await getCandidateId();
+      } catch (candidateError) {
+        console.warn('Candidate ID retrieval failed for receipt, using default:', candidateError);
+        toast.warn('Using default candidate ID for receipt due to backend connectivity issues');
+      }
+
+      // Prepare data for ReceiptAmountReceived table
+      const receiptData = {
+        candidate_id: candidateId,
+        amount_received: parseFloat(state.formData.amountReceived) || 0,
+        payment_type: state.formData.paymentType || '',
+        transaction_date: state.formData.dateReceived,
+        invoice_reference: state.formData.invoiceNumber,
+        remark: state.formData.deliveryNote || '' // Using deliveryNote as remark
+      };
+
+      console.log('Sending receipt data:', receiptData);
+
+      const response = await fetch('http://localhost:5000/receipt-amount-received', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(receiptData),
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        dispatch({ type: 'SET_SAVED_RECEIPT_DATA', payload: result.data });
+        toast.success('Receipt data saved successfully!');
+        return result.data;
+      } else {
+        const errorText = await response.text();
+        console.error('Receipt save failed:', response.status, errorText);
+        throw new Error(`Failed to save receipt data: ${response.status} ${errorText}`);
+      }
+    } catch (error) {
+      console.error('Error saving receipt data:', error);
+      toast.error(`Error saving receipt data: ${error.message}`);
+      throw error;
+    } finally {
+      dispatch({ type: 'SET_UPLOADING_RECEIPT', payload: false });
+    }
+  };
+
+
+  // Navigation options
+  const navOptions = [
+    { id: 'ReceiptInvoiceData', label: 'Receipt Invoice Data', icon: FileText, steps: [1, 2, 3, 4, 5] },
+    { id: 'ReceivedPayment', label: 'Received Payment', icon: Receipt, steps: [6] },
+    { id: 'INVOICE_REFERENCE', label: 'Invoice Reference', icon: FileCheck, steps: [7] }
+  ];
+
+  // Get steps to display based on selected navigation
+  const getStepsToDisplay = () => {
+    const selectedOption = navOptions.find(option => option.id === state.selectedNav);
+    return selectedOption ? selectedOption.steps : [1, 2, 3, 4, 5];
+  };
+
+  // Get filtered steps for progress display
+  const getFilteredSteps = () => {
+    const stepsToShow = getStepsToDisplay();
+    return steps.filter(step => stepsToShow.includes(step.id));
   };
 
   return (
@@ -432,118 +748,154 @@ function NewStepper() {
               <FileText className="w-8 h-8 text-green-300" />
               <div>
                 <h1 className="text-2xl font-bold text-white">New Invoice Stepper</h1>
-                <p className="text-green-200 text-sm">Create invoice with 6-step process</p>
+                <p className="text-green-200 text-sm">Create invoice with 7-step process</p>
               </div>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Main Content */}
-      <div className="max-w-6xl mx-auto p-6">
-        <div className="bg-white/95 backdrop-blur-sm rounded-2xl shadow-xl overflow-hidden">
-          {/* Progress Header */}
-          <div className="bg-gradient-to-r from-green-600 to-green-700 p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-2xl font-bold text-white">Create New Invoice</h2>
-              <span className="text-green-100 text-sm">Step {state.currentStep} of 7</span>
-            </div>
-
-            {/* Progress Steps */}
-            <div className="flex items-center space-x-4 overflow-x-auto">
-              {steps.map((step, index) => (
-                <React.Fragment key={step.id}>
-                  <motion.div
-                    className={`flex items-center space-x-2 cursor-pointer ${state.currentStep >= step.id ? 'text-white' : 'text-green-200'} hover:text-white transition-colors`}
-                    initial={{ opacity: 0, x: -20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: index * 0.1 }}
-                    onClick={() => goToStep(step.id)}
-                  >
-                    <div className={`p-2 rounded-full transition-all duration-200 ${state.currentStep >= step.id ? 'bg-white text-green-600 hover:bg-green-100' : 'bg-green-500 text-green-100 hover:bg-green-400'}`}>
-                      {state.currentStep > step.id ? (
-                        <CheckCircle className="w-5 h-5" />
-                      ) : (
-                        <step.icon className="w-5 h-5" />
-                      )}
-                    </div>
-                    <div className="hidden sm:block">
-                      <p className="font-semibold text-sm">{step.title}</p>
-                      <p className="text-xs opacity-75">{step.description}</p>
-                    </div>
-                  </motion.div>
-                  {index < steps.length - 1 && (
-                    <ChevronRight className={`w-5 h-5 ${state.currentStep > step.id ? 'text-white' : 'text-green-300'}`} />
-                  )}
-                </React.Fragment>
-              ))}
-            </div>
+      {/* Main Content with Sidebar */}
+      <div className="flex min-h-[calc(100vh-80px)]">
+        {/* Navigation Sidebar */}
+        <div className="w-80 bg-white/10 backdrop-blur-sm border-r border-white/20 p-6">
+          <h3 className="text-white font-semibold text-lg mb-6">Navigation</h3>
+          <div className="space-y-3">
+            {navOptions.map((option) => (
+              <button
+                key={option.id}
+                onClick={() => handleNavSelection(option.id)}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${
+                  state.selectedNav === option.id
+                    ? 'bg-green-600 text-white shadow-lg'
+                    : 'bg-white/10 text-white hover:bg-white/20'
+                }`}
+              >
+                <option.icon className="w-5 h-5" />
+                <span className="font-medium">{option.label}</span>
+              </button>
+            ))}
           </div>
+        </div>
+
+        {/* Main Content Area */}
+        <div className="flex-1 p-6">
+          <div className="bg-white/95 backdrop-blur-sm rounded-2xl shadow-xl overflow-hidden">
+            {/* Progress Header */}
+            <div className="bg-gradient-to-r from-green-600 to-green-700 p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-2xl font-bold text-white">
+                  {navOptions.find(option => option.id === state.selectedNav)?.label || 'Create New Invoice'}
+                </h2>
+                <span className="text-green-100 text-sm">
+                  Step {state.currentStep} of {getFilteredSteps().length} ({state.selectedNav})
+                </span>
+              </div>
+
+              {/* Progress Steps */}
+              <div className="flex items-center space-x-4 overflow-x-auto">
+                {getFilteredSteps().map((step, index) => (
+                  <React.Fragment key={step.id}>
+                    <motion.div
+                      className={`flex items-center space-x-2 cursor-pointer ${state.currentStep >= step.id ? 'text-white' : 'text-green-200'} hover:text-white transition-colors`}
+                      initial={{ opacity: 0, x: -20 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: index * 0.1 }}
+                      onClick={() => goToStep(step.id)}
+                    >
+                      <div className={`p-2 rounded-full transition-all duration-200 ${state.currentStep >= step.id ? 'bg-white text-green-600 hover:bg-green-100' : 'bg-green-500 text-green-100 hover:bg-green-400'}`}>
+                        {state.currentStep > step.id ? (
+                          <CheckCircle className="w-5 h-5" />
+                        ) : (
+                          <step.icon className="w-5 h-5" />
+                        )}
+                      </div>
+                      <div className="hidden sm:block">
+                        <p className="font-semibold text-sm">{step.title}</p>
+                        <p className="text-xs opacity-75">{step.description}</p>
+                      </div>
+                    </motion.div>
+                    {index < getFilteredSteps().length - 1 && (
+                      <ChevronRight className={`w-5 h-5 ${state.currentStep > step.id ? 'text-white' : 'text-green-300'}`} />
+                    )}
+                  </React.Fragment>
+                ))}
+              </div>
+            </div>
 
           {/* Form Content */}
           <div className="p-8">
             <AnimatePresence mode="wait">
-              {state.currentStep === 1 && (
+              {getStepsToDisplay().includes(1) && state.currentStep === 1 && (
                 <motion.div key="step1" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} transition={{ duration: 0.3 }}>
                   <OrgInfoStep
                     formData={state.formData}
                     onInputChange={handleInputChange}
+                    onClearData={clearStep1Data}
                     loadingCompanyDetails={state.loadingCompanyDetails}
                     companyAccounts={state.companyAccounts}
                   />
                 </motion.div>
               )}
 
-              {state.currentStep === 2 && (
+              {getStepsToDisplay().includes(2) && state.currentStep === 2 && (
                 <motion.div key="step2" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} transition={{ duration: 0.3 }}>
                   <ClientInfoStep
                     formData={state.formData}
                     onInputChange={handleInputChange}
+                    onClearData={clearStep2Data}
                     customers={state.customers}
                   />
                 </motion.div>
               )}
 
-              {state.currentStep === 3 && (
+              {getStepsToDisplay().includes(3) && state.currentStep === 3 && (
                 <motion.div key="step3" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} transition={{ duration: 0.3 }}>
                   <BillingInfoStep
                     formData={state.formData}
                     onInputChange={handleInputChange}
+                    onClearData={clearStep3Data}
                     availableCertificates={state.availableCertificates}
                     rateData={state.rateData}
                   />
                 </motion.div>
               )}
 
-              {state.currentStep === 4 && (
+              {getStepsToDisplay().includes(4) && state.currentStep === 4 && (
                 <motion.div key="step4" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} transition={{ duration: 0.3 }}>
                   <InvoiceDetailsStep
                     formData={state.formData}
                     onInputChange={handleInputChange}
+                    onClearData={clearStep4Data}
                   />
                 </motion.div>
               )}
 
-              {state.currentStep === 5 && (
+              {getStepsToDisplay().includes(5) && state.currentStep === 5 && (
                 <motion.div key="step5" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} transition={{ duration: 0.3 }}>
                   <FinalizeStep
                     formData={state.formData}
-                    onSubmit={handleSubmit}
-                    isSubmitting={state.isSubmitting}
+                    onUploadInvoiceData={saveInvoiceData}
+                    onClearAllData={clearAllStepperData}
+                    savedInvoiceData={state.savedInvoiceData}
+                    isUploadingInvoice={state.isUploadingInvoice}
                   />
                 </motion.div>
               )}
 
-              {state.currentStep === 6 && (
+              {getStepsToDisplay().includes(6) && state.currentStep === 6 && (
                 <motion.div key="step6" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} transition={{ duration: 0.3 }}>
                   <ReceivedPayment
                     formData={state.formData}
                     onInputChange={handleInputChange}
+                    onUploadReceiptData={saveReceiptData}
+                    savedReceiptData={state.savedReceiptData}
+                    isUploadingReceipt={state.isUploadingReceipt}
                   />
                 </motion.div>
               )}
 
-              {state.currentStep === 7 && (
+              {getStepsToDisplay().includes(7) && state.currentStep === 7 && (
                 <motion.div key="step7" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} transition={{ duration: 0.3 }}>
                   <INVOICE_REFERENCE formData={state.formData} />
                 </motion.div>
@@ -554,9 +906,9 @@ function NewStepper() {
             <div className="flex justify-between items-center mt-12 pt-8 border-t border-gray-200">
               <button
                 onClick={prevStep}
-                disabled={state.currentStep === 1}
+                disabled={state.currentStep === Math.min(...getStepsToDisplay())}
                 className={`px-8 py-3 rounded-xl font-semibold transition-all ${
-                  state.currentStep === 1
+                  state.currentStep === Math.min(...getStepsToDisplay())
                     ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
                     : 'bg-gray-600 hover:bg-gray-700 text-white'
                 }`}
@@ -565,7 +917,7 @@ function NewStepper() {
               </button>
 
               <div className="flex gap-4">
-                {state.currentStep < 7 ? (
+                {state.currentStep < Math.max(...getStepsToDisplay()) ? (
                   <button
                     onClick={() => {
                       const errors = validateCurrentStep();
@@ -592,6 +944,7 @@ function NewStepper() {
           </div>
         </div>
       </div>
+    </div>
 
       {/* Toast Container */}
       <ToastContainer

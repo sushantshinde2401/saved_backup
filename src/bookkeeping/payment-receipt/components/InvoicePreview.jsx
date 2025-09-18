@@ -38,12 +38,6 @@ const InvoicePreview = forwardRef(({ data }, ref) => {
             <td className="py-2">Payment Received</td>
             <td className="text-right py-2">₹{data.amountReceived}</td>
           </tr>
-          {data.discount > 0 && (
-            <tr>
-              <td className="py-2">Discount</td>
-              <td className="text-right py-2">-₹{data.discount}</td>
-            </tr>
-          )}
           {data.gst && (
             <tr>
               <td className="py-2">GST (18%)</td>

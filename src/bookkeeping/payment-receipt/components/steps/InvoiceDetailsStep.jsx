@@ -1,7 +1,7 @@
 import React from 'react';
-import { Truck, FileText, Calendar, MapPin, FileCheck } from 'lucide-react';
+import { Truck, FileText, Calendar, MapPin, FileCheck, RotateCcw } from 'lucide-react';
 
-function InvoiceDetailsStep({ formData, onInputChange }) {
+function InvoiceDetailsStep({ formData, onInputChange, onClearData }) {
   // Delivery note options
   const deliveryNoteOptions = ["Note A", "Note B", "Note C", "Note D"];
 
@@ -111,6 +111,17 @@ function InvoiceDetailsStep({ formData, onInputChange }) {
             rows="4"
           />
         </div>
+      </div>
+
+      {/* Clear Data Button */}
+      <div className="flex justify-end mt-8 pt-6 border-t border-gray-200">
+        <button
+          onClick={onClearData}
+          className="flex items-center gap-2 px-6 py-3 bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 rounded-xl transition-colors font-semibold"
+        >
+          <RotateCcw className="w-4 h-4" />
+          Clear Data
+        </button>
       </div>
     </div>
   );

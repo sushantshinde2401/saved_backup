@@ -426,6 +426,209 @@ def save_candidate_with_files(candidate_name, candidate_folder, candidate_folder
         logger.error(f"[DB] ❌ Failed to save candidate with files: {e}")
         # Note: In a production system, you might want to implement rollback logic here
         # For now, we'll let the calling code handle partial failures
+def insert_receipt_invoice_data(receipt_data):
+    """
+    Insert a new ReceiptInvoiceData record
+
+    Args:
+        receipt_data (dict): Receipt invoice data to insert
+
+    Returns:
+        int: ID of the inserted record
+    """
+    # First, ensure table exists
+    create_table_query = """
+        CREATE TABLE IF NOT EXISTS ReceiptInvoiceData (
+            invoice_no VARCHAR(50) PRIMARY KEY,
+            candidate_id INTEGER,
+            company_name VARCHAR(255),
+            company_account_number VARCHAR(100),
+            customer_name VARCHAR(255),
+            customer_phone VARCHAR(20),
+            party_name VARCHAR(255),
+            invoice_date DATE,
+            amount DECIMAL(10,2),
+            gst DECIMAL(10,2) DEFAULT 0,
+            gst_applied DECIMAL(10,2) DEFAULT 0,
+            final_amount DECIMAL(10,2),
+            selected_courses JSONB,
+            delivery_note VARCHAR(100),
+            dispatch_doc_no VARCHAR(100),
+            delivery_date DATE,
+            dispatch_through VARCHAR(100),
+            destination TEXT,
+            terms_of_delivery TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """
+
+    # Add gst_applied column if it doesn't exist
+    add_column_query = """
+        ALTER TABLE ReceiptInvoiceData
+        ADD COLUMN IF NOT EXISTS gst_applied DECIMAL(10,2) DEFAULT 0
+    """
+
+    try:
+        # Create table if it doesn't exist
+        execute_query(create_table_query, fetch=False)
+        logger.info("[DB] ✅ Ensured ReceiptInvoiceData table exists")
+
+        # Add gst_applied column if missing
+        execute_query(add_column_query, fetch=False)
+        logger.info("[DB] ✅ Ensured gst_applied column exists")
+
+        # Now insert the data
+        query = """
+            INSERT INTO ReceiptInvoiceData (
+                invoice_no, candidate_id, company_name, company_account_number,
+                customer_name, customer_phone, party_name, invoice_date,
+                amount, gst, gst_applied, final_amount, selected_courses,
+                delivery_note, dispatch_doc_no, delivery_date, dispatch_through,
+                destination, terms_of_delivery
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING invoice_no
+        """
+
+        result = execute_query(query, (
+            receipt_data['invoice_no'],
+            receipt_data.get('candidate_id'),
+            receipt_data.get('company_name'),
+            receipt_data.get('company_account_number'),
+            receipt_data.get('customer_name'),
+            receipt_data.get('customer_phone'),
+            receipt_data.get('party_name'),
+            receipt_data.get('invoice_date'),
+            receipt_data.get('amount', 0),
+            receipt_data.get('gst', 0),
+            receipt_data.get('gst_applied', 0),
+            receipt_data.get('final_amount', 0),
+            json.dumps(receipt_data.get('selected_courses', [])),
+            receipt_data.get('delivery_note'),
+            receipt_data.get('dispatch_doc_no'),
+            receipt_data.get('delivery_date'),
+            receipt_data.get('dispatch_through'),
+            receipt_data.get('destination'),
+            receipt_data.get('terms_of_delivery')
+        ))
+
+        if result:
+            invoice_no = result[0]['invoice_no']
+            logger.info(f"[DB] ✅ Inserted ReceiptInvoiceData record for invoice: {invoice_no}")
+            return invoice_no
+        else:
+            raise Exception("No invoice_no returned from insert")
+    except Exception as e:
+        logger.error(f"[DB] ❌ Failed to insert ReceiptInvoiceData: {e}")
+        raise
+
+def get_receipt_invoice_data(invoice_no=None, candidate_id=None, limit=50, offset=0):
+    """
+    Retrieve ReceiptInvoiceData records
+
+    Args:
+        invoice_no (str): Filter by invoice number
+        candidate_id (int): Filter by candidate ID
+        limit (int): Maximum number of records to return
+        offset (int): Number of records to skip
+
+    Returns:
+        list: List of receipt invoice records
+    """
+    if invoice_no:
+        query = """
+            SELECT * FROM ReceiptInvoiceData
+            WHERE invoice_no = %s
+            ORDER BY created_at DESC
+        """
+        params = (invoice_no,)
+    elif candidate_id:
+        query = """
+            SELECT * FROM ReceiptInvoiceData
+            WHERE candidate_id = %s
+            ORDER BY created_at DESC
+            LIMIT %s OFFSET %s
+        """
+        params = (candidate_id, limit, offset)
+    else:
+        query = """
+            SELECT * FROM ReceiptInvoiceData
+            ORDER BY created_at DESC
+            LIMIT %s OFFSET %s
+        """
+        params = (limit, offset)
+
+    try:
+        results = execute_query(query, params)
+        # Parse JSON fields
+        for result in results:
+            if result.get('selected_courses'):
+                result['selected_courses'] = json.loads(result['selected_courses'])
+
+        logger.info(f"[DB] Retrieved {len(results)} ReceiptInvoiceData records")
+        return results
+    except Exception as e:
+        logger.error(f"[DB] Failed to retrieve ReceiptInvoiceData: {e}")
+        raise
+
+def update_receipt_invoice_data(invoice_no, update_data):
+    """
+    Update a ReceiptInvoiceData record
+
+    Args:
+        invoice_no (str): Invoice number to update
+        update_data (dict): Fields to update
+
+    Returns:
+        bool: True if update successful
+    """
+    # Build dynamic update query
+    set_parts = []
+    params = []
+
+    for field, value in update_data.items():
+        if field == 'selected_courses':
+            set_parts.append(f"{field} = %s")
+            params.append(json.dumps(value))
+        else:
+            set_parts.append(f"{field} = %s")
+            params.append(value)
+
+    set_clause = ", ".join(set_parts)
+    query = f"""
+        UPDATE ReceiptInvoiceData
+        SET {set_clause}, updated_at = CURRENT_TIMESTAMP
+        WHERE invoice_no = %s
+    """
+    params.append(invoice_no)
+
+    try:
+        execute_query(query, params, fetch=False)
+        logger.info(f"[DB] ✅ Updated ReceiptInvoiceData for invoice: {invoice_no}")
+        return True
+    except Exception as e:
+        logger.error(f"[DB] ❌ Failed to update ReceiptInvoiceData: {e}")
+        raise
+
+def delete_receipt_invoice_data(invoice_no):
+    """
+    Delete a ReceiptInvoiceData record
+
+    Args:
+        invoice_no (str): Invoice number to delete
+
+    Returns:
+        bool: True if deletion successful
+    """
+    query = "DELETE FROM ReceiptInvoiceData WHERE invoice_no = %s"
+
+    try:
+        execute_query(query, (invoice_no,), fetch=False)
+        logger.info(f"[DB] ✅ Deleted ReceiptInvoiceData for invoice: {invoice_no}")
+        return True
+    except Exception as e:
+        logger.error(f"[DB] ❌ Failed to delete ReceiptInvoiceData: {e}")
+        raise
         raise
 
 # Initialize connection pool on module import

@@ -1,7 +1,7 @@
 import React from 'react';
-import { Building, Loader } from 'lucide-react';
+import { Building, Loader, RotateCcw } from 'lucide-react';
 
-function OrgInfoStep({ formData, onInputChange, loadingCompanyDetails, companyAccounts }) {
+function OrgInfoStep({ formData, onInputChange, onClearData, loadingCompanyDetails, companyAccounts }) {
   return (
     <div className="space-y-8">
       <div className="text-center mb-8">
@@ -172,6 +172,17 @@ function OrgInfoStep({ formData, onInputChange, loadingCompanyDetails, companyAc
             placeholder="Enter SWIFT code"
           />
         </div>
+      </div>
+
+      {/* Clear Data Button */}
+      <div className="flex justify-end mt-8 pt-6 border-t border-gray-200">
+        <button
+          onClick={onClearData}
+          className="flex items-center gap-2 px-6 py-3 bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 rounded-xl transition-colors font-semibold"
+        >
+          <RotateCcw className="w-4 h-4" />
+          Clear Data
+        </button>
       </div>
     </div>
   );

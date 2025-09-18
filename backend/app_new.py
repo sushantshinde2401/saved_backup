@@ -53,6 +53,10 @@ def create_app():
     app.register_blueprint(candidates_bp, url_prefix='/')
     app.register_blueprint(files_bp, url_prefix='/')
     app.register_blueprint(drive_bp, url_prefix='/')
+
+    # Additional bookkeeping routes for frontend compatibility
+    app.register_blueprint(files_bp, url_prefix='/bookkeeping')
+    app.register_blueprint(drive_bp, url_prefix='/bookkeeping')
     
     return app
 
