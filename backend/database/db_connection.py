@@ -450,6 +450,8 @@ def insert_receipt_invoice_data(receipt_data):
             amount DECIMAL(10,2),
             gst DECIMAL(10,2) DEFAULT 0,
             gst_applied DECIMAL(10,2) DEFAULT 0,
+            cgst DECIMAL(10,2) DEFAULT 0,
+            sgst DECIMAL(10,2) DEFAULT 0,
             final_amount DECIMAL(10,2),
             selected_courses JSONB,
             delivery_note VARCHAR(100),
@@ -463,10 +465,12 @@ def insert_receipt_invoice_data(receipt_data):
         )
     """
 
-    # Add gst_applied column if it doesn't exist
+    # Add gst_applied column if it doesn't exist (keep as DECIMAL for compatibility)
     add_column_query = """
         ALTER TABLE ReceiptInvoiceData
-        ADD COLUMN IF NOT EXISTS gst_applied DECIMAL(10,2) DEFAULT 0
+        ADD COLUMN IF NOT EXISTS gst_applied DECIMAL(10,2) DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS cgst DECIMAL(10,2) DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS sgst DECIMAL(10,2) DEFAULT 0
     """
 
     try:
@@ -483,12 +487,15 @@ def insert_receipt_invoice_data(receipt_data):
             INSERT INTO ReceiptInvoiceData (
                 invoice_no, candidate_id, company_name, company_account_number,
                 customer_name, customer_phone, party_name, invoice_date,
-                amount, gst, gst_applied, final_amount, selected_courses,
+                amount, gst, gst_applied, cgst, sgst, final_amount, selected_courses,
                 delivery_note, dispatch_doc_no, delivery_date, dispatch_through,
                 destination, terms_of_delivery
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING invoice_no
         """
+
+        # Convert boolean gst_applied to numeric for database compatibility
+        gst_applied_value = 1 if receipt_data.get('gst_applied', False) else 0
 
         result = execute_query(query, (
             receipt_data['invoice_no'],
@@ -501,7 +508,9 @@ def insert_receipt_invoice_data(receipt_data):
             receipt_data.get('invoice_date'),
             receipt_data.get('amount', 0),
             receipt_data.get('gst', 0),
-            receipt_data.get('gst_applied', 0),
+            gst_applied_value,  # Convert boolean to numeric (1/0)
+            receipt_data.get('cgst', 0),
+            receipt_data.get('sgst', 0),
             receipt_data.get('final_amount', 0),
             json.dumps(receipt_data.get('selected_courses', [])),
             receipt_data.get('delivery_note'),

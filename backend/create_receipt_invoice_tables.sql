@@ -13,7 +13,9 @@ CREATE TABLE IF NOT EXISTS ReceiptInvoiceData (
     invoice_date DATE,
     amount DECIMAL(10,2),
     gst DECIMAL(10,2) DEFAULT 0,
-    gst_applied DECIMAL(10,2) DEFAULT 0,
+    gst_applied BOOLEAN DEFAULT FALSE,
+    cgst DECIMAL(10,2) DEFAULT 0,
+    sgst DECIMAL(10,2) DEFAULT 0,
     final_amount DECIMAL(10,2),
     selected_courses JSONB,
     delivery_note VARCHAR(100),
@@ -38,6 +40,9 @@ COMMENT ON COLUMN ReceiptInvoiceData.invoice_no IS 'Unique invoice number (Prima
 COMMENT ON COLUMN ReceiptInvoiceData.candidate_id IS 'Foreign key reference to candidates table';
 COMMENT ON COLUMN ReceiptInvoiceData.selected_courses IS 'JSON array of selected courses/certificates';
 COMMENT ON COLUMN ReceiptInvoiceData.final_amount IS 'Final amount after GST applied';
+COMMENT ON COLUMN ReceiptInvoiceData.gst_applied IS 'Boolean flag indicating if GST is applied';
+COMMENT ON COLUMN ReceiptInvoiceData.cgst IS 'Central GST amount (9% of base amount)';
+COMMENT ON COLUMN ReceiptInvoiceData.sgst IS 'State GST amount (9% of base amount)';
 
 -- Display success message
 DO $$
@@ -48,7 +53,8 @@ BEGIN
     RAISE NOTICE '- invoice_no: VARCHAR(50) PRIMARY KEY';
     RAISE NOTICE '- candidate_id: INTEGER REFERENCES candidates(candidate_id)';
     RAISE NOTICE '- company_name, customer_name, party_name: VARCHAR(255)';
-    RAISE NOTICE '- amount, gst, gst_applied, final_amount: DECIMAL(10,2)';
+    RAISE NOTICE '- amount, gst, cgst, sgst, final_amount: DECIMAL(10,2)';
+    RAISE NOTICE '- gst_applied: BOOLEAN';
     RAISE NOTICE '- selected_courses: JSONB';
     RAISE NOTICE '- delivery_note, dispatch_doc_no, dispatch_through: VARCHAR';
     RAISE NOTICE '- destination, terms_of_delivery: TEXT';

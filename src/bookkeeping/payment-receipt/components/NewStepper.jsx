@@ -533,6 +533,14 @@ function NewStepper() {
         toast.warn('Using default candidate ID due to backend connectivity issues');
       }
 
+      // Calculate GST if applied
+      const baseAmount = parseFloat(state.formData.amountReceived) || 0;
+      const gstRate = 0.18; // 18% GST
+      const gstAmount = state.formData.applyGST ? baseAmount * gstRate : 0;
+      const cgstAmount = state.formData.applyGST ? gstAmount / 2 : 0; // 9% CGST
+      const sgstAmount = state.formData.applyGST ? gstAmount / 2 : 0; // 9% SGST
+      const finalAmount = baseAmount + gstAmount;
+
       // Prepare data for ReceiptInvoiceData table
       const invoiceData = {
         invoice_no: state.formData.invoiceNumber,
@@ -543,10 +551,12 @@ function NewStepper() {
         customer_phone: state.formData.customerType === 'B2B' ? state.formData.b2bPhoneNumber : state.formData.b2cPhoneNumber,
         party_name: state.formData.partyName,
         invoice_date: state.formData.dateReceived,
-        amount: parseFloat(state.formData.amountReceived) || 0,
-        gst_applied: 0, // TODO: Calculate GST applied if needed
-        gst: 0, // TODO: Calculate GST if needed
-        final_amount: parseFloat(state.formData.amountReceived) || 0, // TODO: Calculate final amount
+        amount: baseAmount,
+        gst: gstAmount,
+        gst_applied: state.formData.applyGST, // Boolean flag
+        cgst: cgstAmount,
+        sgst: sgstAmount,
+        final_amount: finalAmount,
         selected_courses: state.formData.selectedCourses || [],
         delivery_note: state.formData.deliveryNote || '',
         dispatch_doc_no: state.formData.dispatchDocNo || '',

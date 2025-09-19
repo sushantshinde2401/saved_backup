@@ -6,6 +6,7 @@ function BillingInfoStep({ formData, onInputChange, availableCertificates, rateD
   const [rateWarning, setRateWarning] = useState('');
   const [availableCompanies, setAvailableCompanies] = useState([]);
   const [loadingCompanies, setLoadingCompanies] = useState(false);
+  const [updatingAmount, setUpdatingAmount] = useState(false);
 
 
 
@@ -76,6 +77,15 @@ function BillingInfoStep({ formData, onInputChange, availableCertificates, rateD
     calculateTotalAmount();
   }, [formData.selectedCourses, formData.partyName, rateData]);
 
+  // Force re-render GST calculations when amount changes
+  useEffect(() => {
+    // This ensures GST fields update immediately when amountReceived changes
+    if (formData.amountReceived) {
+      // Trigger a re-render by updating a dummy state if needed
+      setCalculatedAmount(parseFloat(formData.amountReceived) || 0);
+    }
+  }, [formData.amountReceived]);
+
   const calculateTotalAmount = () => {
     if (!formData.partyName || !formData.selectedCourses || formData.selectedCourses.length === 0) {
       setCalculatedAmount(0);
@@ -115,7 +125,51 @@ function BillingInfoStep({ formData, onInputChange, availableCertificates, rateD
       ? formData.selectedCourses.filter(id => id !== courseId)
       : [...(formData.selectedCourses || []), courseId];
 
+    // Show updating indicator
+    setUpdatingAmount(true);
+
+    // Update selected courses
     onInputChange('selectedCourses', newSelectedCourses);
+
+    // Immediately recalculate amounts for real-time updates
+    setTimeout(() => {
+      calculateTotalAmountForCourses(newSelectedCourses);
+      setUpdatingAmount(false);
+    }, 100); // Small delay for visual feedback
+  };
+
+  const calculateTotalAmountForCourses = (courses) => {
+    if (!formData.partyName || !courses || courses.length === 0) {
+      setCalculatedAmount(0);
+      setRateWarning('');
+      onInputChange('amountReceived', '0');
+      return;
+    }
+
+    let totalAmount = 0;
+    let warnings = [];
+    const companyRates = rateData[formData.partyName] || {};
+
+    courses.forEach(courseId => {
+      const certificate = availableCertificates.find(cert => cert.id === courseId);
+      if (certificate) {
+        const rate = companyRates[certificate.certificateName] || 0;
+        totalAmount += rate;
+
+        if (rate === 0) {
+          warnings.push(`${certificate.certificateName}: Rate not found`);
+        }
+      }
+    });
+
+    setCalculatedAmount(totalAmount);
+    onInputChange('amountReceived', totalAmount.toString());
+
+    if (warnings.length > 0) {
+      setRateWarning(`⚠️ ${warnings.join(', ')}`);
+    } else {
+      setRateWarning('');
+    }
   };
 
   const calculateFinalAmount = () => {
@@ -186,16 +240,22 @@ function BillingInfoStep({ formData, onInputChange, availableCertificates, rateD
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
             <DollarSign className="w-4 h-4 inline mr-1" />
-            Amount Received
+            Amount Received {updatingAmount && <span className="text-xs text-blue-500">(updating...)</span>}
           </label>
           <input
             type="number"
-            value={formData.amountReceived || ''}
+            value={formData.amountReceived || '0'}
             onChange={(e) => onInputChange('amountReceived', e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+            className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-200 ${
+              updatingAmount ? 'border-blue-300 bg-blue-50 animate-pulse' :
+              (!formData.selectedCourses || formData.selectedCourses.length === 0) ? 'border-gray-300 bg-gray-50 text-gray-500' : 'border-gray-300 bg-white'
+            }`}
             placeholder="Auto-calculated from courses"
             readOnly
           />
+          {(!formData.selectedCourses || formData.selectedCourses.length === 0) && (
+            <p className="text-sm text-gray-500 mt-1">Select courses above to calculate amount</p>
+          )}
           {rateWarning && (
             <p className="text-sm text-orange-600 mt-1">{rateWarning}</p>
           )}
@@ -214,18 +274,49 @@ function BillingInfoStep({ formData, onInputChange, availableCertificates, rateD
           <label htmlFor="gst-checkbox" className="text-sm font-medium text-gray-700">Apply GST (18%)</label>
         </div>
 
+        {/* CGST and SGST Fields - Only show when GST is applied */}
+        {formData.applyGST && (
+          <>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                <DollarSign className="w-4 h-4 inline mr-1" />
+                CGST (9%) {updatingAmount && <span className="text-xs text-blue-500">(updating...)</span>}
+              </label>
+              <div className={`w-full px-3 py-2 border rounded-lg font-semibold transition-all duration-200 ${
+                updatingAmount ? 'border-blue-300 bg-blue-100 text-blue-900 animate-pulse' : 'border-gray-300 bg-blue-50 text-blue-800'
+              }`}>
+                ₹{((parseFloat(formData.amountReceived) || 0) * 0.09).toFixed(2)}
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                <DollarSign className="w-4 h-4 inline mr-1" />
+                SGST (9%) {updatingAmount && <span className="text-xs text-blue-500">(updating...)</span>}
+              </label>
+              <div className={`w-full px-3 py-2 border rounded-lg font-semibold transition-all duration-200 ${
+                updatingAmount ? 'border-blue-300 bg-blue-100 text-blue-900 animate-pulse' : 'border-gray-300 bg-blue-50 text-blue-800'
+              }`}>
+                ₹{((parseFloat(formData.amountReceived) || 0) * 0.09).toFixed(2)}
+              </div>
+            </div>
+          </>
+        )}
+
         {/* Final Amount */}
         <div className="md:col-span-2">
           <label className="block text-sm font-medium text-gray-700 mb-2">
             <DollarSign className="w-4 h-4 inline mr-1" />
-            Final Amount {formData.applyGST ? '(After GST)' : ''}
+            Final Amount {formData.applyGST ? '(After GST)' : ''} {updatingAmount && <span className="text-xs text-blue-500">(updating...)</span>}
           </label>
-          <div className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-green-50 text-green-800 font-bold text-lg">
+          <div className={`w-full px-3 py-2 border rounded-lg font-bold text-lg transition-all duration-200 ${
+            updatingAmount ? 'border-blue-300 bg-blue-50 text-blue-900 animate-pulse' : 'border-gray-300 bg-green-50 text-green-800'
+          }`}>
             ₹{calculateFinalAmount()}
           </div>
           <p className="text-sm text-gray-600 mt-1">
             Base: ₹{(parseFloat(formData.amountReceived) || 0).toLocaleString('en-IN')}
-            {formData.applyGST && ' + GST (18%)'}
+            {formData.applyGST && ` + CGST: ₹${((parseFloat(formData.amountReceived) || 0) * 0.09).toFixed(2)} + SGST: ₹${((parseFloat(formData.amountReceived) || 0) * 0.09).toFixed(2)}`}
           </p>
         </div>
 
