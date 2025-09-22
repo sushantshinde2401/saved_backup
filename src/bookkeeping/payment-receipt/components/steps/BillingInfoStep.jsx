@@ -175,7 +175,8 @@ function BillingInfoStep({ formData, onInputChange, availableCertificates, rateD
   const calculateFinalAmount = () => {
     const amount = parseFloat(formData.amountReceived) || 0;
     if (formData.applyGST) {
-      return (amount + (amount * 0.18)).toFixed(2);
+      const gstRate = parseFloat(formData.gstRate) || 18;
+      return (amount + (amount * gstRate / 100)).toFixed(2);
     }
     return amount.toFixed(2);
   };
@@ -262,16 +263,32 @@ function BillingInfoStep({ formData, onInputChange, availableCertificates, rateD
         </div>
 
 
-        {/* Apply GST Checkbox */}
-        <div className="md:col-span-2 flex items-center">
-          <input
-            type="checkbox"
-            checked={formData.applyGST || false}
-            onChange={(e) => onInputChange('applyGST', e.target.checked)}
-            className="w-4 h-4 mr-2"
-            id="gst-checkbox"
-          />
-          <label htmlFor="gst-checkbox" className="text-sm font-medium text-gray-700">Apply GST (18%)</label>
+        {/* Apply GST Checkbox and Rate Input */}
+        <div className="md:col-span-2 flex items-center space-x-4">
+          <div className="flex items-center">
+            <input
+              type="checkbox"
+              checked={formData.applyGST || false}
+              onChange={(e) => onInputChange('applyGST', e.target.checked)}
+              className="w-4 h-4 mr-2"
+              id="gst-checkbox"
+            />
+            <label htmlFor="gst-checkbox" className="text-sm font-medium text-gray-700">Apply GST</label>
+          </div>
+          {formData.applyGST && (
+            <div className="flex items-center space-x-2">
+              <label className="text-sm font-medium text-gray-700">GST Rate (%):</label>
+              <input
+                type="number"
+                value={formData.gstRate || 18}
+                onChange={(e) => onInputChange('gstRate', e.target.value)}
+                className="w-20 px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-purple-500"
+                min="0"
+                max="100"
+                step="0.01"
+              />
+            </div>
+          )}
         </div>
 
         {/* CGST and SGST Fields - Only show when GST is applied */}
@@ -280,24 +297,24 @@ function BillingInfoStep({ formData, onInputChange, availableCertificates, rateD
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 <DollarSign className="w-4 h-4 inline mr-1" />
-                CGST (9%) {updatingAmount && <span className="text-xs text-blue-500">(updating...)</span>}
+                CGST ({((parseFloat(formData.gstRate) || 18) / 2).toFixed(2)}%) {updatingAmount && <span className="text-xs text-blue-500">(updating...)</span>}
               </label>
               <div className={`w-full px-3 py-2 border rounded-lg font-semibold transition-all duration-200 ${
                 updatingAmount ? 'border-blue-300 bg-blue-100 text-blue-900 animate-pulse' : 'border-gray-300 bg-blue-50 text-blue-800'
               }`}>
-                ₹{((parseFloat(formData.amountReceived) || 0) * 0.09).toFixed(2)}
+                ₹{((parseFloat(formData.amountReceived) || 0) * ((parseFloat(formData.gstRate) || 18) / 2) / 100).toFixed(2)}
               </div>
             </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 <DollarSign className="w-4 h-4 inline mr-1" />
-                SGST (9%) {updatingAmount && <span className="text-xs text-blue-500">(updating...)</span>}
+                SGST ({((parseFloat(formData.gstRate) || 18) / 2).toFixed(2)}%) {updatingAmount && <span className="text-xs text-blue-500">(updating...)</span>}
               </label>
               <div className={`w-full px-3 py-2 border rounded-lg font-semibold transition-all duration-200 ${
                 updatingAmount ? 'border-blue-300 bg-blue-100 text-blue-900 animate-pulse' : 'border-gray-300 bg-blue-50 text-blue-800'
               }`}>
-                ₹{((parseFloat(formData.amountReceived) || 0) * 0.09).toFixed(2)}
+                ₹{((parseFloat(formData.amountReceived) || 0) * ((parseFloat(formData.gstRate) || 18) / 2) / 100).toFixed(2)}
               </div>
             </div>
           </>
@@ -316,7 +333,7 @@ function BillingInfoStep({ formData, onInputChange, availableCertificates, rateD
           </div>
           <p className="text-sm text-gray-600 mt-1">
             Base: ₹{(parseFloat(formData.amountReceived) || 0).toLocaleString('en-IN')}
-            {formData.applyGST && ` + CGST: ₹${((parseFloat(formData.amountReceived) || 0) * 0.09).toFixed(2)} + SGST: ₹${((parseFloat(formData.amountReceived) || 0) * 0.09).toFixed(2)}`}
+            {formData.applyGST && ` + GST: ₹${((parseFloat(formData.amountReceived) || 0) * (parseFloat(formData.gstRate) || 18) / 100).toFixed(2)}`}
           </p>
         </div>
 
@@ -389,8 +406,8 @@ function BillingInfoStep({ formData, onInputChange, availableCertificates, rateD
       {calculatedAmount > 0 && (
         <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
           <div className="flex justify-between items-center">
-            <span className="text-lg font-medium text-green-800">Total Amount:</span>
-            <span className="text-2xl font-bold text-green-600">₹{calculatedAmount.toLocaleString()}</span>
+            <span className="text-lg font-medium text-green-800">Total Amount {formData.applyGST ? '(Including GST)' : ''}:</span>
+            <span className="text-2xl font-bold text-green-600">₹{formData.applyGST ? calculateFinalAmount() : calculatedAmount.toLocaleString()}</span>
           </div>
         </div>
       )}

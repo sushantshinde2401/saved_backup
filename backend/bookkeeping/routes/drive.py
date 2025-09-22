@@ -49,7 +49,9 @@ def save_pdf():
         # Save PDF locally
         filename = secure_filename_with_timestamp(pdf_file.filename)
         pdf_path = os.path.join(Config.PDFS_FOLDER, filename)
+        print(f"[PDF SAVE] Saving legacy PDF to: {pdf_path}")
         pdf_file.save(pdf_path)
+        print(f"[PDF SAVE] Successfully saved legacy PDF: {pdf_path} ({os.path.getsize(pdf_path)} bytes)")
 
         try:
             # Upload to Google Drive
@@ -100,7 +102,9 @@ def legacy_upload():
         # Save PDF locally
         filename = secure_filename_with_timestamp(pdf_file.filename)
         pdf_path = os.path.join(Config.PDFS_FOLDER, filename)
+        print(f"[PDF SAVE] Saving PDF to: {pdf_path}")
         pdf_file.save(pdf_path)
+        print(f"[PDF SAVE] Successfully saved PDF: {pdf_path} ({os.path.getsize(pdf_path)} bytes)")
 
         try:
             # Upload to Google Drive

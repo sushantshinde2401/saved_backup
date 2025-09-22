@@ -26,6 +26,7 @@ import ClientInfoStep from './steps/ClientInfoStep';
 import BillingInfoStep from './steps/BillingInfoStep';
 import InvoiceDetailsStep from './steps/InvoiceDetailsStep';
 import FinalizeStep from './steps/FinalizeStep';
+import PreviewDownloadStep from './steps/PreviewDownloadStep';
 import ReceivedPayment from './steps/ReceivedPayment';
 import INVOICE_REFERENCE from './steps/INVOICE_REFERENCE';
 
@@ -136,8 +137,9 @@ function NewStepper() {
     { id: 3, title: 'Billing Info', icon: Receipt, description: 'Billing configuration' },
     { id: 4, title: 'Invoice Details', icon: Truck, description: 'Delivery & dispatch info' },
     { id: 5, title: 'Finalize', icon: Eye, description: 'Finalize & upload' },
-    { id: 6, title: 'ReceivedPayment', icon: FileCheck, description: 'ReceivedPayment step' },
-    { id: 7, title: 'INVOICE_REFERENCE', icon: CheckCircle2, description: 'Invoice reference' }
+    { id: 6, title: 'Preview & Download', icon: FileText, description: 'Preview and download invoice' },
+    { id: 7, title: 'ReceivedPayment', icon: FileCheck, description: 'ReceivedPayment step' },
+    { id: 8, title: 'INVOICE_REFERENCE', icon: CheckCircle2, description: 'Invoice reference' }
   ];
 
   // Load data on component mount
@@ -339,12 +341,12 @@ function NewStepper() {
 
   // Navigation functions
   const nextStep = async () => {
-    if (state.currentStep < 7) {
+    if (state.currentStep < 8) {
       // Check if data upload is required and completed before proceeding
       if (state.currentStep === 5 && !state.savedInvoiceData) {
         toast.error('Please upload the invoice data before proceeding to the next step.');
         return;
-      } else if (state.currentStep === 6 && !state.savedReceiptData) {
+      } else if (state.currentStep === 7 && !state.savedReceiptData) {
         toast.error('Please upload the receipt data before proceeding to the next step.');
         return;
       }
@@ -395,7 +397,13 @@ function NewStepper() {
         // Finalize step - no validation needed, just proceed
         break;
       case 6:
-        // Review step - no validation needed, just proceed
+        // Preview & Download step - no validation needed, just proceed
+        break;
+      case 7:
+        // ReceivedPayment step - no validation needed, just proceed
+        break;
+      case 8:
+        // INVOICE_REFERENCE step - no validation needed, just proceed
         break;
       default:
         break;
@@ -680,7 +688,7 @@ function NewStepper() {
           <div className="bg-gradient-to-r from-green-600 to-green-700 p-6">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-2xl font-bold text-white">Create New Invoice</h2>
-              <span className="text-green-100 text-sm">Step {state.currentStep} of 7</span>
+              <span className="text-green-100 text-sm">Step {state.currentStep} of 8</span>
             </div>
 
             {/* Progress Steps */}
@@ -771,6 +779,12 @@ function NewStepper() {
 
               {state.currentStep === 6 && (
                 <motion.div key="step6" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} transition={{ duration: 0.3 }}>
+                  <PreviewDownloadStep formData={state.formData} />
+                </motion.div>
+              )}
+
+              {state.currentStep === 7 && (
+                <motion.div key="step7" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} transition={{ duration: 0.3 }}>
                   <ReceivedPayment
                     formData={state.formData}
                     onInputChange={handleInputChange}
@@ -781,8 +795,8 @@ function NewStepper() {
                 </motion.div>
               )}
 
-              {state.currentStep === 7 && (
-                <motion.div key="step7" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} transition={{ duration: 0.3 }}>
+              {state.currentStep === 8 && (
+                <motion.div key="step8" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} transition={{ duration: 0.3 }}>
                   <INVOICE_REFERENCE formData={state.formData} />
                 </motion.div>
               )}
@@ -803,7 +817,7 @@ function NewStepper() {
               </button>
 
               <div className="flex gap-4">
-                {state.currentStep < 7 ? (
+                {state.currentStep < 8 ? (
                   <button
                     onClick={() => {
                       const errors = validateCurrentStep();

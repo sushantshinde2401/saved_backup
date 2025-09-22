@@ -106,13 +106,20 @@ def validate_required_files(request, required_files):
     return missing_files
 
 def cleanup_temp_files(file_paths):
-    """Clean up temporary files"""
+    """Clean up temporary files, but protect PDF files from automatic deletion"""
     cleaned_count = 0
     errors = []
-    
+    protected_count = 0
+
     for file_path in file_paths:
         try:
             if os.path.exists(file_path):
+                # Check if file is a PDF - protect from automatic deletion
+                if file_path.lower().endswith('.pdf'):
+                    print(f"[CLEANUP] Protected PDF file from deletion: {file_path}")
+                    protected_count += 1
+                    continue
+
                 os.remove(file_path)
                 cleaned_count += 1
                 print(f"[CLEANUP] Removed temporary file: {file_path}")
@@ -120,7 +127,10 @@ def cleanup_temp_files(file_paths):
             error_msg = f"Failed to remove {file_path}: {e}"
             errors.append(error_msg)
             print(f"[CLEANUP] {error_msg}")
-    
+
+    if protected_count > 0:
+        print(f"[CLEANUP] Protected {protected_count} PDF files from automatic deletion")
+
     return cleaned_count, errors
 
 def get_file_size_mb(file_path):

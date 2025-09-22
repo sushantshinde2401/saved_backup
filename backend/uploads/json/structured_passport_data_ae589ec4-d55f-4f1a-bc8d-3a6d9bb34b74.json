@@ -1,0 +1,30 @@
+{
+  "passport_front": {
+    "name": "",
+    "passport_no": "",
+    "date_of_birth": "",
+    "place_of_birth": "",
+    "date_of_issue": "",
+    "date_of_expiry": "",
+    "place_of_issue": ""
+  },
+  "passport_back": {
+    "address": "",
+    "emergency_contact": ""
+  },
+  "cdc": {
+    "cdc_no": "",
+    "indos_no": ""
+  },
+  "session_id": "ae589ec4-d55f-4f1a-bc8d-3a6d9bb34b74",
+  "temp_folder": "C:\\Users\\shank\\OneDrive\\Desktop\\backup_valueadded-main\\backend\\uploads\\temp/ae589ec4-d55f-4f1a-bc8d-3a6d9bb34b74",
+  "uploaded_files": {
+    "photo": "Screenshot_2024-10-16_135428.png",
+    "signature": "Screenshot_2024-10-16_135334.png",
+    "passport_front_img": "Screenshot_2025-09-03_115335.png",
+    "passport_back_img": "Screenshot_2025-09-03_115348.png"
+  },
+  "timestamp": "20250922_102421",
+  "last_updated": "2025-09-22T10:24:21.280916",
+  "ocr_enabled": false
+}

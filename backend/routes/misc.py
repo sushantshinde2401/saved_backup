@@ -37,6 +37,22 @@ def cleanup_expired_sessions():
                     folder_mtime = datetime.fromtimestamp(os.path.getmtime(session_path))
 
                     if folder_mtime < cutoff_time:
+                        # Check if folder contains PDF files - protect them from automatic deletion
+                        contains_pdf = False
+                        try:
+                            for filename in os.listdir(session_path):
+                                if filename.lower().endswith('.pdf'):
+                                    contains_pdf = True
+                                    break
+                        except Exception as e:
+                            print(f"[CLEANUP] Error checking folder contents {session_folder}: {e}")
+                            errors.append(f"Error checking {session_folder}: {str(e)}")
+                            continue
+
+                        if contains_pdf:
+                            print(f"[CLEANUP] Skipped session {session_folder} - contains PDF files")
+                            continue
+
                         try:
                             shutil.rmtree(session_path)
                             cleaned_folders.append(session_folder)
@@ -73,7 +89,9 @@ def save_pdf():
         filename = f"{timestamp}_{name}{ext}"
 
         pdf_path = f"{Config.PDFS_FOLDER}/{filename}"
+        print(f"[PDF SAVE] Saving PDF to: {pdf_path}")
         pdf_file.save(pdf_path)
+        print(f"[PDF SAVE] Successfully saved PDF: {pdf_path} ({os.path.getsize(pdf_path)} bytes)")
 
         try:
             # Upload to Google Drive
@@ -131,8 +149,9 @@ def save_right_pdf():
         filename = f"{timestamp}_{name}{ext}"
 
         pdf_path = f"{Config.PDFS_FOLDER}/{filename}"
+        print(f"[PDF SAVE] Saving right PDF to: {pdf_path}")
         pdf_file.save(pdf_path)
-
+        print(f"[PDF SAVE] Successfully saved right PDF: {pdf_path} ({os.path.getsize(pdf_path)} bytes)")
         print(f"[SUCCESS] Right PDF saved locally: {pdf_path}")
 
         return jsonify({

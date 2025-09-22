@@ -4,8 +4,8 @@
 -- Create ReceiptAmountReceived table (for step 6 data)
 CREATE TABLE IF NOT EXISTS ReceiptAmountReceived (
     receipt_amount_id SERIAL PRIMARY KEY,
-    candidate_id INTEGER REFERENCES candidates(candidate_id),
-    invoice_reference VARCHAR(50) REFERENCES ReceiptInvoiceData(invoice_no),
+    candidate_id INTEGER NOT NULL UNIQUE REFERENCES candidates(candidate_id),
+    invoice_reference VARCHAR(50) UNIQUE REFERENCES ReceiptInvoiceData(invoice_no),
     amount_received DECIMAL(10,2),
     payment_type VARCHAR(50),
     transaction_date DATE,
@@ -22,7 +22,7 @@ CREATE INDEX IF NOT EXISTS idx_receipt_amount_received_payment_type ON ReceiptAm
 -- Add comments for documentation
 COMMENT ON TABLE ReceiptAmountReceived IS 'Stores receipt/payment data from NewStepper step 6';
 COMMENT ON COLUMN ReceiptAmountReceived.receipt_amount_id IS 'Auto-generated primary key';
-COMMENT ON COLUMN ReceiptAmountReceived.candidate_id IS 'Foreign key reference to candidates table';
+COMMENT ON COLUMN ReceiptAmountReceived.candidate_id IS 'Foreign key reference to candidates table (one-to-one relationship)';
 COMMENT ON COLUMN ReceiptAmountReceived.invoice_reference IS 'Foreign key reference to ReceiptInvoiceData.invoice_no';
 COMMENT ON COLUMN ReceiptAmountReceived.amount_received IS 'Actual amount received in payment';
 COMMENT ON COLUMN ReceiptAmountReceived.payment_type IS 'Type of payment (e.g., cash, bank transfer)';
@@ -35,7 +35,7 @@ BEGIN
     RAISE NOTICE '';
     RAISE NOTICE 'ReceiptAmountReceived table structure:';
     RAISE NOTICE '- receipt_amount_id: SERIAL PRIMARY KEY';
-    RAISE NOTICE '- candidate_id: INTEGER REFERENCES candidates(candidate_id)';
+    RAISE NOTICE '- candidate_id: INTEGER NOT NULL UNIQUE REFERENCES candidates(candidate_id)';
     RAISE NOTICE '- invoice_reference: VARCHAR(50) REFERENCES ReceiptInvoiceData(invoice_no) (optional)';
     RAISE NOTICE '- amount_received: DECIMAL(10,2)';
     RAISE NOTICE '- payment_type: VARCHAR(50)';

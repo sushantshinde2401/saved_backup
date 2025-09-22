@@ -55,26 +55,28 @@ def upload_images():
 
                     print(f"[TEMP UPLOAD] Saved {file_key}: {filename} to session {session_id}")
 
-        # Perform OCR on passport and CDC images
-        if not Config.ENABLE_OCR:
-            return jsonify({
-                "status": "disabled",
-                "message": "OCR endpoints are disabled. Enable by setting Config.ENABLE_OCR = True or export ENABLE_OCR=true in backend .env"
-            }), 503
+        # Perform OCR on passport and CDC images (skip if disabled)
         ocr_data = {}
 
-        # Extract passport front data
-        if 'passport_front_img' in saved_files:
-            ocr_data['passport_front'] = extract_passport_front_data(saved_files['passport_front_img'])
+        if Config.ENABLE_OCR:
+            # Extract passport front data
+            if 'passport_front_img' in saved_files:
+                ocr_data['passport_front'] = extract_passport_front_data(saved_files['passport_front_img'])
 
-        # Extract passport back data
-        if 'passport_back_img' in saved_files:
-            ocr_data['passport_back'] = extract_passport_back_data(saved_files['passport_back_img'])
+            # Extract passport back data
+            if 'passport_back_img' in saved_files:
+                ocr_data['passport_back'] = extract_passport_back_data(saved_files['passport_back_img'])
 
-        # Extract CDC data if provided
-        if 'cdc_img' in saved_files:
-            ocr_data['cdc'] = extract_cdc_data(saved_files['cdc_img'])
+            # Extract CDC data if provided
+            if 'cdc_img' in saved_files:
+                ocr_data['cdc'] = extract_cdc_data(saved_files['cdc_img'])
+            else:
+                ocr_data['cdc'] = {"cdc_no": "", "indos_no": ""}
         else:
+            print("[OCR] OCR processing disabled - skipping AI extraction")
+            # Create placeholder OCR data when OCR is disabled
+            ocr_data['passport_front'] = {"name": "", "passport_no": "", "date_of_birth": "", "place_of_birth": "", "date_of_issue": "", "date_of_expiry": "", "place_of_issue": ""}
+            ocr_data['passport_back'] = {"address": "", "emergency_contact": ""}
             ocr_data['cdc'] = {"cdc_no": "", "indos_no": ""}
 
         # Add session information to OCR data
@@ -85,6 +87,7 @@ def upload_images():
         }
         ocr_data['timestamp'] = datetime.now().strftime("%Y%m%d_%H%M%S")
         ocr_data['last_updated'] = datetime.now().isoformat()
+        ocr_data['ocr_enabled'] = Config.ENABLE_OCR
 
         # Save OCR data to JSON file with session ID
         json_filename = f"structured_passport_data_{session_id}.json"
@@ -93,19 +96,20 @@ def upload_images():
         with open(json_path, 'w') as json_file:
             json.dump(ocr_data, json_file, indent=2)
 
-        print(f"[JSON] Saved OCR data: {json_filename}")
+        print(f"[JSON] Saved data: {json_filename}")
         print(f"[TEMP STORAGE] Files saved to session folder: {session_id}")
         for file_key, file_path in saved_files.items():
             print(f"[TEMP STORAGE] {file_key}: {os.path.basename(file_path)}")
 
         return jsonify({
             "status": "success",
-            "message": "Files uploaded and processed successfully",
+            "message": "Files uploaded successfully" + (" with OCR processing" if Config.ENABLE_OCR else " (OCR disabled)"),
             "data": ocr_data,
             "session_id": session_id,
             "json_file": json_filename,
             "files_processed": len(saved_files),
-            "temp_folder": temp_session_folder
+            "temp_folder": temp_session_folder,
+            "ocr_enabled": Config.ENABLE_OCR
         }), 200
 
     except Exception as e:
@@ -224,8 +228,12 @@ def test_ocr():
         # Perform OCR
         text = pytesseract.image_to_string(Image.open(temp_path))
 
-        # Clean up
-        os.remove(temp_path)
+        # Clean up - but protect PDF files
+        if not temp_path.lower().endswith('.pdf'):
+            os.remove(temp_path)
+            print(f"[CLEANUP] Removed temp file: {temp_path}")
+        else:
+            print(f"[CLEANUP] Protected PDF file from deletion: {temp_path}")
 
         return jsonify({
             "status": "success",
