@@ -14,7 +14,11 @@ import DualCertificate4 from './operations/pages/certificates/DualCertificate4';
 
 // Bookkeeping Section
 import BookkeepingDashboard from './bookkeeping/dashboard/components/BookkeepingDashboard';
-import PaymentReceiptEntries from './bookkeeping/payment-receipt/components/PaymentReceiptEntries';
+import PaymentReceiptPage from './bookkeeping/payment-receipt/components/PaymentReceiptEntries';
+import SalesVoucher from './bookkeeping/payment-receipt/components/SalesVoucher';
+import ReceiptEntries from './bookkeeping/payment-receipt/components/ReceiptEntries';
+import PaymentEntry from './bookkeeping/payment-receipt/components/PaymentEntry';
+import ReceiptInvoicePreview from './bookkeeping/payment-receipt/components/ReceiptInvoicePreview';
 import NewStepper from './bookkeeping/payment-receipt/components/NewStepper';
 import InvoiceGeneration from './bookkeeping/invoice-generation/components/InvoiceGeneration';
 import ProformaGstInvoice from './bookkeeping/invoice-generation/components/ProformaGstInvoice';
@@ -46,7 +50,11 @@ function App() {
 
         {/* Bookkeeping Section */}
         <Route path="/bookkeeping" element={<BookkeepingDashboard />} />
-        <Route path="/bookkeeping/payment-receipt" element={<PaymentReceiptEntries />} />
+        <Route path="/bookkeeping/payment-receipt" element={<PaymentReceiptPage />} />
+        <Route path="/bookkeeping/sales-voucher" element={<SalesVoucher />} />
+        <Route path="/bookkeeping/receipt-entries" element={<ReceiptEntries />} />
+        <Route path="/bookkeeping/receipt-invoice-preview" element={<ReceiptInvoicePreview />} />
+        <Route path="/bookkeeping/payment-receipt-page" element={<PaymentEntry />} />
         <Route path="/bookkeeping/new-invoice-stepper" element={<NewStepper />} />
         <Route path="/bookkeeping/invoice-generation" element={<InvoiceGeneration />} />
         <Route path="/bookkeeping/tax-invoice" element={<ProformaGstInvoice />} />

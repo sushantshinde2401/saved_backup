@@ -234,7 +234,7 @@ Course Amounts → Subtotal → Tax Calculations → Final Total
 ### **✅ Preserved Functionality:**
 - **Data Reception**: Gets selected courses and payment data from navigation state
 - **Calculation Engine**: Automatic subtotal, tax, and total calculations
-- **Navigation**: Back button to return to payment receipt page
+- **Navigation**: Back button to return to payment entry page
 - **Responsive Design**: Works on all screen sizes
 
 ### **✅ Enhanced Features:**

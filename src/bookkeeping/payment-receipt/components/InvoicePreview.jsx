@@ -46,7 +46,7 @@ function InvoicePreview({ data, onDataChange, formData }) {
   // Financial state
   const [amountReceived, setAmountReceived] = useState(data?.amountReceived || 0);
   const [applyGST, setApplyGST] = useState(data?.applyGST || false);
-  const [gstRate, setGstRate] = useState(18); // Fixed GST rate for payment receipt
+  const [gstRate, setGstRate] = useState(18); // Fixed GST rate for payment entry
 
   // Update state when data changes
   useEffect(() => {
@@ -163,7 +163,7 @@ function InvoicePreview({ data, onDataChange, formData }) {
           <!DOCTYPE html>
           <html>
             <head>
-              <title>Payment Receipt Invoice</title>
+              <title>Tax Invoice</title>
               <style>
                 @page {
                   size: A4;
@@ -322,7 +322,7 @@ function InvoicePreview({ data, onDataChange, formData }) {
                 <div className="flex items-center gap-3">
                   <FileText className="w-8 h-8 text-blue-600" />
                   <div>
-                    <h1 className="text-2xl font-bold text-gray-800">Payment Receipt Invoice</h1>
+                    <h1 className="text-2xl font-bold text-gray-800">Tax Invoice</h1>
                     <p className="text-gray-600 text-sm">Professional invoice layout</p>
                   </div>
                 </div>
@@ -361,7 +361,7 @@ function InvoicePreview({ data, onDataChange, formData }) {
             <div className="invoice-content p-4 bg-white shadow-lg">
               {/* Tax Invoice Header */}
               <div className="text-center mb-2 bg-white px-4 py-2">
-                <h1 className="text-3xl font-bold text-gray-800 tracking-wide">PAYMENT RECEIPT</h1>
+                <h1 className="text-3xl font-bold text-gray-800 tracking-wide">TAX INVOICE</h1>
               </div>
 
               {/* Top Section with Company/Buyer and Invoice Details */}
@@ -595,7 +595,7 @@ function InvoicePreview({ data, onDataChange, formData }) {
 
           {/* Invoice Controls Sidebar - Right Side */}
           <div className="input-controls w-96 bg-gray-50 border border-gray-200 rounded-lg p-4 h-fit sticky top-4 max-h-screen overflow-y-auto">
-            <h2 className="text-xl font-bold text-gray-800 mb-4 text-center">PAYMENT RECEIPT</h2>
+            <h2 className="text-xl font-bold text-gray-800 mb-4 text-center">TAX INVOICE</h2>
             <h3 className="text-lg font-semibold text-gray-800 mb-4">Invoice Controls</h3>
 
             {/* Invoice Details Section */}

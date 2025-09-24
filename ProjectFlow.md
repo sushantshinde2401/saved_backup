@@ -385,14 +385,14 @@ flowchart TD
     B --> C[BookkeepingDashboard Component<br/>6-Button Grid Interface]
 
     C --> D{User Selects Function}
-    D -->|Payment Receipt| E[Navigation to /bookkeeping/payment-receipt]
+    D -->|Payment Entry| E[Navigation to /bookkeeping/payment-receipt]
     D -->|Invoice Generation| F[Navigation to /bookkeeping/invoice-generation]
     D -->|Companies Ledger| G[Navigation to /bookkeeping/companies-ledger]
     D -->|Periodic Ledger| H[Navigation to /bookkeeping/ledger]
     D -->|Summary Report| I[Navigation to /bookkeeping/summary-report]
     D -->|Rate Lists| J[Navigation to /bookkeeping/ratelist-entries]
 
-    %% Payment Receipt Flow
+    %% Payment Entry Flow
     E --> K[PaymentReceiptEntries Component<br/>Payment Management Interface]
     K --> L[Load Certificate Data<br/>API: /get-certificate-selections-for-receipt]
     L --> M[Loading Animation<br/>Skeleton Cards]
@@ -734,7 +734,7 @@ flowchart TD
 ```mermaid
 flowchart TD
     subgraph "Operations → Bookkeeping"
-        A1[Certificate Selections] --> B1[Payment Receipts]
+        A1[Certificate Selections] --> B1[Payment Entries]
         A2[Candidate Data] --> B2[Invoice Generation]
         A3[Course Data] --> B3[Rate Calculations]
     end

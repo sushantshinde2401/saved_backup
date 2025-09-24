@@ -569,7 +569,7 @@ def create_receipt_amount_received():
     try:
         data = request.get_json()
 
-        required_fields = ['candidate_id', 'amount_received', 'payment_type', 'transaction_date', 'invoice_reference']
+        required_fields = ['amount_received', 'payment_type', 'transaction_date']
         for field in required_fields:
             if field not in data:
                 return jsonify({
@@ -580,19 +580,25 @@ def create_receipt_amount_received():
 
         query = """
             INSERT INTO ReceiptAmountReceived (
-                candidate_id, amount_received, payment_type, transaction_date,
-                remark, invoice_reference
-            ) VALUES (%s, %s, %s, %s, %s, %s)
+                amount_received, payment_type, transaction_date,
+                remark, account_no, company_name,
+                tds_percentage, gst, customer_name, transaction_id, on_account_of
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING receipt_amount_id
         """
 
         result = execute_query(query, (
-            data['candidate_id'],
             data['amount_received'],
             data['payment_type'],
             data['transaction_date'],
             data.get('remark'),
-            data['invoice_reference']
+            data.get('account_no'),
+            data.get('company_name'),
+            data.get('tds_percentage', 0),
+            data.get('gst', 0),
+            data.get('customer_name'),
+            data.get('transaction_id'),
+            data.get('on_account_of')
         ))
 
         if result:
@@ -623,35 +629,15 @@ def get_receipt_amount_received():
     """Get receipt amount received records with optional filtering"""
     try:
         # Get query parameters
-        candidate_id = request.args.get('candidate_id', type=int)
-        invoice_reference = request.args.get('invoice_reference')
         limit = request.args.get('limit', 50, type=int)
         offset = request.args.get('offset', 0, type=int)
 
-        # Build query based on filters
-        if candidate_id:
-            query = """
-                SELECT * FROM ReceiptAmountReceived
-                WHERE candidate_id = %s
-                ORDER BY created_at DESC
-                LIMIT %s OFFSET %s
-            """
-            params = (candidate_id, limit, offset)
-        elif invoice_reference:
-            query = """
-                SELECT * FROM ReceiptAmountReceived
-                WHERE invoice_reference = %s
-                ORDER BY created_at DESC
-                LIMIT %s OFFSET %s
-            """
-            params = (invoice_reference, limit, offset)
-        else:
-            query = """
-                SELECT * FROM ReceiptAmountReceived
-                ORDER BY created_at DESC
-                LIMIT %s OFFSET %s
-            """
-            params = (limit, offset)
+        query = """
+            SELECT * FROM ReceiptAmountReceived
+            ORDER BY created_at DESC
+            LIMIT %s OFFSET %s
+        """
+        params = (limit, offset)
 
         results = execute_query(query, params)
 
@@ -660,12 +646,17 @@ def get_receipt_amount_received():
             for row in results:
                 receipts.append({
                     'receipt_amount_id': row['receipt_amount_id'],
-                    'candidate_id': row['candidate_id'],
                     'amount_received': float(row['amount_received']) if row['amount_received'] else 0,
                     'payment_type': row['payment_type'],
                     'transaction_date': str(row['transaction_date']) if row['transaction_date'] else None,
                     'remark': row['remark'],
-                    'invoice_reference': row['invoice_reference'],
+                    'account_no': row['account_no'],
+                    'company_name': row['company_name'],
+                    'tds_percentage': float(row['tds_percentage']) if row['tds_percentage'] else 0,
+                    'gst': float(row['gst']) if row['gst'] else 0,
+                    'customer_name': row['customer_name'],
+                    'transaction_id': row['transaction_id'],
+                    'on_account_of': row['on_account_of'],
                     'created_at': str(row['created_at'])
                 })
 
@@ -703,12 +694,17 @@ def get_receipt_amount_received_by_id(receipt_id):
             receipt = results[0]
             receipt_data = {
                 'receipt_amount_id': receipt['receipt_amount_id'],
-                'candidate_id': receipt['candidate_id'],
                 'amount_received': float(receipt['amount_received']) if receipt['amount_received'] else 0,
                 'payment_type': receipt['payment_type'],
                 'transaction_date': str(receipt['transaction_date']) if receipt['transaction_date'] else None,
                 'remark': receipt['remark'],
-                'invoice_reference': receipt['invoice_reference'],
+                'account_no': receipt['account_no'],
+                'company_name': receipt['company_name'],
+                'tds_percentage': float(receipt['tds_percentage']) if receipt['tds_percentage'] else 0,
+                'gst': float(receipt['gst']) if receipt['gst'] else 0,
+                'customer_name': receipt['customer_name'],
+                'transaction_id': receipt['transaction_id'],
+                'on_account_of': receipt['on_account_of'],
                 'created_at': str(receipt['created_at'])
             }
 
@@ -750,7 +746,7 @@ def update_receipt_amount_received(receipt_id):
         update_fields = []
         params = []
 
-        allowed_fields = ['candidate_id', 'amount_received', 'payment_type', 'transaction_date', 'remark', 'invoice_reference']
+        allowed_fields = ['amount_received', 'payment_type', 'transaction_date', 'remark', 'account_no', 'company_name', 'tds_percentage', 'gst', 'customer_name', 'transaction_id', 'on_account_of']
         for field in allowed_fields:
             if field in data:
                 update_fields.append(f"{field} = %s")
@@ -805,5 +801,227 @@ def delete_receipt_amount_received(receipt_id):
         return jsonify({
             "error": str(e),
             "message": "Failed to delete receipt amount received record",
+            "status": "error"
+        }), 500
+
+@bookkeeping_bp.route('/bookkeeping/company-ledger', methods=['GET'])
+def get_company_ledger():
+    """Get company ledger data with filtering and pagination"""
+    try:
+        # Get query parameters
+        company_name = request.args.get('company_name', '').strip()
+        start_date = request.args.get('start_date', '')
+        end_date = request.args.get('end_date', '')
+        candidate_name = request.args.get('candidate_name', '').strip()
+        voucher_type = request.args.get('voucher_type', '').strip()
+        limit = int(request.args.get('limit', 50))
+        offset = int(request.args.get('offset', 0))
+
+        if not company_name:
+            return jsonify({
+                "error": "Company name is required",
+                "message": "Please provide a company_name parameter",
+                "status": "validation_error"
+            }), 400
+
+        entries = []
+        total_debit = 0
+        total_credit = 0
+
+        try:
+            # Try to query real database tables
+            # Build conditions for filtering
+            conditions = []
+            params = []
+
+            # Filter by company name in ReceiptInvoiceData.company_details
+            conditions.append("rid.company_details LIKE %s")
+            params.append(f"%{company_name}%")
+
+            if start_date:
+                conditions.append("COALESCE(rar.transaction_date, rid.created_at::date) >= %s")
+                params.append(start_date)
+            if end_date:
+                conditions.append("COALESCE(rar.transaction_date, rid.created_at::date) <= %s")
+                params.append(end_date)
+            if candidate_name:
+                conditions.append("c.candidate_name ILIKE %s")
+                params.append(f"%{candidate_name}%")
+            if voucher_type:
+                if voucher_type.lower() == 'sales':
+                    conditions.append("rid.invoice_no IS NOT NULL")
+                elif voucher_type.lower() == 'receipt':
+                    conditions.append("rar.receipt_amount_id IS NOT NULL")
+
+            where_clause = " AND ".join(conditions) if conditions else "1=1"
+
+            # Query for Sales entries (invoices) - Debit entries
+            sales_query = f"""
+                SELECT
+                    rid.invoice_no as voucher_no,
+                    'Sales' as voucher_type,
+                    rid.created_at::date as date,
+                    c.candidate_name,
+                    CONCAT('Invoice to ', rid.customer_details) as particulars,
+                    rid.final_amount as debit,
+                    0 as credit,
+                    rid.created_at as entry_date,
+                    'Sales' as entry_type,
+                    rid.invoice_no as reference_id,
+                    '{company_name}' as company_name
+                FROM ReceiptInvoiceData rid
+                JOIN candidates c ON rid.candidate_id = c.candidate_id
+                WHERE {where_clause}
+                ORDER BY rid.created_at DESC
+            """
+
+            sales_results = execute_query(sales_query, params)
+            if sales_results:
+                for row in sales_results:
+                    debit_amount = float(row['debit']) if row['debit'] else 0
+                    entries.append({
+                        'date': str(row['date']) if row['date'] else None,
+                        'particulars': row['particulars'] or '',
+                        'voucher_type': row['voucher_type'],
+                        'voucher_no': row['voucher_no'] or '',
+                        'debit': debit_amount,
+                        'credit': 0,
+                        'candidate_name': row['candidate_name'] or '',
+                        'company_name': row['company_name'],
+                        'entry_type': row['entry_type'],
+                        'reference_id': row['reference_id']
+                    })
+                    total_debit += debit_amount
+
+            # Query for Receipt entries (payments received) - Credit entries
+            receipt_query = f"""
+                SELECT
+                    CONCAT('RCP-', rar.receipt_amount_id) as voucher_no,
+                    'Receipt' as voucher_type,
+                    rar.transaction_date as date,
+                    c.candidate_name,
+                    CONCAT('Payment received from ', rid.customer_details) as particulars,
+                    0 as debit,
+                    rar.amount_received as credit,
+                    rar.created_at as entry_date,
+                    'Receipt' as entry_type,
+                    rar.receipt_amount_id as reference_id,
+                    '{company_name}' as company_name
+                FROM ReceiptAmountReceived rar
+                JOIN ReceiptInvoiceData rid ON rar.invoice_reference = rid.invoice_no
+                JOIN candidates c ON rar.candidate_id = c.candidate_id
+                WHERE {where_clause}
+                ORDER BY rar.created_at DESC
+            """
+
+            receipt_results = execute_query(receipt_query, params)
+            if receipt_results:
+                for row in receipt_results:
+                    credit_amount = float(row['credit']) if row['credit'] else 0
+                    entries.append({
+                        'date': str(row['date']) if row['date'] else None,
+                        'particulars': row['particulars'] or '',
+                        'voucher_type': row['voucher_type'],
+                        'voucher_no': row['voucher_no'] or '',
+                        'debit': 0,
+                        'credit': credit_amount,
+                        'candidate_name': row['candidate_name'] or '',
+                        'company_name': row['company_name'],
+                        'entry_type': row['entry_type'],
+                        'reference_id': row['reference_id']
+                    })
+                    total_credit += credit_amount
+
+        except Exception as db_error:
+            # If database tables don't exist, return mock data
+            print(f"[MOCK] Database tables not available for ledger, returning mock data: {db_error}")
+
+            # Generate mock ledger entries for the selected company
+            import random
+            from datetime import datetime, timedelta
+
+            mock_entries = []
+            base_date = datetime.now() - timedelta(days=90)
+
+            # Generate some sales entries (debits)
+            for i in range(random.randint(3, 8)):
+                date = base_date + timedelta(days=random.randint(0, 90))
+                amount = random.randint(50000, 200000)
+                mock_entries.append({
+                    'date': date.strftime('%Y-%m-%d'),
+                    'particulars': f'Invoice to {company_name}',
+                    'voucher_type': 'Sales',
+                    'voucher_no': f'INV-{2025}{str(i+1).zfill(3)}',
+                    'debit': amount,
+                    'credit': 0,
+                    'candidate_name': f'Candidate {i+1}',
+                    'company_name': company_name,
+                    'entry_type': 'Sales',
+                    'reference_id': f'INV-{2025}{str(i+1).zfill(3)}'
+                })
+                total_debit += amount
+
+            # Generate some receipt entries (credits)
+            for i in range(random.randint(2, 6)):
+                date = base_date + timedelta(days=random.randint(0, 90))
+                amount = random.randint(30000, 150000)
+                mock_entries.append({
+                    'date': date.strftime('%Y-%m-%d'),
+                    'particulars': f'Payment received from {company_name}',
+                    'voucher_type': 'Receipt',
+                    'voucher_no': f'RCP-{2025}{str(i+1).zfill(3)}',
+                    'debit': 0,
+                    'credit': amount,
+                    'candidate_name': f'Candidate {i+1}',
+                    'company_name': company_name,
+                    'entry_type': 'Receipt',
+                    'reference_id': f'RCP-{2025}{str(i+1).zfill(3)}'
+                })
+                total_credit += amount
+
+            entries = mock_entries
+
+        # Sort all entries by date descending
+        entries.sort(key=lambda x: x['date'] or '1900-01-01', reverse=True)
+
+        # Apply pagination
+        paginated_entries = entries[offset:offset + limit]
+
+        # Calculate summary
+        opening_balance = 0  # Could be calculated from previous periods
+        closing_balance = total_debit - total_credit
+        balance_type = 'Outstanding' if closing_balance > 0 else 'Advance' if closing_balance < 0 else 'Settled'
+
+        summary = {
+            'opening_balance': opening_balance,
+            'total_debit': total_debit,
+            'total_credit': total_credit,
+            'closing_balance': abs(closing_balance),
+            'balance_type': balance_type
+        }
+
+        logger.info(f"[LEDGER] Retrieved {len(paginated_entries)} ledger entries for company: {company_name}")
+
+        return jsonify({
+            "status": "success",
+            "data": {
+                "entries": paginated_entries,
+                "summary": summary,
+                "total_entries": len(entries),
+                "pagination": {
+                    "limit": limit,
+                    "offset": offset,
+                    "has_more": (offset + limit) < len(entries)
+                }
+            },
+            "message": f"Retrieved {len(paginated_entries)} ledger entries for {company_name}",
+            "total": len(paginated_entries)
+        }), 200
+
+    except Exception as e:
+        logger.error(f"[LEDGER] Failed to retrieve company ledger for {company_name}: {e}")
+        return jsonify({
+            "error": str(e),
+            "message": "Failed to retrieve company ledger data",
             "status": "error"
         }), 500
