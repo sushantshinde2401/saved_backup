@@ -1,38 +1,20 @@
 [
   {
     "id": "stcw_001",
-    "firstName": "KRISHNADAS",
-    "lastName": "MISHRA",
+    "firstName": "SANKET",
+    "lastName": "JOSHI",
     "certificateName": "Basic Safety Training (STCW)",
-    "companyName": "Logistics & Supply Chain Ltd",
-    "amount": 3900,
-    "timestamp": "2025-09-22T10:26:53.800900"
+    "companyName": "Automotive Parts Ltd",
+    "amount": 5000,
+    "timestamp": "2025-09-25T12:01:28.712458"
   },
   {
     "id": "h2s_001",
-    "firstName": "KRISHNADAS",
-    "lastName": "MISHRA",
+    "firstName": "SANKET",
+    "lastName": "JOSHI",
     "certificateName": "H2S Training",
-    "companyName": "Logistics & Supply Chain Ltd",
-    "amount": 7800,
-    "timestamp": "2025-09-22T10:27:02.370030"
-  },
-  {
-    "id": "modu_001",
-    "firstName": "KRISHNADAS",
-    "lastName": "MISHRA",
-    "certificateName": "MODU Survival Training",
-    "companyName": "Logistics & Supply Chain Ltd",
-    "amount": 7900,
-    "timestamp": "2025-09-22T10:27:08.762416"
-  },
-  {
-    "id": "bosiet_001",
-    "firstName": "KRISHNADAS",
-    "lastName": "MISHRA",
-    "certificateName": "BOSIET Training",
-    "companyName": "Logistics & Supply Chain Ltd",
-    "amount": 2000,
-    "timestamp": "2025-09-22T10:27:15.406776"
+    "companyName": "Automotive Parts Ltd",
+    "amount": 4800,
+    "timestamp": "2025-09-25T12:01:36.087112"
   }
 ]

@@ -15,18 +15,19 @@ import DualCertificate4 from './operations/pages/certificates/DualCertificate4';
 // Bookkeeping Section
 import BookkeepingDashboard from './bookkeeping/dashboard/components/BookkeepingDashboard';
 import PaymentReceiptPage from './bookkeeping/payment-receipt/components/PaymentReceiptEntries';
-import SalesVoucher from './bookkeeping/payment-receipt/components/SalesVoucher';
-import ReceiptEntries from './bookkeeping/payment-receipt/components/ReceiptEntries';
-import PaymentEntry from './bookkeeping/payment-receipt/components/PaymentEntry';
-import ReceiptInvoicePreview from './bookkeeping/payment-receipt/components/ReceiptInvoicePreview';
-import NewStepper from './bookkeeping/payment-receipt/components/NewStepper';
+import VendorServiceEntry from './bookkeeping/payment-receipt/components/VendorServiceEntry/VendorServiceEntry';
+import SalesVoucher from './bookkeeping/payment-receipt/components/SalesVoucher/SalesVoucher';
+import ReceiptEntries from './bookkeeping/payment-receipt/components/ReceiptEntries/ReceiptEntries';
+import PaymentEntry from './bookkeeping/payment-receipt/components/VendorPaymentEntry/PaymentEntry';
+import ReceiptInvoicePreview from './bookkeeping/payment-receipt/components/ReceiptEntries/ReceiptInvoicePreview';
+import NewStepper from './bookkeeping/payment-receipt/components/SalesVoucher/NewStepper';
 import InvoiceGeneration from './bookkeeping/invoice-generation/components/InvoiceGeneration';
 import ProformaGstInvoice from './bookkeeping/invoice-generation/components/ProformaGstInvoice';
 import ProformaInvoice from './bookkeeping/invoice-generation/components/ProformaInvoice';
-import CompaniesLedger from './bookkeeping/companies-ledger/components/CompaniesLedger';
 import DailyMonthlyYearlyLedger from './bookkeeping/periodic-ledger/components/DailyMonthlyYearlyLedger';
 import SummaryReport from './bookkeeping/summary-report/components/SummaryReport';
 import RateListEntries from './bookkeeping/ratelists-entries/components/RateListEntries';
+import LedgerDashboard from './bookkeeping/ledger-dashboard/components/LedgerDashboard';
 
 // Database Section
 import DatabaseDashboard from './database/pages/DatabaseDashboard';
@@ -51,6 +52,7 @@ function App() {
         {/* Bookkeeping Section */}
         <Route path="/bookkeeping" element={<BookkeepingDashboard />} />
         <Route path="/bookkeeping/payment-receipt" element={<PaymentReceiptPage />} />
+        <Route path="/bookkeeping/vendor-service-entry" element={<VendorServiceEntry />} />
         <Route path="/bookkeeping/sales-voucher" element={<SalesVoucher />} />
         <Route path="/bookkeeping/receipt-entries" element={<ReceiptEntries />} />
         <Route path="/bookkeeping/receipt-invoice-preview" element={<ReceiptInvoicePreview />} />
@@ -59,10 +61,10 @@ function App() {
         <Route path="/bookkeeping/invoice-generation" element={<InvoiceGeneration />} />
         <Route path="/bookkeeping/tax-invoice" element={<ProformaGstInvoice />} />
         <Route path="/bookkeeping/proforma-invoice" element={<ProformaInvoice />} />
-        <Route path="/bookkeeping/companies-ledger" element={<CompaniesLedger />} />
         <Route path="/bookkeeping/ledger" element={<DailyMonthlyYearlyLedger />} />
         <Route path="/bookkeeping/summary-report" element={<SummaryReport />} />
         <Route path="/bookkeeping/ratelist-entries" element={<RateListEntries />} />
+        <Route path="/bookkeeping/ledger-dashboard" element={<LedgerDashboard />} />
         
         {/* Database Section */}
         <Route path="/database" element={<DatabaseDashboard />} />

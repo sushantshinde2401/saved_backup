@@ -160,7 +160,7 @@ function BookkeepingDashboard() {
           >
             <div className="absolute inset-0 bg-gradient-to-r from-purple-500 to-pink-500 rounded-2xl blur opacity-25 group-hover:opacity-40 transition-opacity duration-300"></div>
             <motion.button
-              onClick={() => navigate('/bookkeeping/companies-ledger')}
+              onClick={() => navigate('/bookkeeping/ledger-dashboard')}
               whileHover={{ scale: 1.02, y: -5 }}
               whileTap={{ scale: 0.98 }}
               transition={{ type: 'spring', stiffness: 300, damping: 20 }}

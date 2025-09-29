@@ -21,12 +21,12 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 
 // Import step components
-import OrgInfoStep from './steps/OrgInfoStep';
-import ClientInfoStep from './steps/ClientInfoStep';
-import BillingInfoStep from './steps/BillingInfoStep';
-import InvoiceDetailsStep from './steps/InvoiceDetailsStep';
-import FinalizeStep from './steps/FinalizeStep';
-import PreviewDownloadStep from './steps/PreviewDownloadStep';
+import OrgInfoStep from './steps pages/OrgInfoStep';
+import ClientInfoStep from './steps pages/ClientInfoStep';
+import BillingInfoStep from './steps pages/BillingInfoStep';
+import InvoiceDetailsStep from './steps pages/InvoiceDetailsStep';
+import FinalizeStep from './steps pages/FinalizeStep';
+import PreviewDownloadStep from './steps pages/PreviewDownloadStep';
 
 // Initial state
 const initialState = {
@@ -610,7 +610,8 @@ function NewStepper() {
         payment_type: state.formData.paymentType || '',
         transaction_date: state.formData.dateReceived,
         invoice_reference: state.formData.invoiceNumber,
-        remark: state.formData.deliveryNote || '' // Using deliveryNote as remark
+        remark: state.formData.deliveryNote || '', // Using deliveryNote as remark
+        customer_name: state.formData.customerType === 'B2B' ? state.formData.selectedB2BCustomerName : state.formData.b2cFullName
       };
 
       console.log('Sending receipt data:', receiptData);
@@ -760,6 +761,8 @@ function NewStepper() {
                     onUploadInvoiceData={saveInvoiceData}
                     savedInvoiceData={state.savedInvoiceData}
                     isUploadingInvoice={state.isUploadingInvoice}
+                    availableCertificates={state.availableCertificates}
+                    savedReceiptData={state.savedReceiptData}
                   />
                 </motion.div>
               )}

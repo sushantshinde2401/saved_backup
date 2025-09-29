@@ -28,6 +28,14 @@ export const getCompanyAccounts = async () => {
   return apiRequest(API_ENDPOINTS.GET_COMPANY_ACCOUNTS);
 };
 
+export const getAllCompanies = async () => {
+  return apiRequest(API_ENDPOINTS.GET_ALL_COMPANIES);
+};
+
+export const getAllVendors = async () => {
+  return apiRequest(API_ENDPOINTS.GET_ALL_VENDORS);
+};
+
 export const getCompanyDetails = async (accountNumber) => {
   return apiRequest(`${API_ENDPOINTS.GET_COMPANY_DETAILS}/${accountNumber}`);
 };
@@ -59,4 +67,12 @@ export const calculateTax = (amount, rate) => {
 
 export const calculateTotal = (subtotal, cgst, sgst) => {
   return subtotal + cgst + sgst;
+};
+
+// Ledger-related API calls
+export const uploadToLedger = async (ledgerData) => {
+  return apiRequest(API_ENDPOINTS.UPLOAD_TO_LEDGER, {
+    method: 'POST',
+    body: JSON.stringify(ledgerData)
+  });
 };

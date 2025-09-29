@@ -21,8 +21,8 @@ CREATE TABLE IF NOT EXISTS ReceiptAmountReceived (
     amount_received DECIMAL(10,2),
     payment_type VARCHAR(50),
     transaction_date DATE,
-    tds_percentage DECIMAL(6,2),
-    gst DECIMAL(10,2),
+    tds_amount DECIMAL(6,2),
+    gst_amount DECIMAL(10,2),
     customer_name VARCHAR(255),
     transaction_id VARCHAR(100),
     on_account_of VARCHAR(255),
@@ -33,14 +33,14 @@ CREATE TABLE IF NOT EXISTS ReceiptAmountReceived (
 -- Add new columns if they don't exist (for backward compatibility)
 ALTER TABLE ReceiptAmountReceived ADD COLUMN IF NOT EXISTS account_no VARCHAR(100);
 ALTER TABLE ReceiptAmountReceived ADD COLUMN IF NOT EXISTS company_name VARCHAR(255);
-ALTER TABLE ReceiptAmountReceived ADD COLUMN IF NOT EXISTS tds_percentage DECIMAL(6,2);
-ALTER TABLE ReceiptAmountReceived ADD COLUMN IF NOT EXISTS gst DECIMAL(10,2);
+ALTER TABLE ReceiptAmountReceived ADD COLUMN IF NOT EXISTS tds_amount DECIMAL(6,2);
+ALTER TABLE ReceiptAmountReceived ADD COLUMN IF NOT EXISTS gst_amount DECIMAL(10,2);
 ALTER TABLE ReceiptAmountReceived ADD COLUMN IF NOT EXISTS customer_name VARCHAR(255);
 ALTER TABLE ReceiptAmountReceived ADD COLUMN IF NOT EXISTS transaction_id VARCHAR(100);
 ALTER TABLE ReceiptAmountReceived ADD COLUMN IF NOT EXISTS on_account_of VARCHAR(255);
 
 -- Update column types if necessary
-ALTER TABLE ReceiptAmountReceived ALTER COLUMN tds_percentage TYPE DECIMAL(6,2);
+ALTER TABLE ReceiptAmountReceived ALTER COLUMN tds_amount TYPE DECIMAL(6,2);
 
 -- Create indexes for efficient querying
 CREATE INDEX IF NOT EXISTS idx_receipt_amount_received_transaction_date ON ReceiptAmountReceived(transaction_date);
@@ -54,8 +54,8 @@ COMMENT ON COLUMN ReceiptAmountReceived.company_name IS 'Name of the company inv
 COMMENT ON COLUMN ReceiptAmountReceived.amount_received IS 'Actual amount received in payment';
 COMMENT ON COLUMN ReceiptAmountReceived.payment_type IS 'Type of payment (e.g., cash, bank transfer)';
 COMMENT ON COLUMN ReceiptAmountReceived.transaction_date IS 'Date when payment was received';
-COMMENT ON COLUMN ReceiptAmountReceived.tds_percentage IS 'TDS percentage applied';
-COMMENT ON COLUMN ReceiptAmountReceived.gst IS 'GST amount';
+COMMENT ON COLUMN ReceiptAmountReceived.tds_amount IS 'TDS amount';
+COMMENT ON COLUMN ReceiptAmountReceived.gst_amount IS 'GST amount';
 COMMENT ON COLUMN ReceiptAmountReceived.customer_name IS 'Name of the customer';
 COMMENT ON COLUMN ReceiptAmountReceived.transaction_id IS 'Unique transaction identifier';
 COMMENT ON COLUMN ReceiptAmountReceived.on_account_of IS 'Description of what the payment is on account of';
@@ -73,8 +73,8 @@ BEGIN
     RAISE NOTICE '- amount_received: DECIMAL(10,2)';
     RAISE NOTICE '- payment_type: VARCHAR(50)';
     RAISE NOTICE '- transaction_date: DATE';
-    RAISE NOTICE '- tds_percentage: DECIMAL(6,2)';
-    RAISE NOTICE '- gst: DECIMAL(10,2)';
+    RAISE NOTICE '- tds_amount: DECIMAL(6,2)';
+    RAISE NOTICE '- gst_amount: DECIMAL(10,2)';
     RAISE NOTICE '- customer_name: VARCHAR(255)';
     RAISE NOTICE '- transaction_id: VARCHAR(100)';
     RAISE NOTICE '- on_account_of: VARCHAR(255)';

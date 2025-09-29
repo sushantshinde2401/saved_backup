@@ -199,10 +199,9 @@ function ReceivedPayment({ formData, onInputChange, onUploadReceiptData, savedRe
                 value={formData.tdsPercentage}
                 onChange={(e) => handleInputChange('tdsPercentage', e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
-                placeholder="Enter TDS percentage (e.g., 2.5 for 2.5%)"
+                placeholder="Enter TDS amount"
                 step="0.01"
                 min="0"
-                max="100"
               />
             </div>
 

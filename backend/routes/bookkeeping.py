@@ -497,7 +497,162 @@ def get_company_details(account_number):
         logger.error(f"[COMPANY] Failed to retrieve company details for {account_number}: {e}")
         return jsonify({
             "error": str(e),
+@bookkeeping_bp.route('/get-all-companies', methods=['GET'])
+def get_all_companies():
+    """Get all companies for dropdown"""
+    try:
+        from shared.utils import get_all_company_accounts
+
+        companies = get_all_company_accounts()
+
+        if companies:
+            logger.info(f"[COMPANIES] Retrieved {len(companies)} companies")
+            return jsonify({
+                "status": "success",
+                "data": companies,
+                "message": f"Retrieved {len(companies)} companies successfully",
+                "total": len(companies)
+            }), 200
+        else:
+            return jsonify({
+                "status": "success",
+                "data": [],
+                "message": "No companies found",
+                "total": 0
+            }), 200
+
+    except Exception as e:
+        logger.error(f"[COMPANIES] Failed to retrieve companies: {e}")
+        return jsonify({
+            "error": str(e),
+            "message": "Failed to retrieve companies",
+            "status": "error"
+        }), 500
+
+@bookkeeping_bp.route('/get-all-vendors', methods=['GET'])
+def get_all_vendors():
+    """Get all vendors for dropdown"""
+    try:
+        from shared.utils import get_all_vendors
+
+        vendors = get_all_vendors()
+
+        if vendors:
+            logger.info(f"[VENDORS] Retrieved {len(vendors)} vendors")
+            return jsonify({
+                "status": "success",
+                "data": vendors,
+                "message": f"Retrieved {len(vendors)} vendors successfully",
+                "total": len(vendors)
+            }), 200
+        else:
+            return jsonify({
+                "status": "success",
+                "data": [],
+                "message": "No vendors found",
+                "total": 0
+            }), 200
+
+    except Exception as e:
+        logger.error(f"[VENDORS] Failed to retrieve vendors: {e}")
+        return jsonify({
+            "error": str(e),
+            "message": "Failed to retrieve vendors",
+            "status": "error"
+        }), 500
             "message": "Failed to retrieve company details",
+            "status": "error"
+        }), 500
+
+@bookkeeping_bp.route('/upload-to-ledger', methods=['POST'])
+def upload_to_ledger():
+    """Upload data to company ledger"""
+    try:
+        data = request.get_json()
+
+        required_fields = ['company_name', 'date', 'particulars', 'voucher_no', 'debit', 'credit']
+        for field in required_fields:
+            if field not in data:
+                return jsonify({
+                    "error": f"Missing required field: {field}",
+                    "message": f"Field '{field}' is required",
+                    "status": "validation_error"
+                }), 400
+
+        # Ensure CompanyLedger table exists
+        create_table_query = """
+            CREATE TABLE IF NOT EXISTS CompanyLedger (
+                id SERIAL PRIMARY KEY,
+                company_name VARCHAR(255) NOT NULL,
+                date DATE NOT NULL,
+                particulars TEXT,
+                voucher_no VARCHAR(100),
+                voucher_type VARCHAR(50) DEFAULT 'Receipt',
+                debit DECIMAL(15,2) DEFAULT 0,
+                credit DECIMAL(15,2) DEFAULT 0,
+                candidate_name VARCHAR(255),
+                entry_type VARCHAR(50) DEFAULT 'Manual',
+                reference_id VARCHAR(100),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """
+        execute_query(create_table_query, fetch=False)
+
+        # Create indexes if they don't exist
+        index_queries = [
+            "CREATE INDEX IF NOT EXISTS idx_company_ledger_company_name ON CompanyLedger(company_name)",
+            "CREATE INDEX IF NOT EXISTS idx_company_ledger_date ON CompanyLedger(date)",
+            "CREATE INDEX IF NOT EXISTS idx_company_ledger_voucher_no ON CompanyLedger(voucher_no)"
+        ]
+        for index_query in index_queries:
+            try:
+                execute_query(index_query, fetch=False)
+            except Exception as idx_e:
+                logger.warning(f"[LEDGER] Could not create index: {idx_e}")
+
+        # Insert into CompanyLedger table
+        query = """
+            INSERT INTO CompanyLedger (
+                company_name, date, particulars, voucher_no, voucher_type,
+                debit, credit, entry_type
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING id
+        """
+
+        params = (
+            data['company_name'],
+            data['date'],
+            data['particulars'],
+            data['voucher_no'],
+            data.get('voucher_type', 'Sales'),
+            data['debit'],
+            data['credit'],
+            data.get('entry_type', 'Manual')
+        )
+
+        result = execute_query(query, params)
+
+        if result:
+            ledger_id = result[0]['id']
+            logger.info(f"[LEDGER] Created ledger entry ID: {ledger_id} for company: {data['company_name']}")
+            return jsonify({
+                "status": "success",
+                "data": {"ledger_id": ledger_id},
+                "message": f"Ledger entry created successfully with ID: {ledger_id}"
+            }), 201
+        else:
+            return jsonify({
+                "error": "Failed to create entry",
+                "message": "No ID returned from insert operation",
+                "status": "error"
+            }), 500
+
+    except Exception as e:
+        logger.error(f"[LEDGER] Failed to upload to ledger: {e}")
+        return jsonify({
+            "error": str(e),
+            "message": "Failed to upload data to ledger",
             "status": "error"
         }), 500
 
@@ -582,7 +737,7 @@ def create_receipt_amount_received():
             INSERT INTO ReceiptAmountReceived (
                 amount_received, payment_type, transaction_date,
                 remark, account_no, company_name,
-                tds_percentage, gst, customer_name, transaction_id, on_account_of
+                tds_amount, gst_amount, customer_name, transaction_id, on_account_of
             ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING receipt_amount_id
         """
@@ -594,8 +749,8 @@ def create_receipt_amount_received():
             data.get('remark'),
             data.get('account_no'),
             data.get('company_name'),
-            data.get('tds_percentage', 0),
-            data.get('gst', 0),
+            data.get('tds_percentage', 0),  # This maps to tds_amount
+            data.get('gst', 0),  # This maps to gst_amount
             data.get('customer_name'),
             data.get('transaction_id'),
             data.get('on_account_of')
@@ -604,6 +759,57 @@ def create_receipt_amount_received():
         if result:
             receipt_id = result[0]['receipt_amount_id']
             logger.info(f"[RECEIPT] Created receipt amount received record ID: {receipt_id}")
+
+            # After creating receipt, insert into CompanyLedger
+            try:
+                # Retrieve the receipt data we just inserted
+                receipt_query = """
+                    SELECT customer_name, transaction_date, account_no, amount_received
+                    FROM ReceiptAmountReceived
+                    WHERE receipt_amount_id = %s
+                """
+                receipt_result = execute_query(receipt_query, (receipt_id,))
+
+                if receipt_result and len(receipt_result) > 0:
+                    receipt_data = receipt_result[0]
+                    customer_name = receipt_data['customer_name']
+                    transaction_date = receipt_data['transaction_date']
+                    account_no = receipt_data['account_no']
+                    amount_received = receipt_data['amount_received']
+
+                    if customer_name:
+                        # Insert into CompanyLedger
+                        ledger_query = """
+                            INSERT INTO CompanyLedger (
+                                company_name, date, particulars, voucher_no, voucher_type,
+                                debit, credit, entry_type
+                            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                        """
+
+                        particulars = f"Account No: {account_no}" if account_no else "Account No: N/A"
+                        voucher_no = f"RCPT-{receipt_id}"  # Generate voucher number
+
+                        execute_query(ledger_query, (
+                            customer_name,  # company_name in ledger is the customer_name from receipt
+                            transaction_date,
+                            particulars,
+                            voucher_no,
+                            'Receipt',
+                            0,  # debit
+                            amount_received,  # credit
+                            'Auto'
+                        ), fetch=False)
+
+                        logger.info(f"[LEDGER] Auto-inserted ledger entry for receipt ID: {receipt_id}, company: {customer_name}")
+                    else:
+                        logger.warning(f"[LEDGER] No customer_name found for receipt ID: {receipt_id}, skipping ledger insertion")
+                else:
+                    logger.error(f"[LEDGER] Could not retrieve receipt data for ID: {receipt_id}")
+
+            except Exception as ledger_e:
+                logger.error(f"[LEDGER] Failed to auto-insert ledger entry for receipt ID {receipt_id}: {ledger_e}")
+                # Don't fail the receipt creation if ledger insertion fails
+
             return jsonify({
                 "status": "success",
                 "data": {"receipt_amount_id": receipt_id},
@@ -652,8 +858,8 @@ def get_receipt_amount_received():
                     'remark': row['remark'],
                     'account_no': row['account_no'],
                     'company_name': row['company_name'],
-                    'tds_percentage': float(row['tds_percentage']) if row['tds_percentage'] else 0,
-                    'gst': float(row['gst']) if row['gst'] else 0,
+                    'tds_percentage': float(row['tds_amount']) if row['tds_amount'] else 0,
+                    'gst': float(row['gst_amount']) if row['gst_amount'] else 0,
                     'customer_name': row['customer_name'],
                     'transaction_id': row['transaction_id'],
                     'on_account_of': row['on_account_of'],
@@ -700,8 +906,8 @@ def get_receipt_amount_received_by_id(receipt_id):
                 'remark': receipt['remark'],
                 'account_no': receipt['account_no'],
                 'company_name': receipt['company_name'],
-                'tds_percentage': float(receipt['tds_percentage']) if receipt['tds_percentage'] else 0,
-                'gst': float(receipt['gst']) if receipt['gst'] else 0,
+                'tds_percentage': float(receipt['tds_amount']) if receipt['tds_amount'] else 0,
+                'gst': float(receipt['gst_amount']) if receipt['gst_amount'] else 0,
                 'customer_name': receipt['customer_name'],
                 'transaction_id': receipt['transaction_id'],
                 'on_account_of': receipt['on_account_of'],
@@ -806,7 +1012,7 @@ def delete_receipt_amount_received(receipt_id):
 
 @bookkeeping_bp.route('/bookkeeping/company-ledger', methods=['GET'])
 def get_company_ledger():
-    """Get company ledger data with filtering and pagination"""
+    """Get company ledger data from CompanyLedger table with filtering and pagination"""
     try:
         # Get query parameters
         company_name = request.args.get('company_name', '').strip()
@@ -824,164 +1030,71 @@ def get_company_ledger():
                 "status": "validation_error"
             }), 400
 
+        logger.info(f"[LEDGER] Fetching ledger data for company: {company_name}")
+
+        # Query CompanyLedger table for entries
+        ledger_query = """
+            SELECT
+                id,
+                company_name,
+                date,
+                particulars,
+                voucher_no,
+                voucher_type,
+                debit,
+                credit,
+                entry_type,
+                created_at
+            FROM CompanyLedger
+            WHERE company_name ILIKE %s
+        """
+        ledger_params = [f"%{company_name}%"]
+
+        if start_date:
+            ledger_query += " AND date >= %s"
+            ledger_params.append(start_date)
+        if end_date:
+            ledger_query += " AND date <= %s"
+            ledger_params.append(end_date)
+        if candidate_name:
+            ledger_query += " AND candidate_name ILIKE %s"
+            ledger_params.append(f"%{candidate_name}%")
+        if voucher_type:
+            ledger_query += " AND voucher_type ILIKE %s"
+            ledger_params.append(f"%{voucher_type}%")
+
+        ledger_query += " ORDER BY date DESC, created_at DESC"
+
+        logger.info(f"[LEDGER] Executing query with params: {ledger_params}")
+
+        ledger_results = execute_query(ledger_query, ledger_params)
+
         entries = []
         total_debit = 0
         total_credit = 0
 
-        try:
-            # Try to query real database tables
-            # Build conditions for filtering
-            conditions = []
-            params = []
-
-            # Filter by company name in ReceiptInvoiceData.company_details
-            conditions.append("rid.company_details LIKE %s")
-            params.append(f"%{company_name}%")
-
-            if start_date:
-                conditions.append("COALESCE(rar.transaction_date, rid.created_at::date) >= %s")
-                params.append(start_date)
-            if end_date:
-                conditions.append("COALESCE(rar.transaction_date, rid.created_at::date) <= %s")
-                params.append(end_date)
-            if candidate_name:
-                conditions.append("c.candidate_name ILIKE %s")
-                params.append(f"%{candidate_name}%")
-            if voucher_type:
-                if voucher_type.lower() == 'sales':
-                    conditions.append("rid.invoice_no IS NOT NULL")
-                elif voucher_type.lower() == 'receipt':
-                    conditions.append("rar.receipt_amount_id IS NOT NULL")
-
-            where_clause = " AND ".join(conditions) if conditions else "1=1"
-
-            # Query for Sales entries (invoices) - Debit entries
-            sales_query = f"""
-                SELECT
-                    rid.invoice_no as voucher_no,
-                    'Sales' as voucher_type,
-                    rid.created_at::date as date,
-                    c.candidate_name,
-                    CONCAT('Invoice to ', rid.customer_details) as particulars,
-                    rid.final_amount as debit,
-                    0 as credit,
-                    rid.created_at as entry_date,
-                    'Sales' as entry_type,
-                    rid.invoice_no as reference_id,
-                    '{company_name}' as company_name
-                FROM ReceiptInvoiceData rid
-                JOIN candidates c ON rid.candidate_id = c.candidate_id
-                WHERE {where_clause}
-                ORDER BY rid.created_at DESC
-            """
-
-            sales_results = execute_query(sales_query, params)
-            if sales_results:
-                for row in sales_results:
-                    debit_amount = float(row['debit']) if row['debit'] else 0
-                    entries.append({
-                        'date': str(row['date']) if row['date'] else None,
-                        'particulars': row['particulars'] or '',
-                        'voucher_type': row['voucher_type'],
-                        'voucher_no': row['voucher_no'] or '',
-                        'debit': debit_amount,
-                        'credit': 0,
-                        'candidate_name': row['candidate_name'] or '',
-                        'company_name': row['company_name'],
-                        'entry_type': row['entry_type'],
-                        'reference_id': row['reference_id']
-                    })
-                    total_debit += debit_amount
-
-            # Query for Receipt entries (payments received) - Credit entries
-            receipt_query = f"""
-                SELECT
-                    CONCAT('RCP-', rar.receipt_amount_id) as voucher_no,
-                    'Receipt' as voucher_type,
-                    rar.transaction_date as date,
-                    c.candidate_name,
-                    CONCAT('Payment received from ', rid.customer_details) as particulars,
-                    0 as debit,
-                    rar.amount_received as credit,
-                    rar.created_at as entry_date,
-                    'Receipt' as entry_type,
-                    rar.receipt_amount_id as reference_id,
-                    '{company_name}' as company_name
-                FROM ReceiptAmountReceived rar
-                JOIN ReceiptInvoiceData rid ON rar.invoice_reference = rid.invoice_no
-                JOIN candidates c ON rar.candidate_id = c.candidate_id
-                WHERE {where_clause}
-                ORDER BY rar.created_at DESC
-            """
-
-            receipt_results = execute_query(receipt_query, params)
-            if receipt_results:
-                for row in receipt_results:
-                    credit_amount = float(row['credit']) if row['credit'] else 0
-                    entries.append({
-                        'date': str(row['date']) if row['date'] else None,
-                        'particulars': row['particulars'] or '',
-                        'voucher_type': row['voucher_type'],
-                        'voucher_no': row['voucher_no'] or '',
-                        'debit': 0,
-                        'credit': credit_amount,
-                        'candidate_name': row['candidate_name'] or '',
-                        'company_name': row['company_name'],
-                        'entry_type': row['entry_type'],
-                        'reference_id': row['reference_id']
-                    })
-                    total_credit += credit_amount
-
-        except Exception as db_error:
-            # If database tables don't exist, return mock data
-            print(f"[MOCK] Database tables not available for ledger, returning mock data: {db_error}")
-
-            # Generate mock ledger entries for the selected company
-            import random
-            from datetime import datetime, timedelta
-
-            mock_entries = []
-            base_date = datetime.now() - timedelta(days=90)
-
-            # Generate some sales entries (debits)
-            for i in range(random.randint(3, 8)):
-                date = base_date + timedelta(days=random.randint(0, 90))
-                amount = random.randint(50000, 200000)
-                mock_entries.append({
-                    'date': date.strftime('%Y-%m-%d'),
-                    'particulars': f'Invoice to {company_name}',
-                    'voucher_type': 'Sales',
-                    'voucher_no': f'INV-{2025}{str(i+1).zfill(3)}',
-                    'debit': amount,
-                    'credit': 0,
-                    'candidate_name': f'Candidate {i+1}',
-                    'company_name': company_name,
-                    'entry_type': 'Sales',
-                    'reference_id': f'INV-{2025}{str(i+1).zfill(3)}'
+        if ledger_results:
+            logger.info(f"[LEDGER] Found {len(ledger_results)} entries in CompanyLedger")
+            for row in ledger_results:
+                debit_amount = float(row['debit']) if row['debit'] else 0
+                credit_amount = float(row['credit']) if row['credit'] else 0
+                entries.append({
+                    'date': str(row['date']) if row['date'] else None,
+                    'particulars': row['particulars'] or '',
+                    'voucher_type': row['voucher_type'] or 'Sales',
+                    'voucher_no': row['voucher_no'] or '',
+                    'debit': debit_amount,
+                    'credit': credit_amount,
+                    'company_name': row['company_name'],
+                    'entry_type': row['entry_type'] or 'Manual',
+                    'id': row['id']
                 })
-                total_debit += amount
+                total_debit += debit_amount
+                total_credit += credit_amount
+        else:
+            logger.info(f"[LEDGER] No entries found in CompanyLedger for company: {company_name}")
 
-            # Generate some receipt entries (credits)
-            for i in range(random.randint(2, 6)):
-                date = base_date + timedelta(days=random.randint(0, 90))
-                amount = random.randint(30000, 150000)
-                mock_entries.append({
-                    'date': date.strftime('%Y-%m-%d'),
-                    'particulars': f'Payment received from {company_name}',
-                    'voucher_type': 'Receipt',
-                    'voucher_no': f'RCP-{2025}{str(i+1).zfill(3)}',
-                    'debit': 0,
-                    'credit': amount,
-                    'candidate_name': f'Candidate {i+1}',
-                    'company_name': company_name,
-                    'entry_type': 'Receipt',
-                    'reference_id': f'RCP-{2025}{str(i+1).zfill(3)}'
-                })
-                total_credit += amount
-
-            entries = mock_entries
-
-        # Sort all entries by date descending
+        # Sort entries by date descending
         entries.sort(key=lambda x: x['date'] or '1900-01-01', reverse=True)
 
         # Apply pagination
@@ -1000,7 +1113,7 @@ def get_company_ledger():
             'balance_type': balance_type
         }
 
-        logger.info(f"[LEDGER] Retrieved {len(paginated_entries)} ledger entries for company: {company_name}")
+        logger.info(f"[LEDGER] Returning {len(paginated_entries)} paginated entries for {company_name}")
 
         return jsonify({
             "status": "success",
@@ -1024,4 +1137,124 @@ def get_company_ledger():
             "error": str(e),
             "message": "Failed to retrieve company ledger data",
             "status": "error"
+        }), 500
+
+@bookkeeping_bp.route('/bookkeeping/company-ledger/<int:ledger_id>', methods=['DELETE'])
+def delete_company_ledger_entry(ledger_id):
+    """Delete a company ledger entry and associated receipt if applicable"""
+    try:
+        # First, get the ledger entry to check its type
+        select_query = """
+            SELECT id, voucher_no, company_name, entry_type
+            FROM CompanyLedger
+            WHERE id = %s
+        """
+        ledger_result = execute_query(select_query, (ledger_id,))
+
+        if not ledger_result or len(ledger_result) == 0:
+            return jsonify({
+                "error": "Ledger entry not found",
+                "message": f"No ledger entry found with ID: {ledger_id}",
+                "status": "not_found"
+            }), 404
+
+        ledger_entry = ledger_result[0]
+        voucher_no = ledger_entry['voucher_no']
+        entry_type = ledger_entry['entry_type']
+
+        # If this is an auto-generated receipt entry, also delete the receipt
+        if voucher_no and voucher_no.startswith('RCPT-'):
+            try:
+                # Extract receipt ID from voucher_no (format: RCPT-{receipt_id})
+                receipt_id_str = voucher_no.replace('RCPT-', '')
+                receipt_id = int(receipt_id_str)
+
+                # Delete from ReceiptAmountReceived
+                receipt_delete_query = "DELETE FROM ReceiptAmountReceived WHERE receipt_amount_id = %s"
+                execute_query(receipt_delete_query, (receipt_id,), fetch=False)
+                logger.info(f"[RECEIPT] Deleted associated receipt ID: {receipt_id} for ledger entry {ledger_id}")
+
+            except (ValueError, Exception) as receipt_e:
+                logger.warning(f"[RECEIPT] Could not delete associated receipt for ledger {ledger_id}: {receipt_e}")
+                # Continue with ledger deletion even if receipt deletion fails
+
+        # Delete from CompanyLedger
+        ledger_delete_query = "DELETE FROM CompanyLedger WHERE id = %s"
+        execute_query(ledger_delete_query, (ledger_id,), fetch=False)
+
+        logger.info(f"[LEDGER] Deleted ledger entry ID: {ledger_id}")
+        return jsonify({
+            "status": "success",
+            "message": f"Ledger entry {ledger_id} deleted successfully"
+        }), 200
+
+    except Exception as e:
+        logger.error(f"[LEDGER] Failed to delete ledger entry {ledger_id}: {e}")
+        return jsonify({
+            "error": str(e),
+            "message": "Failed to delete ledger entry",
+            "status": "error"
+@bookkeeping_bp.route('/get-all-companies', methods=['GET'])
+def get_all_companies():
+    """Get all companies for dropdown"""
+    try:
+        from shared.utils import get_all_company_accounts
+
+        companies = get_all_company_accounts()
+
+        if companies:
+            logger.info(f"[COMPANIES] Retrieved {len(companies)} companies")
+            return jsonify({
+                "status": "success",
+                "data": companies,
+                "message": f"Retrieved {len(companies)} companies successfully",
+                "total": len(companies)
+            }), 200
+        else:
+            return jsonify({
+                "status": "success",
+                "data": [],
+                "message": "No companies found",
+                "total": 0
+            }), 200
+
+    except Exception as e:
+        logger.error(f"[COMPANIES] Failed to retrieve companies: {e}")
+        return jsonify({
+            "error": str(e),
+            "message": "Failed to retrieve companies",
+            "status": "error"
+        }), 500
+
+@bookkeeping_bp.route('/get-all-vendors', methods=['GET'])
+def get_all_vendors():
+    """Get all vendors for dropdown"""
+    try:
+        from shared.utils import get_all_vendors
+
+        vendors = get_all_vendors()
+
+        if vendors:
+            logger.info(f"[VENDORS] Retrieved {len(vendors)} vendors")
+            return jsonify({
+                "status": "success",
+                "data": vendors,
+                "message": f"Retrieved {len(vendors)} vendors successfully",
+                "total": len(vendors)
+            }), 200
+        else:
+            return jsonify({
+                "status": "success",
+                "data": [],
+                "message": "No vendors found",
+                "total": 0
+            }), 200
+
+    except Exception as e:
+        logger.error(f"[VENDORS] Failed to retrieve vendors: {e}")
+        return jsonify({
+            "error": str(e),
+            "message": "Failed to retrieve vendors",
+            "status": "error"
+        }), 500
         }), 500

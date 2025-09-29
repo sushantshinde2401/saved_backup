@@ -1,10 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Receipt, ArrowLeft } from 'lucide-react';
+import { Receipt, ArrowLeft, Eye, Download } from 'lucide-react';
 import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
-import ReceivedPayment from './steps/ReceivedPayment';
-import ReceiptInvoicePreview from './ReceiptInvoicePreview';
+import ReceivedPayment from './ReceivedPayment';
 
 function ReceiptEntries() {
   const navigate = useNavigate();
@@ -173,6 +172,43 @@ function ReceiptEntries() {
     }
   };
 
+  // Handle preview button click
+  const handlePreview = () => {
+    if (!savedReceiptData) {
+      toast.error('Please save the receipt data first');
+      return;
+    }
+
+    navigate('/bookkeeping/receipt-invoice-preview', {
+      state: {
+        receiptData: {
+          ...formData,
+          savedReceiptData: savedReceiptData
+        }
+      }
+    });
+  };
+
+  // Handle download button click
+  const handleDownload = () => {
+    if (!savedReceiptData) {
+      toast.error('Please save the receipt data first');
+      return;
+    }
+
+    // Create a temporary element to trigger download
+    const link = document.createElement('a');
+    link.href = `/bookkeeping/receipt-invoice-preview?download=true&data=${encodeURIComponent(JSON.stringify({
+      ...formData,
+      savedReceiptData: savedReceiptData
+    }))}`;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   return (
     <div className="min-h-screen bg-gray-100">
       {/* Header */}
@@ -210,17 +246,29 @@ function ReceiptEntries() {
           />
         </div>
 
-        {/* Receipt Invoice Preview */}
-        {savedReceiptData && (
-          <div className="mt-8">
-            <ReceiptInvoicePreview
-              data={{
-                ...formData,
-                savedReceiptData: savedReceiptData
-              }}
-            />
+        {/* Action Buttons */}
+        <div className="mt-8">
+          <div className="bg-white rounded-lg shadow-sm p-6">
+            <h3 className="text-lg font-semibold text-gray-800 mb-4">Receipt Actions</h3>
+            <div className="flex gap-4">
+              <button
+                onClick={handlePreview}
+                className="flex items-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors font-semibold"
+              >
+                <Eye className="w-5 h-5" />
+                Preview Receipt
+              </button>
+              <button
+                onClick={handleDownload}
+                className="flex items-center gap-2 px-6 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors font-semibold"
+              >
+                <Download className="w-5 h-5" />
+                Download PDF
+              </button>
+            </div>
           </div>
-        )}
+        </div>
+        
       </div>
 
       {/* Toast Container */}

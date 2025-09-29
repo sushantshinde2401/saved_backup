@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { toast } from 'react-toastify';
 import {
   Calendar,
   Search,
@@ -13,10 +14,11 @@ import {
   Building,
   User,
   RefreshCw,
-  ArrowLeft
+  ArrowLeft,
+  Trash2
 } from 'lucide-react';
 
-const CompaniesLedger = () => {
+const ClientLedger = () => {
   const navigate = useNavigate();
   const [ledgerData, setLedgerData] = useState([]);
   const [summary, setSummary] = useState({
@@ -35,7 +37,6 @@ const CompaniesLedger = () => {
     company_name: '',
     start_date: '',
     end_date: '',
-    candidate_name: '',
     voucher_type: ''
   });
 
@@ -158,8 +159,7 @@ const CompaniesLedger = () => {
   // Filter by search term
   const filteredData = sortedData.filter(entry =>
     entry.particulars?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    entry.voucher_no?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    entry.candidate_name?.toLowerCase().includes(searchTerm.toLowerCase())
+    entry.voucher_no?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   // Handle filter changes
@@ -188,6 +188,38 @@ const CompaniesLedger = () => {
     // Keep only last 100 entries
     if (auditLog.length > 100) auditLog.shift();
     localStorage.setItem('ledger_audit_log', JSON.stringify(auditLog));
+  };
+
+  // Handle delete entry
+  const handleDeleteEntry = async (entry) => {
+    if (!window.confirm(`Are you sure you want to delete this ledger entry?\n\nDate: ${entry.date}\nParticulars: ${entry.particulars}\nAmount: ₹${entry.debit || entry.credit}`)) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`http://localhost:5000/bookkeeping/company-ledger/${entry.id}`, {
+        method: 'DELETE',
+      });
+
+      if (response.ok) {
+        logAuditEvent('DELETE_ENTRY', {
+          entry_id: entry.id,
+          voucher_no: entry.voucher_no,
+          company_name: entry.company_name,
+          amount: entry.debit || entry.credit
+        });
+
+        // Refresh the ledger data
+        loadLedgerData();
+        toast.success('Ledger entry deleted successfully');
+      } else {
+        const errorData = await response.json();
+        toast.error(`Failed to delete entry: ${errorData.message}`);
+      }
+    } catch (error) {
+      console.error('Error deleting entry:', error);
+      toast.error('Error deleting ledger entry');
+    }
   };
 
   // Export functions
@@ -270,16 +302,6 @@ const CompaniesLedger = () => {
   return (
     <div className="min-h-screen bg-gray-50 p-6">
       <div className="max-w-7xl mx-auto">
-        {/* Back to Bookkeeping Button */}
-        <div className="mb-6">
-          <button
-            onClick={() => navigate('/bookkeeping')}
-            className="inline-flex items-center gap-3 bg-gradient-to-r from-red-500 to-pink-500 hover:from-red-600 hover:to-pink-600 text-white px-6 py-3 rounded-full shadow-lg font-semibold text-lg transition-all duration-300 hover:shadow-xl transform hover:-translate-y-0.5"
-          >
-            <ArrowLeft className="w-5 h-5" />
-            Back to Bookkeeping
-          </button>
-        </div>
 
         {/* Header */}
         <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
@@ -287,9 +309,9 @@ const CompaniesLedger = () => {
             <div>
               <h1 className="text-3xl font-bold text-gray-900 flex items-center">
                 <Building className="w-8 h-8 mr-3 text-blue-600" />
-                Company Ledger
+                Client Ledger
               </h1>
-              <p className="text-gray-600 mt-1">Tally-style accounting ledger for company transactions</p>
+              <p className="text-gray-600 mt-1">Tally-style accounting ledger for client transactions</p>
             </div>
             <div className="flex items-center space-x-3">
               <button
@@ -358,7 +380,7 @@ const CompaniesLedger = () => {
           {/* Filters */}
           {showFilters && (
             <div className="bg-gray-50 p-4 rounded-lg mb-6">
-              <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Company Name *</label>
                   <select
@@ -393,16 +415,6 @@ const CompaniesLedger = () => {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Candidate Name</label>
-                  <input
-                    type="text"
-                    value={filters.candidate_name}
-                    onChange={(e) => handleFilterChange('candidate_name', e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="Search candidate..."
-                  />
-                </div>
-                <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Voucher Type</label>
                   <select
                     value={filters.voucher_type}
@@ -427,7 +439,7 @@ const CompaniesLedger = () => {
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="Search by particulars, voucher no, or candidate..."
+                placeholder="Search by particulars or voucher no..."
               />
             </div>
             <div className="flex items-center space-x-2">
@@ -524,7 +536,7 @@ const CompaniesLedger = () => {
                   </tr>
                 ) : (
                   filteredData.map((entry, index) => (
-                    <tr key={`${entry.reference_id}-${entry.entry_type}-${index}`} className="hover:bg-gray-50">
+                    <tr key={`${entry.id}-${entry.entry_type}-${index}`} className="hover:bg-gray-50">
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                         {entry.date ? new Date(entry.date).toLocaleDateString('en-IN') : '-'}
                       </td>
@@ -548,21 +560,29 @@ const CompaniesLedger = () => {
                         {entry.credit > 0 ? formatCurrency(entry.credit) : '-'}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                        <button
-                          onClick={() => {
-                            setSelectedEntry(entry);
-                            logAuditEvent('VIEW_ENTRY_DETAILS', {
-                              entry_type: entry.entry_type,
-                              voucher_no: entry.voucher_no,
-                              company_name: entry.company_name,
-                              candidate_name: entry.candidate_name
-                            });
-                          }}
-                          className="text-blue-600 hover:text-blue-900 p-1 rounded hover:bg-blue-50 transition-colors"
-                          title="View Details"
-                        >
-                          <Eye className="w-4 h-4" />
-                        </button>
+                        <div className="flex items-center space-x-2">
+                          <button
+                            onClick={() => {
+                              setSelectedEntry(entry);
+                              logAuditEvent('VIEW_ENTRY_DETAILS', {
+                                entry_type: entry.entry_type,
+                                voucher_no: entry.voucher_no,
+                                company_name: entry.company_name
+                              });
+                            }}
+                            className="text-blue-600 hover:text-blue-900 p-1 rounded hover:bg-blue-50 transition-colors"
+                            title="View Details"
+                          >
+                            <Eye className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteEntry(entry)}
+                            className="text-red-600 hover:text-red-900 p-1 rounded hover:bg-red-50 transition-colors"
+                            title="Delete Entry"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))
@@ -644,15 +664,9 @@ const CompaniesLedger = () => {
                     <div className="mt-1 text-sm text-gray-900 bg-gray-50 p-3 rounded">{selectedEntry.particulars}</div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700">Company</label>
-                      <div className="mt-1 text-sm text-gray-900">{selectedEntry.company_name || '-'}</div>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700">Candidate</label>
-                      <div className="mt-1 text-sm text-gray-900">{selectedEntry.candidate_name || '-'}</div>
-                    </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Company</label>
+                    <div className="mt-1 text-sm text-gray-900">{selectedEntry.company_name || '-'}</div>
                   </div>
 
                   <div className="grid grid-cols-2 gap-4">
@@ -688,4 +702,4 @@ const CompaniesLedger = () => {
   );
 };
 
-export default CompaniesLedger;
+export default ClientLedger;

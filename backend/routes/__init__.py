@@ -2,7 +2,7 @@ from .upload import upload_bp
 from .candidate import candidate_bp
 from .certificate import certificate_bp
 from .misc import misc_bp
-from .bookkeeping import bookkeeping_bp
+from .bookkeeping_new import bookkeeping_bp
 
 def register_blueprints(app):
     """Register all blueprints with the Flask app"""

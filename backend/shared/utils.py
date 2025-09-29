@@ -283,3 +283,39 @@ def get_all_company_accounts():
     finally:
         if conn:
             conn.close()
+
+def get_all_vendors():
+    """Get all vendors for dropdown"""
+    conn = None
+    try:
+        conn = get_db_connection()
+        with conn.cursor() as cursor:
+            cursor.execute("""
+                SELECT id, vendor_name, company_name, contact_person, phone, email, address, city, state, vendor_type
+                FROM vendors
+                ORDER BY vendor_name
+            """)
+
+            rows = cursor.fetchall()
+            return [
+                {
+                    "id": row[0],
+                    "vendor_name": row[1],
+                    "company_name": row[2],
+                    "contact_person": row[3],
+                    "phone": row[4],
+                    "email": row[5],
+                    "address": row[6],
+                    "city": row[7],
+                    "state": row[8],
+                    "vendor_type": row[9]
+                }
+                for row in rows
+            ]
+    except Exception as e:
+        print(f"[DB] Error fetching vendors: {e}")
+        return []
+    finally:
+        if conn:
+            conn.close()
+            conn.close()

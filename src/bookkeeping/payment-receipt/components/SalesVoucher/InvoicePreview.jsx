@@ -304,9 +304,7 @@ function InvoicePreview({ data, onDataChange, formData }) {
 
   return (
     <>
-      {/* Full-screen Modal Overlay */}
-      <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex">
-        <div className="bg-gray-100 w-full h-full overflow-auto">
+      <div className="min-h-screen bg-gray-100">
         {/* Header */}
         <div className="bg-white shadow-sm border-b">
           <div className="max-w-7xl mx-auto px-4 py-4">
@@ -766,7 +764,6 @@ function InvoicePreview({ data, onDataChange, formData }) {
               </div>
             </div>
           </div>
-        </div>
         </div>
       </div>
     </>
