@@ -16,9 +16,11 @@ import {
   CheckCircle2,
   Loader,
   X,
-  Truck
+  Truck,
+  Trash2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { API_ENDPOINTS } from '../../../shared/utils';
 
 // Import step components
 import OrgInfoStep from './steps pages/OrgInfoStep';
@@ -119,6 +121,8 @@ function stepperReducer(state, action) {
       return { ...state, isUploadingInvoice: action.payload };
     case 'SET_UPLOADING_RECEIPT':
       return { ...state, isUploadingReceipt: action.payload };
+    case 'CLEAR_ALL_DATA':
+      return initialState;
     default:
       return state;
   }
@@ -126,7 +130,22 @@ function stepperReducer(state, action) {
 
 function NewStepper() {
   const navigate = useNavigate();
-  const [state, dispatch] = useReducer(stepperReducer, initialState);
+
+  // Load initial state from localStorage
+  const loadInitialState = () => {
+    const saved = localStorage.getItem('newStepperState');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {
+        console.warn('Failed to parse saved stepper state:', e);
+        return initialState;
+      }
+    }
+    return initialState;
+  };
+
+  const [state, dispatch] = useReducer(stepperReducer, loadInitialState());
 
   // Steps configuration
   const steps = [
@@ -146,10 +165,15 @@ function NewStepper() {
     loadRateData();
   }, []);
 
+  // Save state to localStorage on every change
+  useEffect(() => {
+    localStorage.setItem('newStepperState', JSON.stringify(state));
+  }, [state]);
+
   // Load company accounts
   const loadCompanyAccounts = async () => {
     try {
-      const response = await fetch('http://localhost:5000/get-company-accounts');
+      const response = await fetch(API_ENDPOINTS.GET_COMPANY_ACCOUNTS);
       if (response.ok) {
         const result = await response.json();
         dispatch({ type: 'SET_COMPANY_ACCOUNTS', payload: result.data || [] });
@@ -162,7 +186,7 @@ function NewStepper() {
   // Load customers
   const loadCustomers = async () => {
     try {
-      const response = await fetch('http://localhost:5000/get-b2b-customers');
+      const response = await fetch(API_ENDPOINTS.GET_B2B_CUSTOMERS);
       if (response.ok) {
         const result = await response.json();
         dispatch({ type: 'SET_CUSTOMERS', payload: result.data || [] });
@@ -197,7 +221,7 @@ function NewStepper() {
 
     dispatch({ type: 'SET_LOADING_COMPANY_DETAILS', payload: true });
     try {
-      const response = await fetch(`http://localhost:5000/get-company-details/${accountNumber}`);
+      const response = await fetch(`${API_ENDPOINTS.GET_COMPANY_DETAILS}/${accountNumber}`);
       if (response.ok) {
         const result = await response.json();
         const companyData = result.data;
@@ -229,7 +253,7 @@ function NewStepper() {
     if (!customerId) return;
 
     try {
-      const response = await fetch(`http://localhost:5000/get-b2b-customer/${customerId}`);
+      const response = await fetch(`${API_ENDPOINTS.GET_B2B_CUSTOMER}/${customerId}`);
       if (response.ok) {
         const result = await response.json();
         const customerData = result.data;
@@ -536,6 +560,11 @@ function NewStepper() {
       const sgstAmount = state.formData.applyGST ? gstAmount / 2 : 0; // 9% SGST
       const finalAmount = baseAmount + gstAmount;
 
+      // Resolve selected courses to full objects
+      const resolvedCourses = (state.formData.selectedCourses || []).map(id =>
+        state.availableCertificates.find(cert => cert.id === id)
+      ).filter(Boolean);
+
       // Prepare data for ReceiptInvoiceData table
       const invoiceData = {
         invoice_no: state.formData.invoiceNumber,
@@ -552,7 +581,7 @@ function NewStepper() {
         cgst: cgstAmount,
         sgst: sgstAmount,
         final_amount: finalAmount,
-        selected_courses: state.formData.selectedCourses || [],
+        selected_courses: resolvedCourses,
         delivery_note: state.formData.deliveryNote || '',
         dispatch_doc_no: state.formData.dispatchDocNo || '',
         delivery_date: state.formData.deliveryNoteDate || null,
@@ -563,7 +592,7 @@ function NewStepper() {
 
       console.log('Sending invoice data:', invoiceData);
 
-      const response = await fetch('http://localhost:5000/receipt-invoice-data', {
+      const response = await fetch('http://localhost:5000/api/bookkeeping/receipt-invoice-data', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -616,7 +645,7 @@ function NewStepper() {
 
       console.log('Sending receipt data:', receiptData);
 
-      const response = await fetch('http://localhost:5000/receipt-amount-received', {
+      const response = await fetch('http://localhost:5000/api/bookkeeping/receipt-amount-received', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -643,22 +672,37 @@ function NewStepper() {
     }
   };
 
-
+  // Clear all data function
+  const clearData = () => {
+    if (window.confirm('Are you sure you want to clear all data? This will reset the stepper to step 1 and clear all entered information.')) {
+      dispatch({ type: 'CLEAR_ALL_DATA' });
+      localStorage.removeItem('newStepperState');
+      toast.info('All data has been cleared and stepper reset.');
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-indigo-900">
       {/* Header */}
       <div className="bg-white/10 backdrop-blur-sm border-b border-white/20 p-4">
-        <div className="flex items-center justify-between max-w-7xl mx-auto">
-          <div className="flex items-center gap-4">
-            <button
-              onClick={() => navigate('/bookkeeping/payment-receipt')}
-              className="flex items-center gap-2 px-4 py-2 bg-white/20 hover:bg-white/30 rounded-lg transition-colors text-white"
-            >
-              <ArrowLeft className="w-4 h-4" />
-              Back to Payment/Receipt Entries
-            </button>
-            <div className="flex items-center gap-3">
+      <div className="flex items-center justify-between max-w-7xl mx-auto">
+        <div className="flex items-center gap-4">
+          <button
+            onClick={() => navigate('/bookkeeping/payment-receipt')}
+            className="flex items-center gap-2 px-4 py-2 bg-white/20 hover:bg-white/30 rounded-lg transition-colors text-white"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            Back to Payment/Receipt Entries
+          </button>
+          <button
+            onClick={clearData}
+            title="Clear all data and reset stepper"
+            className="flex items-center gap-2 px-4 py-2 bg-red-500/20 hover:bg-red-600/30 rounded-lg transition-colors text-white"
+          >
+            <Trash2 className="w-4 h-4" />
+            Clear Data
+          </button>
+          <div className="flex items-center gap-3">
               <FileText className="w-8 h-8 text-green-300" />
               <div>
                 <h1 className="text-2xl font-bold text-white">New Invoice Stepper</h1>
@@ -670,7 +714,7 @@ function NewStepper() {
       </div>
 
       {/* Main Content */}
-      <div className="max-w-6xl mx-auto p-6">
+      <div className="w-full p-6">
         <div className="bg-white/95 backdrop-blur-sm rounded-2xl shadow-xl overflow-hidden">
           {/* Progress Header */}
           <div className="bg-gradient-to-r from-green-600 to-green-700 p-6">
@@ -740,7 +784,6 @@ function NewStepper() {
                     formData={state.formData}
                     onInputChange={handleInputChange}
                     availableCertificates={state.availableCertificates}
-                    rateData={state.rateData}
                   />
                 </motion.div>
               )}

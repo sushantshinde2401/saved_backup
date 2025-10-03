@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { DollarSign, ArrowLeft, Edit3, Save, X, Plus, Trash2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { API_ENDPOINTS } from '../../shared/utils';
 
 function RateListEntries() {
   const navigate = useNavigate();
@@ -26,7 +27,7 @@ function RateListEntries() {
   // Load B2B customers
   const loadB2BCustomers = async () => {
     try {
-      const response = await fetch('http://localhost:5000/get-b2b-customers');
+      const response = await fetch(API_ENDPOINTS.GET_B2B_CUSTOMERS);
       if (response.ok) {
         const result = await response.json();
         const customers = result.data || [];

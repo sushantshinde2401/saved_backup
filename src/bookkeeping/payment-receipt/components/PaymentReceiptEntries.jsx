@@ -91,11 +91,11 @@ function PaymentReceiptPage() {
           <div className="bg-white rounded-xl shadow-lg p-6 hover:shadow-xl transition-shadow duration-300 hover:scale-105 transition-transform duration-300 flex-1 max-w-sm">
             <div className="flex items-center mb-4">
               <CreditCard className="w-8 h-8 text-purple-700 mr-3" />
-              <h3 className="text-xl font-bold text-gray-800">Payment Entry</h3>
+              <h3 className="text-xl font-bold text-gray-800">Vendor Payment Entry</h3>
             </div>
-            <p className="text-gray-600 mb-4">Manage payment entries and transactions</p>
+            <p className="text-gray-600 mb-4">Manage vendor payment entries and transactions</p>
             <button
-              onClick={() => navigate('/bookkeeping/payment-receipt-page')}
+              onClick={() => navigate('/bookkeeping/vendor-payment-entry')}
               className="w-full bg-purple-600 hover:bg-purple-700 text-white py-3 px-6 rounded-lg transition-colors font-semibold flex items-center justify-center gap-2 shadow-md hover:shadow-lg"
             >
               <CreditCard className="w-5 h-5" />

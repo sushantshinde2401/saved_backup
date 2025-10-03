@@ -17,6 +17,10 @@ import {
   ArrowLeft,
   Trash2
 } from 'lucide-react';
+import { API_ENDPOINTS } from '../../shared/utils';
+import useDeleteLedgerRow from '../../shared/hooks/useDeleteLedgerRow';
+import useLedgerSync from '../../shared/hooks/useLedgerSync';
+import ConfirmationModal from '../../shared/components/ConfirmationModal';
 
 const ClientLedger = () => {
   const navigate = useNavigate();
@@ -50,10 +54,59 @@ const ClientLedger = () => {
   const [autoRefresh, setAutoRefresh] = useState(false);
   const [lastRefresh, setLastRefresh] = useState(new Date());
 
+  // Delete functionality state
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [entryToDelete, setEntryToDelete] = useState(null);
+
+  // Delete hook
+  const {
+    deleteLedgerRow,
+    isDeleting,
+    deleteError,
+    resetError
+  } = useDeleteLedgerRow({
+    onSuccess: (entry) => {
+      // Refresh data after successful deletion
+      loadLedgerData();
+      setDeleteModalOpen(false);
+      setEntryToDelete(null);
+      // Trigger sync for other tabs
+      triggerSync();
+    },
+    onError: (error) => {
+      setDeleteModalOpen(false);
+      setEntryToDelete(null);
+    },
+    onOptimisticUpdate: (entry) => {
+      // Remove entry from local state immediately
+      setLedgerData(prev => prev.filter(item => item.id !== entry.id));
+    },
+    onRevertOptimisticUpdate: (entry) => {
+      // Add entry back to local state if deletion failed
+      setLedgerData(prev => {
+        const newData = [...prev, entry];
+        return newData.sort((a, b) => new Date(b.date || '1900-01-01') - new Date(a.date || '1900-01-01'));
+      });
+    }
+  });
+
+  // Sync hook for cross-tab updates
+  const { triggerSync } = useLedgerSync({
+    onSync: () => {
+      // Only sync if we have a company selected and not currently deleting
+      if (filters.company_name && !isDeleting) {
+        console.log('[CLIENT_LEDGER] Sync triggered, refreshing data');
+        loadLedgerData();
+      }
+    },
+    syncKey: 'client_ledger_sync',
+    pollInterval: 15000 // Check every 15 seconds
+  });
+
   // Fetch B2B customers
   const fetchB2bCustomers = async () => {
     try {
-      const response = await fetch('http://localhost:5000/get-b2b-customers');
+      const response = await fetch(API_ENDPOINTS.GET_B2B_CUSTOMERS);
       if (response.ok) {
         const result = await response.json();
         setB2bCustomers(result.data || []);
@@ -89,7 +142,7 @@ const ClientLedger = () => {
         offset: ((currentPage - 1) * itemsPerPage).toString()
       });
 
-      const response = await fetch(`http://localhost:5000/bookkeeping/company-ledger?${queryParams}`);
+      const response = await fetch(`${API_ENDPOINTS.GET_COMPANY_LEDGER}?${queryParams}`);
       if (!response.ok) {
         throw new Error('Failed to fetch ledger data');
       }
@@ -190,36 +243,30 @@ const ClientLedger = () => {
     localStorage.setItem('ledger_audit_log', JSON.stringify(auditLog));
   };
 
-  // Handle delete entry
-  const handleDeleteEntry = async (entry) => {
-    if (!window.confirm(`Are you sure you want to delete this ledger entry?\n\nDate: ${entry.date}\nParticulars: ${entry.particulars}\nAmount: ₹${entry.debit || entry.credit}`)) {
-      return;
-    }
+  // Delete handlers
+  const handleDeleteClick = (entry) => {
+    setEntryToDelete(entry);
+    setDeleteModalOpen(true);
+    resetError();
+  };
 
-    try {
-      const response = await fetch(`http://localhost:5000/bookkeeping/company-ledger/${entry.id}`, {
-        method: 'DELETE',
-      });
+  const handleConfirmDelete = async () => {
+    if (!entryToDelete) return;
 
-      if (response.ok) {
-        logAuditEvent('DELETE_ENTRY', {
-          entry_id: entry.id,
-          voucher_no: entry.voucher_no,
-          company_name: entry.company_name,
-          amount: entry.debit || entry.credit
-        });
+    logAuditEvent('DELETE_ATTEMPT', {
+      entry_id: entryToDelete.id,
+      voucher_no: entryToDelete.voucher_no,
+      company_name: entryToDelete.company_name,
+      amount: entryToDelete.debit || entryToDelete.credit
+    });
 
-        // Refresh the ledger data
-        loadLedgerData();
-        toast.success('Ledger entry deleted successfully');
-      } else {
-        const errorData = await response.json();
-        toast.error(`Failed to delete entry: ${errorData.message}`);
-      }
-    } catch (error) {
-      console.error('Error deleting entry:', error);
-      toast.error('Error deleting ledger entry');
-    }
+    await deleteLedgerRow(entryToDelete, 'company-ledger');
+  };
+
+  const handleCancelDelete = () => {
+    setDeleteModalOpen(false);
+    setEntryToDelete(null);
+    resetError();
   };
 
   // Export functions
@@ -576,9 +623,11 @@ const ClientLedger = () => {
                             <Eye className="w-4 h-4" />
                           </button>
                           <button
-                            onClick={() => handleDeleteEntry(entry)}
+                            onClick={() => handleDeleteClick(entry)}
                             className="text-red-600 hover:text-red-900 p-1 rounded hover:bg-red-50 transition-colors"
                             title="Delete Entry"
+                            aria-label={`Delete entry: ${entry.particulars}`}
+                            disabled={isDeleting}
                           >
                             <Trash2 className="w-4 h-4" />
                           </button>
@@ -697,6 +746,31 @@ const ClientLedger = () => {
             </div>
           </div>
         )}
+
+        {/* Delete Confirmation Modal */}
+        <ConfirmationModal
+          isOpen={deleteModalOpen}
+          onClose={handleCancelDelete}
+          onConfirm={handleConfirmDelete}
+          title="Delete Ledger Entry"
+          message="Are you sure you want to delete this ledger entry? This action cannot be undone."
+          confirmText="Delete Entry"
+          cancelText="Cancel"
+          isLoading={isDeleting}
+          variant="danger"
+        >
+          {entryToDelete && (
+            <div className="bg-gray-50 p-3 rounded-lg">
+              <div className="text-sm space-y-1">
+                <div><strong>Date:</strong> {entryToDelete.date ? new Date(entryToDelete.date).toLocaleDateString('en-IN') : '-'}</div>
+                <div><strong>Particulars:</strong> {entryToDelete.particulars}</div>
+                <div><strong>Voucher Type:</strong> {entryToDelete.voucher_type}</div>
+                <div><strong>Voucher No:</strong> {entryToDelete.voucher_no}</div>
+                <div><strong>Amount:</strong> {entryToDelete.debit > 0 ? formatCurrency(entryToDelete.debit) + ' (DR)' : entryToDelete.credit > 0 ? formatCurrency(entryToDelete.credit) + ' (CR)' : '-'}</div>
+              </div>
+            </div>
+          )}
+        </ConfirmationModal>
       </div>
     </div>
   );

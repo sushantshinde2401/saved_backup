@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { FileCheck, Upload, CheckCircle, Loader, FileText } from 'lucide-react';
+import { API_ENDPOINTS } from '../../../shared/utils';
 
 function ReceivedPayment({ formData, onInputChange, onUploadReceiptData, savedReceiptData, isUploadingReceipt, companyAccounts, loadingCompanyDetails }) {
   const navigate = useNavigate();
@@ -15,7 +16,7 @@ function ReceivedPayment({ formData, onInputChange, onUploadReceiptData, savedRe
   const loadB2bCustomers = async () => {
     setLoadingCustomers(true);
     try {
-      const response = await fetch('http://localhost:5000/get-b2b-customers');
+      const response = await fetch(API_ENDPOINTS.GET_B2B_CUSTOMERS);
       if (response.ok) {
         const result = await response.json();
         setB2bCustomers(result.data || []);

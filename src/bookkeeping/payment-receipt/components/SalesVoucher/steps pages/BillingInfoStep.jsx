@@ -1,12 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Receipt, DollarSign, Calendar, FileText, User } from 'lucide-react';
 
-function BillingInfoStep({ formData, onInputChange, availableCertificates, rateData }) {
-  const [calculatedAmount, setCalculatedAmount] = useState(0);
-  const [rateWarning, setRateWarning] = useState('');
+function BillingInfoStep({ formData, onInputChange, availableCertificates }) {
   const [availableCompanies, setAvailableCompanies] = useState([]);
   const [loadingCompanies, setLoadingCompanies] = useState(false);
-  const [updatingAmount, setUpdatingAmount] = useState(false);
 
 
 
@@ -44,133 +41,10 @@ function BillingInfoStep({ formData, onInputChange, availableCertificates, rateD
     }
   };
 
-  // Load certificates when party name changes
-  useEffect(() => {
-    if (formData.partyName) {
-      loadCertificatesForCompany(formData.partyName);
-    }
-  }, [formData.partyName]);
-
-  const loadCertificatesForCompany = async (companyName) => {
-    try {
-      const response = await fetch('http://localhost:5000/get-certificate-selections-for-receipt');
-      if (response.ok) {
-        const result = await response.json();
-        const allCertificates = result.data || [];
-
-        // Filter certificates for the selected company
-        const companyCertificates = allCertificates.filter(cert =>
-          cert.companyName === companyName
-        );
-
-        // Update available certificates (this would need to be passed back to parent)
-        // For now, we'll work with the filtered certificates
-        console.log('[BILLING] Loaded certificates for company:', companyName, companyCertificates);
-      }
-    } catch (error) {
-      console.error('[BILLING] Error loading certificates for company:', error);
-    }
-  };
-
-  // Calculate amount when courses change
-  useEffect(() => {
-    calculateTotalAmount();
-  }, [formData.selectedCourses, formData.partyName, rateData]);
-
   // Force re-render GST calculations when amount changes
   useEffect(() => {
     // This ensures GST fields update immediately when amountReceived changes
-    if (formData.amountReceived) {
-      // Trigger a re-render by updating a dummy state if needed
-      setCalculatedAmount(parseFloat(formData.amountReceived) || 0);
-    }
   }, [formData.amountReceived]);
-
-  const calculateTotalAmount = () => {
-    if (!formData.partyName || !formData.selectedCourses || formData.selectedCourses.length === 0) {
-      setCalculatedAmount(0);
-      setRateWarning('');
-      return;
-    }
-
-    let totalAmount = 0;
-    let warnings = [];
-    const companyRates = rateData[formData.partyName] || {};
-
-    formData.selectedCourses.forEach(courseId => {
-      const certificate = availableCertificates.find(cert => cert.id === courseId);
-      if (certificate) {
-        const rate = companyRates[certificate.certificateName] || 0;
-        totalAmount += rate;
-
-        if (rate === 0) {
-          warnings.push(`${certificate.certificateName}: Rate not found`);
-        }
-      }
-    });
-
-    setCalculatedAmount(totalAmount);
-    onInputChange('amountReceived', totalAmount.toString());
-
-    if (warnings.length > 0) {
-      setRateWarning(`⚠️ ${warnings.join(', ')}`);
-    } else {
-      setRateWarning('');
-    }
-  };
-
-  const handleCourseSelection = (courseId) => {
-    const isCurrentlySelected = formData.selectedCourses?.includes(courseId) || false;
-    const newSelectedCourses = isCurrentlySelected
-      ? formData.selectedCourses.filter(id => id !== courseId)
-      : [...(formData.selectedCourses || []), courseId];
-
-    // Show updating indicator
-    setUpdatingAmount(true);
-
-    // Update selected courses
-    onInputChange('selectedCourses', newSelectedCourses);
-
-    // Immediately recalculate amounts for real-time updates
-    setTimeout(() => {
-      calculateTotalAmountForCourses(newSelectedCourses);
-      setUpdatingAmount(false);
-    }, 100); // Small delay for visual feedback
-  };
-
-  const calculateTotalAmountForCourses = (courses) => {
-    if (!formData.partyName || !courses || courses.length === 0) {
-      setCalculatedAmount(0);
-      setRateWarning('');
-      onInputChange('amountReceived', '0');
-      return;
-    }
-
-    let totalAmount = 0;
-    let warnings = [];
-    const companyRates = rateData[formData.partyName] || {};
-
-    courses.forEach(courseId => {
-      const certificate = availableCertificates.find(cert => cert.id === courseId);
-      if (certificate) {
-        const rate = companyRates[certificate.certificateName] || 0;
-        totalAmount += rate;
-
-        if (rate === 0) {
-          warnings.push(`${certificate.certificateName}: Rate not found`);
-        }
-      }
-    });
-
-    setCalculatedAmount(totalAmount);
-    onInputChange('amountReceived', totalAmount.toString());
-
-    if (warnings.length > 0) {
-      setRateWarning(`⚠️ ${warnings.join(', ')}`);
-    } else {
-      setRateWarning('');
-    }
-  };
 
   const calculateFinalAmount = () => {
     const amount = parseFloat(formData.amountReceived) || 0;
@@ -179,6 +53,16 @@ function BillingInfoStep({ formData, onInputChange, availableCertificates, rateD
       return (amount + (amount * gstRate / 100)).toFixed(2);
     }
     return amount.toFixed(2);
+  };
+
+  const handleCourseSelection = (courseId) => {
+    const isCurrentlySelected = formData.selectedCourses?.includes(courseId) || false;
+    const newSelectedCourses = isCurrentlySelected
+      ? formData.selectedCourses.filter(id => id !== courseId)
+      : [...(formData.selectedCourses || []), courseId];
+
+    // Update selected courses
+    onInputChange('selectedCourses', newSelectedCourses);
   };
 
   return (
@@ -241,25 +125,15 @@ function BillingInfoStep({ formData, onInputChange, availableCertificates, rateD
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
             <DollarSign className="w-4 h-4 inline mr-1" />
-            Amount Received {updatingAmount && <span className="text-xs text-blue-500">(updating...)</span>}
+            Amount Received *
           </label>
           <input
             type="number"
-            value={formData.amountReceived || '0'}
+            value={formData.amountReceived || ''}
             onChange={(e) => onInputChange('amountReceived', e.target.value)}
-            className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-200 ${
-              updatingAmount ? 'border-blue-300 bg-blue-50 animate-pulse' :
-              (!formData.selectedCourses || formData.selectedCourses.length === 0) ? 'border-gray-300 bg-gray-50 text-gray-500' : 'border-gray-300 bg-white'
-            }`}
-            placeholder="Auto-calculated from courses"
-            readOnly
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+            placeholder="Enter amount received"
           />
-          {(!formData.selectedCourses || formData.selectedCourses.length === 0) && (
-            <p className="text-sm text-gray-500 mt-1">Select courses above to calculate amount</p>
-          )}
-          {rateWarning && (
-            <p className="text-sm text-orange-600 mt-1">{rateWarning}</p>
-          )}
         </div>
 
 
@@ -297,11 +171,9 @@ function BillingInfoStep({ formData, onInputChange, availableCertificates, rateD
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 <DollarSign className="w-4 h-4 inline mr-1" />
-                CGST ({((parseFloat(formData.gstRate) || 18) / 2).toFixed(2)}%) {updatingAmount && <span className="text-xs text-blue-500">(updating...)</span>}
+                CGST ({((parseFloat(formData.gstRate) || 18) / 2).toFixed(2)}%)
               </label>
-              <div className={`w-full px-3 py-2 border rounded-lg font-semibold transition-all duration-200 ${
-                updatingAmount ? 'border-blue-300 bg-blue-100 text-blue-900 animate-pulse' : 'border-gray-300 bg-blue-50 text-blue-800'
-              }`}>
+              <div className="w-full px-3 py-2 border border-gray-300 rounded-lg font-semibold bg-blue-50 text-blue-800">
                 ₹{((parseFloat(formData.amountReceived) || 0) * ((parseFloat(formData.gstRate) || 18) / 2) / 100).toFixed(2)}
               </div>
             </div>
@@ -309,11 +181,9 @@ function BillingInfoStep({ formData, onInputChange, availableCertificates, rateD
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 <DollarSign className="w-4 h-4 inline mr-1" />
-                SGST ({((parseFloat(formData.gstRate) || 18) / 2).toFixed(2)}%) {updatingAmount && <span className="text-xs text-blue-500">(updating...)</span>}
+                SGST ({((parseFloat(formData.gstRate) || 18) / 2).toFixed(2)}%)
               </label>
-              <div className={`w-full px-3 py-2 border rounded-lg font-semibold transition-all duration-200 ${
-                updatingAmount ? 'border-blue-300 bg-blue-100 text-blue-900 animate-pulse' : 'border-gray-300 bg-blue-50 text-blue-800'
-              }`}>
+              <div className="w-full px-3 py-2 border border-gray-300 rounded-lg font-semibold bg-blue-50 text-blue-800">
                 ₹{((parseFloat(formData.amountReceived) || 0) * ((parseFloat(formData.gstRate) || 18) / 2) / 100).toFixed(2)}
               </div>
             </div>
@@ -324,11 +194,9 @@ function BillingInfoStep({ formData, onInputChange, availableCertificates, rateD
         <div className="md:col-span-2">
           <label className="block text-sm font-medium text-gray-700 mb-2">
             <DollarSign className="w-4 h-4 inline mr-1" />
-            Final Amount {formData.applyGST ? '(After GST)' : ''} {updatingAmount && <span className="text-xs text-blue-500">(updating...)</span>}
+            Final Amount {formData.applyGST ? '(After GST)' : ''}
           </label>
-          <div className={`w-full px-3 py-2 border rounded-lg font-bold text-lg transition-all duration-200 ${
-            updatingAmount ? 'border-blue-300 bg-blue-50 text-blue-900 animate-pulse' : 'border-gray-300 bg-green-50 text-green-800'
-          }`}>
+          <div className="w-full px-3 py-2 border border-gray-300 rounded-lg font-bold text-lg bg-green-50 text-green-800">
             ₹{calculateFinalAmount()}
           </div>
           <p className="text-sm text-gray-600 mt-1">
@@ -373,7 +241,7 @@ function BillingInfoStep({ formData, onInputChange, availableCertificates, rateD
                     />
                     <div className="ml-3">
                       <h5 className="font-semibold text-gray-800">
-                        {certificate.firstName} {certificate.lastName} - {certificate.certificateName}
+                        {certificate.certificateName}
                       </h5>
                       <p className="text-sm text-gray-600">
                         Generated: {new Date(certificate.timestamp).toLocaleDateString()}
@@ -382,13 +250,6 @@ function BillingInfoStep({ formData, onInputChange, availableCertificates, rateD
                         </span>
                       </p>
                     </div>
-                  </div>
-                  <div className="text-right">
-                    <p className="font-bold text-purple-600">
-                      ₹{rateData[formData.partyName] && rateData[formData.partyName][certificate.certificateName]
-                        ? rateData[formData.partyName][certificate.certificateName].toLocaleString()
-                        : '0'}
-                    </p>
                   </div>
                 </div>
               ))}
@@ -401,16 +262,6 @@ function BillingInfoStep({ formData, onInputChange, availableCertificates, rateD
           </div>
         )}
       </div>
-
-      {/* Total Amount Display */}
-      {calculatedAmount > 0 && (
-        <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
-          <div className="flex justify-between items-center">
-            <span className="text-lg font-medium text-green-800">Total Amount {formData.applyGST ? '(Including GST)' : ''}:</span>
-            <span className="text-2xl font-bold text-green-600">₹{formData.applyGST ? calculateFinalAmount() : calculatedAmount.toLocaleString()}</span>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

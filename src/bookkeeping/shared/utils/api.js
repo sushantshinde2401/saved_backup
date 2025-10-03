@@ -40,6 +40,10 @@ export const getCompanyDetails = async (accountNumber) => {
   return apiRequest(`${API_ENDPOINTS.GET_COMPANY_DETAILS}/${accountNumber}`);
 };
 
+export const getCustomerDetails = async (customerName) => {
+  return apiRequest(`${API_ENDPOINTS.GET_CUSTOMER_DETAILS}?name=${encodeURIComponent(customerName)}`);
+};
+
 // Customer-related API calls
 export const getB2BCustomers = async () => {
   return apiRequest(API_ENDPOINTS.GET_B2B_CUSTOMERS);
@@ -75,4 +79,42 @@ export const uploadToLedger = async (ledgerData) => {
     method: 'POST',
     body: JSON.stringify(ledgerData)
   });
+};
+
+// Receipt amount received API call
+export const createReceiptAmountReceived = async (receiptData) => {
+  return apiRequest(API_ENDPOINTS.RECEIPT_AMOUNT_RECEIVED, {
+    method: 'POST',
+    body: JSON.stringify(receiptData)
+  });
+};
+
+// Vendor service entry API call
+export const createVendorServiceEntry = async (serviceData) => {
+  return apiRequest(API_ENDPOINTS.VENDOR_SERVICE_ENTRY, {
+    method: 'POST',
+    body: JSON.stringify(serviceData)
+  });
+};
+
+// Vendor payment entry API call
+export const createVendorPaymentEntry = async (paymentData) => {
+  return apiRequest(API_ENDPOINTS.VENDOR_PAYMENT_ENTRY, {
+    method: 'POST',
+    body: JSON.stringify(paymentData)
+  });
+};
+
+// Get vendor ledger API call
+export const getVendorLedger = async (vendorId, params = {}) => {
+  const queryParams = new URLSearchParams(params).toString();
+  const url = `${API_ENDPOINTS.GET_VENDOR_LEDGER}/${vendorId}${queryParams ? '?' + queryParams : ''}`;
+  return apiRequest(url);
+};
+
+// Get bank ledger API call
+export const getBankLedger = async (params = {}) => {
+  const queryParams = new URLSearchParams(params).toString();
+  const url = `${API_ENDPOINTS.GET_BANK_LEDGER}${queryParams ? '?' + queryParams : ''}`;
+  return apiRequest(url);
 };

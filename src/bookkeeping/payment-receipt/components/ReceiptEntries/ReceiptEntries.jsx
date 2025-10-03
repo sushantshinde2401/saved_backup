@@ -1,28 +1,65 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Receipt, ArrowLeft, Eye, Download } from 'lucide-react';
+import { Receipt, ArrowLeft, Eye, Download, Trash2 } from 'lucide-react';
 import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import ReceivedPayment from './ReceivedPayment';
+import { getCompanyAccounts, getCompanyDetails, getCustomerDetails, createReceiptAmountReceived } from '../../../shared/utils/api';
 
 function ReceiptEntries() {
   const navigate = useNavigate();
 
-  // State for ReceivedPayment component
-  const [formData, setFormData] = useState({
+  // Initial form data
+  const initialFormData = {
     accountNo: '',
     companyName: '',
+    companyAddress: '',
+    companyGST: '',
+    companyState: '',
+    companyStateCode: '',
+    bankName: '',
+    bankBranchCode: '',
+    bankAccountNo: '',
+    branchName: '',
+    ifscCode: '',
     amountReceived: '',
     paymentType: '',
     dateReceived: '',
     tdsPercentage: '',
     gst: '',
     customerName: '',
+    customerAddress: '',
+    customerGST: '',
+    customerState: '',
+    customerStateCode: '',
     transactionId: '',
     onAccountOf: '',
     deliveryNote: ''
-  });
-  const [savedReceiptData, setSavedReceiptData] = useState(null);
+  };
+
+  // Load initial state from localStorage
+  const loadInitialState = () => {
+    const saved = localStorage.getItem('receiptEntriesState');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        return {
+          formData: { ...initialFormData, ...parsed.formData },
+          savedReceiptData: parsed.savedReceiptData || null
+        };
+      } catch (e) {
+        console.warn('Failed to parse saved receipt entries state:', e);
+        return { formData: initialFormData, savedReceiptData: null };
+      }
+    }
+    return { formData: initialFormData, savedReceiptData: null };
+  };
+
+  const initialState = loadInitialState();
+
+  // State for ReceivedPayment component
+  const [formData, setFormData] = useState(initialState.formData);
+  const [savedReceiptData, setSavedReceiptData] = useState(initialState.savedReceiptData);
   const [isUploadingReceipt, setIsUploadingReceipt] = useState(false);
   const [companyAccounts, setCompanyAccounts] = useState([]);
   const [loadingCompanyDetails, setLoadingCompanyDetails] = useState(false);
@@ -32,14 +69,17 @@ function ReceiptEntries() {
     loadCompanyAccounts();
   }, []);
 
+  // Save state to localStorage on changes
+  useEffect(() => {
+    const stateToSave = { formData, savedReceiptData };
+    localStorage.setItem('receiptEntriesState', JSON.stringify(stateToSave));
+  }, [formData, savedReceiptData]);
+
   // Load company accounts
   const loadCompanyAccounts = async () => {
     try {
-      const response = await fetch('http://localhost:5000/get-company-accounts');
-      if (response.ok) {
-        const result = await response.json();
-        setCompanyAccounts(result.data || []);
-      }
+      const result = await getCompanyAccounts();
+      setCompanyAccounts(result.data || []);
     } catch (error) {
       console.error('Error loading company accounts:', error);
     }
@@ -51,23 +91,48 @@ function ReceiptEntries() {
 
     setLoadingCompanyDetails(true);
     try {
-      const response = await fetch(`http://localhost:5000/get-company-details/${accountNumber}`);
-      if (response.ok) {
-        const result = await response.json();
-        const companyData = result.data;
+      const result = await getCompanyDetails(accountNumber);
+      const companyData = result.data;
 
-        // Auto-fill company name
-        if (companyData.company_name) {
-          setFormData(prev => ({
-            ...prev,
-            companyName: companyData.company_name || ''
-          }));
-        }
-      }
+      // Auto-fill company details
+      setFormData(prev => ({
+        ...prev,
+        companyName: companyData.company_name || '',
+        companyAddress: companyData.company_address || '',
+        companyGST: companyData.company_gst_number || '',
+        companyState: companyData.state || '',
+        companyStateCode: companyData.state_code || '',
+        bankName: companyData.bank_name || '',
+        bankBranchCode: companyData.swift_code || '',
+        bankAccountNo: companyData.account_number || '',
+        branchName: companyData.branch || '',
+        ifscCode: companyData.ifsc_code || ''
+      }));
     } catch (error) {
       console.error('Error loading company details:', error);
     } finally {
       setLoadingCompanyDetails(false);
+    }
+  };
+
+  // Load customer details when customer name changes
+  const loadCustomerDetails = async (customerName) => {
+    if (!customerName) return;
+
+    try {
+      const result = await getCustomerDetails(customerName);
+      const customerData = result.data;
+
+      // Auto-fill customer details
+      setFormData(prev => ({
+        ...prev,
+        customerAddress: customerData.address || '',
+        customerGST: customerData.gst_number || '',
+        customerState: customerData.state || '',
+        customerStateCode: customerData.state_code || ''
+      }));
+    } catch (error) {
+      console.error('Error loading customer details:', error);
     }
   };
 
@@ -81,6 +146,11 @@ function ReceiptEntries() {
     // Auto-load company details when account number changes
     if (field === 'accountNo') {
       loadCompanyDetails(value);
+    }
+
+    // Auto-load customer details when customer name changes
+    if (field === 'customerName') {
+      loadCustomerDetails(value);
     }
   };
 
@@ -145,24 +215,10 @@ function ReceiptEntries() {
 
       console.log('Sending receipt data:', receiptData);
 
-      const response = await fetch('http://localhost:5000/receipt-amount-received', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(receiptData),
-      });
-
-      if (response.ok) {
-        const result = await response.json();
-        setSavedReceiptData(result.data);
-        toast.success('Receipt data saved successfully!');
-        return result.data;
-      } else {
-        const errorText = await response.text();
-        console.error('Receipt save failed:', response.status, errorText);
-        throw new Error(`Failed to save receipt data: ${response.status} ${errorText}`);
-      }
+      const result = await createReceiptAmountReceived(receiptData);
+      setSavedReceiptData(result.data);
+      toast.success('Receipt data saved successfully!');
+      return result.data;
     } catch (error) {
       console.error('Error saving receipt data:', error);
       toast.error(`Error saving receipt data: ${error.message}`);
@@ -174,11 +230,6 @@ function ReceiptEntries() {
 
   // Handle preview button click
   const handlePreview = () => {
-    if (!savedReceiptData) {
-      toast.error('Please save the receipt data first');
-      return;
-    }
-
     navigate('/bookkeeping/receipt-invoice-preview', {
       state: {
         receiptData: {
@@ -209,6 +260,16 @@ function ReceiptEntries() {
     document.body.removeChild(link);
   };
 
+  // Clear all data function
+  const clearData = () => {
+    if (window.confirm('Are you sure you want to clear all data? This will reset all entered information.')) {
+      setFormData(initialFormData);
+      setSavedReceiptData(null);
+      localStorage.removeItem('receiptEntriesState');
+      toast.info('All data has been cleared.');
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-100">
       {/* Header */}
@@ -221,13 +282,23 @@ function ReceiptEntries() {
                 Receipt Entries
               </h1>
             </div>
-            <button
-              onClick={() => navigate('/bookkeeping/payment-receipt')}
-              className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors flex items-center gap-2"
-            >
-              <ArrowLeft className="w-4 h-4" />
-              Back to Payment/Receipt Entries
-            </button>
+            <div className="flex items-center gap-4">
+              <button
+                onClick={clearData}
+                title="Clear all data"
+                className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg transition-colors flex items-center gap-2"
+              >
+                <Trash2 className="w-4 h-4" />
+                Clear Data
+              </button>
+              <button
+                onClick={() => navigate('/bookkeeping/payment-receipt')}
+                className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors flex items-center gap-2"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                Back to Payment/Receipt Entries
+              </button>
+            </div>
           </div>
         </div>
       </div>

@@ -503,6 +503,8 @@ function ProformaInvoice() {
               </div>
             </div>
 
+            <hr className="border-t border-gray-400 my-2" />
+
             {/* Buyer Details Section */}
             <div>
               <h3 className="text-sm font-bold text-gray-800 mb-1">Buyer (Bill to)</h3>
@@ -616,6 +618,8 @@ function ProformaInvoice() {
             {numberToWords(totalAmount)}
           </div>
         </div>
+
+        <hr className="border-t border-gray-400 my-2" />
 
         {/* Bank Details */}
         {currentData.bankDetails && (

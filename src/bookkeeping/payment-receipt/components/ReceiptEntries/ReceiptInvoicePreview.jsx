@@ -167,32 +167,77 @@ function ReceiptInvoicePreview() {
               </div>
 
               <div className="grid grid-cols-2 gap-6 mb-4">
+                {/* Left Side - Company and Customer Details */}
                 <div className="space-y-3">
+                  {/* Company Details Section */}
                   <div>
-                    <h2 className="text-sm font-bold text-gray-800 mb-1">From: {receiptData.companyName}</h2>
-                    <div className="text-xs text-gray-700">Account No: {receiptData.accountNo}</div>
+                    <h2 className="text-sm font-bold text-gray-800 mb-1">{receiptData.companyName}</h2>
+                    <div className="text-xs text-gray-700 leading-tight">
+                      {(receiptData.companyAddress || '').split('\n').map((line, index) => (
+                        <div key={index}>{line}</div>
+                      ))}
+                    </div>
+                    <div className="text-xs mt-1">
+                      <strong>GSTIN/UIN:</strong> {receiptData.companyGST}
+                    </div>
+                    <div className="text-xs">
+                      <strong>State Name:</strong> {receiptData.companyState}, <strong>Code:</strong> {receiptData.companyStateCode}
+                    </div>
                   </div>
+
+                  <hr className="border-t border-gray-400 my-2" />
+
+                  {/* Customer Details Section */}
                   <div>
                     <h3 className="text-sm font-bold text-gray-800 mb-1">Received From</h3>
-                    <div className="text-sm font-semibold text-gray-800">{receiptData.customerName}</div>
+                    <div className="text-xs font-semibold text-gray-800 mb-1">{receiptData.customerName}</div>
+                    <div className="text-xs text-gray-700 leading-tight mb-1">
+                      {(receiptData.customerAddress || '').split('\n').map((line, index) => (
+                        <div key={index}>{line}</div>
+                      ))}
+                    </div>
+                    <div className="text-xs mb-1">
+                      <strong>GSTIN/UIN:</strong> {receiptData.customerGST}
+                    </div>
+                    <div className="text-xs">
+                      <strong>State Name:</strong> {receiptData.customerState}, <strong>Code:</strong> {receiptData.customerStateCode}
+                    </div>
                   </div>
                 </div>
 
-                <div className="space-y-2">
-                  <div className="text-xs">
-                    <strong>Receipt No.:</strong> {receiptData.savedReceiptData?.receipt_amount_id || 'N/A'}
-                  </div>
-                  <div className="text-xs">
-                    <strong>Date:</strong> {selectedDate}
-                  </div>
-                  <div className="text-xs">
-                    <strong>Payment Type:</strong> {receiptData.paymentType}
-                  </div>
-                  {optionalFields.transactionId && (
+                {/* Right Side - Receipt Details */}
+                <div className="grid grid-cols-2 gap-4">
+                  {/* Left Column - Receipt Details */}
+                  <div className="space-y-2">
                     <div className="text-xs">
-                      <strong>Transaction ID:</strong> {optionalFields.transactionId}
+                      <strong>Receipt No.</strong><br />
+                      <span className="text-gray-700">{receiptData.savedReceiptData?.receipt_amount_id || 'N/A'}</span>
                     </div>
-                  )}
+                    <div className="text-xs">
+                      <strong>Transaction ID</strong><br />
+                      <span className="text-gray-700">{optionalFields.transactionId || '-'}</span>
+                    </div>
+                    <div className="text-xs">
+                      <strong>On Account of</strong><br />
+                      <span className="text-gray-700">{optionalFields.onAccountOf || '-'}</span>
+                    </div>
+                  </div>
+
+                  {/* Right Column - Receipt Details */}
+                  <div className="space-y-2">
+                    <div className="text-xs">
+                      <strong>Dated</strong><br />
+                      <span className="text-gray-700">{selectedDate}</span>
+                    </div>
+                    <div className="text-xs">
+                      <strong>Payment Type</strong><br />
+                      <span className="text-gray-700">{receiptData.paymentType}</span>
+                    </div>
+                    <div className="text-xs">
+                      <strong>Remarks</strong><br />
+                      <span className="text-gray-700">{optionalFields.remark || '-'}</span>
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -224,8 +269,8 @@ function ReceiptInvoicePreview() {
               </div>
 
               <div className="mb-3 text-xs">
+                <strong>Received Amount:</strong> ₹{totals.netAmount.toLocaleString()}<br />
                 <strong>Amount Received (in words)</strong><br />
-                <strong>₹{totals.netAmount.toLocaleString()}</strong><br />
                 {numberToWords(totals.netAmount)}
               </div>
 
@@ -235,14 +280,24 @@ function ReceiptInvoicePreview() {
                 </div>
               )}
 
+              <div className="mb-4">
+                <h3 className="text-sm font-bold text-gray-800 mb-2">Company's Bank Details</h3>
+                <div className="text-xs text-gray-700">
+                  <strong>A/c Holder's Name:</strong> {receiptData.companyName}<br />
+                  <strong>Bank Name:</strong> {receiptData.bankName} - {receiptData.bankBranchCode}<br />
+                  <strong>A/c No.:</strong> {receiptData.bankAccountNo}<br />
+                  <strong>Branch & IFS Code:</strong> {receiptData.branchName} & {receiptData.ifscCode}
+                </div>
+              </div>
+
               <div className="grid grid-cols-2 gap-6 mt-6">
                 <div className="text-center">
                   <div className="border-b border-gray-400 pb-8 mb-1"></div>
-                  <strong className="text-xs">Received By<br />Authorized Signatory</strong>
+                  <strong className="text-xs">Customer's Seal and Signature</strong>
                 </div>
                 <div className="text-center">
                   <div className="border-b border-gray-400 pb-8 mb-1"></div>
-                  <strong className="text-xs">Customer Signature</strong>
+                  <strong className="text-xs">for {receiptData.companyName}<br />Authorised Signatory</strong>
                 </div>
               </div>
             </div>

@@ -6,13 +6,45 @@ logger = logging.getLogger(__name__)
 
 bookkeeping_bp = Blueprint('bookkeeping', __name__)
 
+@bookkeeping_bp.route('/get-all-companies', methods=['GET'])
+def get_all_companies():
+    """Get all companies for dropdown"""
+    try:
+        from shared.utils import get_all_company_accounts
+
+        companies = get_all_company_accounts()
+
+        if companies:
+            logger.info(f"[COMPANIES] Retrieved {len(companies)} companies")
+            return jsonify({
+                "status": "success",
+                "data": companies,
+                "message": f"Retrieved {len(companies)} companies successfully",
+                "total": len(companies)
+            }), 200
+        else:
+            return jsonify({
+                "status": "success",
+                "data": [],
+                "message": "No companies found",
+                "total": 0
+            }), 200
+
+    except Exception as e:
+        logger.error(f"[COMPANIES] Failed to retrieve companies: {e}")
+        return jsonify({
+            "error": str(e),
+            "message": "Failed to retrieve companies",
+            "status": "error"
+        }), 500
+
 @bookkeeping_bp.route('/get-b2b-customers', methods=['GET'])
 def get_b2b_customers():
     """Get all B2B customers for invoice generation"""
     try:
         query = """
             SELECT id, company_name, gst_number, contact_person, phone_number,
-                   email, address, city, state, state_code, pincode
+                    email, address, city, state, state_code, pincode
             FROM b2bcustomersdetails
             ORDER BY company_name ASC
         """
@@ -197,13 +229,176 @@ def get_b2b_customers():
             "total": len(mock_customers)
         }), 200
 
+@bookkeeping_bp.route('/get-all-vendors', methods=['GET'])
+def get_all_vendors():
+    """Get all vendors for dropdown"""
+    try:
+        from shared.utils import get_all_vendors
+
+        vendors = get_all_vendors()
+
+        if vendors:
+            logger.info(f"[VENDORS] Retrieved {len(vendors)} vendors")
+            return jsonify({
+                "status": "success",
+                "data": vendors,
+                "message": f"Retrieved {len(vendors)} vendors successfully",
+                "total": len(vendors)
+            }), 200
+        else:
+            return jsonify({
+                "status": "success",
+                "data": [],
+                "message": "No vendors found",
+                "total": 0
+            }), 200
+
+    except Exception as e:
+        logger.error(f"[VENDORS] Failed to retrieve vendors: {e}")
+        return jsonify({
+            "error": str(e),
+            "message": "Failed to retrieve vendors",
+            "status": "error"
+        }), 500
+
+@bookkeeping_bp.route('/get-customer-details', methods=['GET'])
+def get_customer_details():
+    """Get customer details by name for auto-filling form"""
+    customer_name = request.args.get('name', '').strip()
+
+    if not customer_name:
+        return jsonify({
+            "error": "Customer name is required",
+            "message": "Please provide a customer name parameter",
+            "status": "validation_error"
+        }), 400
+
+    try:
+        query = """
+            SELECT id, company_name, gst_number, contact_person, phone_number,
+                    email, address, city, state, state_code, pincode
+            FROM b2bcustomersdetails
+            WHERE company_name ILIKE %s
+            LIMIT 1
+        """
+
+        results = execute_query(query, (f"%{customer_name}%",))
+
+        if results and len(results) > 0:
+            customer = results[0]
+            customer_data = {
+                'id': customer['id'],
+                'company_name': customer['company_name'],
+                'gst_number': customer['gst_number'],
+                'contact_person': customer['contact_person'],
+                'phone_number': customer['phone_number'],
+                'email': customer['email'],
+                'address': customer['address'],
+                'city': customer['city'],
+                'state': customer['state'],
+                'state_code': customer['state_code'],
+                'pincode': customer['pincode']
+            }
+
+            logger.info(f"[CUSTOMER] Retrieved customer details for: {customer_name}")
+            return jsonify({
+                "status": "success",
+                "data": customer_data,
+                "message": f"Retrieved customer details for: {customer_name}"
+            }), 200
+        else:
+            # Return mock data if customer not found in database
+            mock_customers = {
+                "Retail Chain Solutions": {
+                    'company_name': 'Retail Chain Solutions',
+                    'gst_number': '22AAAAA0000A1Z5',
+                    'contact_person': 'John Doe',
+                    'phone_number': '+91-9876543210',
+                    'email': 'john@retailchain.com',
+                    'address': '123 Retail Street, Shopping Mall',
+                    'city': 'Mumbai',
+                    'state': 'Maharashtra',
+                    'state_code': '27',
+                    'pincode': '400001'
+                },
+                "Automotive Parts Ltd": {
+                    'company_name': 'Automotive Parts Ltd',
+                    'gst_number': '07BBBBB0000B2Y4',
+                    'contact_person': 'Jane Smith',
+                    'phone_number': '+91-8765432109',
+                    'email': 'jane@autoparts.com',
+                    'address': '456 Auto Zone, Industrial Area',
+                    'city': 'Pune',
+                    'state': 'Maharashtra',
+                    'state_code': '27',
+                    'pincode': '411001'
+                }
+            }
+
+            if customer_name in mock_customers:
+                print(f"[MOCK] Database not available, returning mock customer: {customer_name}")
+                return jsonify({
+                    "status": "success",
+                    "data": mock_customers[customer_name],
+                    "message": f"Retrieved customer details for: {customer_name} (mock data)"
+                }), 200
+            else:
+                return jsonify({
+                    "error": "Customer not found",
+                    "message": f"No customer found with name: {customer_name}",
+                    "status": "not_found"
+                }), 404
+
+    except Exception as e:
+        # Return mock data if database connection fails
+        mock_customers = {
+            "Retail Chain Solutions": {
+                'company_name': 'Retail Chain Solutions',
+                'gst_number': '22AAAAA0000A1Z5',
+                'contact_person': 'John Doe',
+                'phone_number': '+91-9876543210',
+                'email': 'john@retailchain.com',
+                'address': '123 Retail Street, Shopping Mall',
+                'city': 'Mumbai',
+                'state': 'Maharashtra',
+                'state_code': '27',
+                'pincode': '400001'
+            },
+            "Automotive Parts Ltd": {
+                'company_name': 'Automotive Parts Ltd',
+                'gst_number': '07BBBBB0000B2Y4',
+                'contact_person': 'Jane Smith',
+                'phone_number': '+91-8765432109',
+                'email': 'jane@autoparts.com',
+                'address': '456 Auto Zone, Industrial Area',
+                'city': 'Pune',
+                'state': 'Maharashtra',
+                'state_code': '27',
+                'pincode': '411001'
+            }
+        }
+
+        if customer_name in mock_customers:
+            print(f"[MOCK] Database connection failed, returning mock customer: {customer_name}")
+            return jsonify({
+                "status": "success",
+                "data": mock_customers[customer_name],
+                "message": f"Retrieved customer details for: {customer_name} (mock data)"
+            }), 200
+        else:
+            return jsonify({
+                "error": "Customer not found",
+                "message": f"No customer found with name: {customer_name}",
+                "status": "not_found"
+            }), 404
+
 @bookkeeping_bp.route('/get-b2b-customer/<int:customer_id>', methods=['GET'])
 def get_b2b_customer(customer_id):
     """Get a specific B2B customer by ID for auto-filling form"""
     try:
         query = """
             SELECT id, company_name, gst_number, contact_person, phone_number,
-                   email, address, city, state, state_code, pincode
+                    email, address, city, state, state_code, pincode
             FROM b2bcustomersdetails
             WHERE id = %s
         """
@@ -402,44 +597,27 @@ def get_b2b_customer(customer_id):
 
 @bookkeeping_bp.route('/get-company-accounts', methods=['GET'])
 def get_company_accounts():
-    """Get all company accounts (existing endpoint)"""
+    """Get all company accounts from database"""
     try:
-        # This would typically come from a company_accounts table
-        # For now, returning sample data
-        sample_accounts = [
-            {
-                'id': 1,
-                'account_number': 'ACC001',
-                'company_name': 'Angel Maritime Services',
-                'bank_name': 'HDFC Bank',
-                'branch': 'Connaught Place',
-                'ifsc_code': 'HDFC0000123',
-                'swift_code': 'HDFCINBB',
-                'gst_number': '07AAAAA0000A1Z5',
-                'company_address': '123 Business Center, Connaught Place, New Delhi - 110001',
-                'state_code': '07'
-            },
-            {
-                'id': 2,
-                'account_number': 'ACC002',
-                'company_name': 'Maritime Solutions Ltd',
-                'bank_name': 'ICICI Bank',
-                'branch': 'Karol Bagh',
-                'ifsc_code': 'ICIC0000456',
-                'swift_code': 'ICICINBB',
-                'gst_number': '07BBBBB0000B2Y4',
-                'company_address': '456 Industrial Area, Karol Bagh, New Delhi - 110005',
-                'state_code': '07'
-            }
-        ]
+        from shared.utils import get_all_company_accounts
 
-        logger.info(f"[COMPANY] Retrieved {len(sample_accounts)} company accounts")
-        return jsonify({
-            "status": "success",
-            "data": sample_accounts,
-            "message": f"Retrieved {len(sample_accounts)} company accounts successfully",
-            "total": len(sample_accounts)
-        }), 200
+        accounts = get_all_company_accounts()
+
+        if accounts:
+            logger.info(f"[COMPANY] Retrieved {len(accounts)} company accounts")
+            return jsonify({
+                "status": "success",
+                "data": accounts,
+                "message": f"Retrieved {len(accounts)} company accounts successfully",
+                "total": len(accounts)
+            }), 200
+        else:
+            return jsonify({
+                "status": "success",
+                "data": [],
+                "message": "No company accounts found",
+                "total": 0
+            }), 200
 
     except Exception as e:
         logger.error(f"[COMPANY] Failed to retrieve company accounts: {e}")
@@ -453,33 +631,11 @@ def get_company_accounts():
 def get_company_details(account_number):
     """Get company details by account number"""
     try:
-        # This would typically query a database table
-        # For now, returning sample data based on account number
-        company_details_map = {
-            'ACC001': {
-                'company_name': 'Angel Maritime Services',
-                'company_gst_number': '07AAAAA0000A1Z5',
-                'company_address': '123 Business Center, Connaught Place, New Delhi - 110001',
-                'bank_name': 'HDFC Bank',
-                'branch': 'Connaught Place',
-                'ifsc_code': 'HDFC0000123',
-                'swift_code': 'HDFCINBB',
-                'state_code': '07'
-            },
-            'ACC002': {
-                'company_name': 'Maritime Solutions Ltd',
-                'company_gst_number': '07BBBBB0000B2Y4',
-                'company_address': '456 Industrial Area, Karol Bagh, New Delhi - 110005',
-                'bank_name': 'ICICI Bank',
-                'branch': 'Karol Bagh',
-                'ifsc_code': 'ICIC0000456',
-                'swift_code': 'ICICINBB',
-                'state_code': '07'
-            }
-        }
+        from shared.utils import get_company_details_by_account
 
-        if account_number in company_details_map:
-            details = company_details_map[account_number]
+        details = get_company_details_by_account(account_number)
+
+        if details:
             logger.info(f"[COMPANY] Retrieved company details for account: {account_number}")
             return jsonify({
                 "status": "success",
@@ -497,70 +653,42 @@ def get_company_details(account_number):
         logger.error(f"[COMPANY] Failed to retrieve company details for {account_number}: {e}")
         return jsonify({
             "error": str(e),
-@bookkeeping_bp.route('/get-all-companies', methods=['GET'])
-def get_all_companies():
-    """Get all companies for dropdown"""
-    try:
-        from shared.utils import get_all_company_accounts
-
-        companies = get_all_company_accounts()
-
-        if companies:
-            logger.info(f"[COMPANIES] Retrieved {len(companies)} companies")
-            return jsonify({
-                "status": "success",
-                "data": companies,
-                "message": f"Retrieved {len(companies)} companies successfully",
-                "total": len(companies)
-            }), 200
-        else:
-            return jsonify({
-                "status": "success",
-                "data": [],
-                "message": "No companies found",
-                "total": 0
-            }), 200
-
-    except Exception as e:
-        logger.error(f"[COMPANIES] Failed to retrieve companies: {e}")
-        return jsonify({
-            "error": str(e),
-            "message": "Failed to retrieve companies",
-            "status": "error"
-        }), 500
-
-@bookkeeping_bp.route('/get-all-vendors', methods=['GET'])
-def get_all_vendors():
-    """Get all vendors for dropdown"""
-    try:
-        from shared.utils import get_all_vendors
-
-        vendors = get_all_vendors()
-
-        if vendors:
-            logger.info(f"[VENDORS] Retrieved {len(vendors)} vendors")
-            return jsonify({
-                "status": "success",
-                "data": vendors,
-                "message": f"Retrieved {len(vendors)} vendors successfully",
-                "total": len(vendors)
-            }), 200
-        else:
-            return jsonify({
-                "status": "success",
-                "data": [],
-                "message": "No vendors found",
-                "total": 0
-            }), 200
-
-    except Exception as e:
-        logger.error(f"[VENDORS] Failed to retrieve vendors: {e}")
-        return jsonify({
-            "error": str(e),
-            "message": "Failed to retrieve vendors",
-            "status": "error"
-        }), 500
             "message": "Failed to retrieve company details",
+            "status": "error"
+        }), 500
+
+@bookkeeping_bp.route('/company-details/<int:company_id>', methods=['DELETE'])
+def delete_company_details(company_id):
+    """Delete a company details record by ID"""
+    try:
+        # Check if the record exists
+        check_query = "SELECT id, company_name FROM company_details WHERE id = %s"
+        check_result = execute_query(check_query, (company_id,))
+
+        if not check_result or len(check_result) == 0:
+            return jsonify({
+                "error": "Company not found",
+                "message": f"No company found with ID: {company_id}",
+                "status": "not_found"
+            }), 404
+
+        company_name = check_result[0]['company_name']
+
+        # Delete the record
+        delete_query = "DELETE FROM company_details WHERE id = %s"
+        execute_query(delete_query, (company_id,), fetch=False)
+
+        logger.info(f"[COMPANY] Deleted company details record ID: {company_id}, Company: {company_name}")
+        return jsonify({
+            "status": "success",
+            "message": f"Company details record ID {company_id} ({company_name}) deleted successfully"
+        }), 200
+
+    except Exception as e:
+        logger.error(f"[COMPANY] Failed to delete company details ID {company_id}: {e}")
+        return jsonify({
+            "error": str(e),
+            "message": "Failed to delete company details record",
             "status": "error"
         }), 500
 
@@ -803,6 +931,7 @@ def create_receipt_amount_received():
                         logger.info(f"[LEDGER] Auto-inserted ledger entry for receipt ID: {receipt_id}, company: {customer_name}")
                     else:
                         logger.warning(f"[LEDGER] No customer_name found for receipt ID: {receipt_id}, skipping ledger insertion")
+
                 else:
                     logger.error(f"[LEDGER] Could not retrieve receipt data for ID: {receipt_id}")
 
@@ -923,8 +1052,7 @@ def get_receipt_amount_received_by_id(receipt_id):
         else:
             return jsonify({
                 "error": "Receipt not found",
-                "message": f"No receipt amount received record found with ID: {receipt_id}",
-                "status": "not_found"
+                "message": f"No receipt amount received record found with ID: {receipt_id}"
             }), 404
 
     except Exception as e:
@@ -991,15 +1119,22 @@ def update_receipt_amount_received(receipt_id):
 
 @bookkeeping_bp.route('/receipt-amount-received/<int:receipt_id>', methods=['DELETE'])
 def delete_receipt_amount_received(receipt_id):
-    """Delete a receipt amount received record"""
+    """Delete a receipt amount received record and its corresponding ledger entry"""
     try:
+        # First, delete the corresponding ledger entry if it exists
+        voucher_no = f"RCPT-{receipt_id}"
+        ledger_delete_query = "DELETE FROM CompanyLedger WHERE voucher_no = %s"
+        execute_query(ledger_delete_query, (voucher_no,), fetch=False)
+        logger.info(f"[LEDGER] Deleted associated ledger entry for receipt ID: {receipt_id}")
+
+        # Then delete the receipt record
         query = "DELETE FROM ReceiptAmountReceived WHERE receipt_amount_id = %s"
         execute_query(query, (receipt_id,), fetch=False)
 
         logger.info(f"[RECEIPT] Deleted receipt amount received record ID: {receipt_id}")
         return jsonify({
             "status": "success",
-            "message": f"Receipt amount received record ID {receipt_id} deleted successfully"
+            "message": f"Receipt amount received record ID {receipt_id} and associated ledger entry deleted successfully"
         }), 200
 
     except Exception as e:
@@ -1010,7 +1145,7 @@ def delete_receipt_amount_received(receipt_id):
             "status": "error"
         }), 500
 
-@bookkeeping_bp.route('/bookkeeping/company-ledger', methods=['GET'])
+@bookkeeping_bp.route('/company-ledger', methods=['GET'])
 def get_company_ledger():
     """Get company ledger data from CompanyLedger table with filtering and pagination"""
     try:
@@ -1139,7 +1274,7 @@ def get_company_ledger():
             "status": "error"
         }), 500
 
-@bookkeeping_bp.route('/bookkeeping/company-ledger/<int:ledger_id>', methods=['DELETE'])
+@bookkeeping_bp.route('/company-ledger/<int:ledger_id>', methods=['DELETE'])
 def delete_company_ledger_entry(ledger_id):
     """Delete a company ledger entry and associated receipt if applicable"""
     try:
@@ -1194,67 +1329,613 @@ def delete_company_ledger_entry(ledger_id):
             "error": str(e),
             "message": "Failed to delete ledger entry",
             "status": "error"
-@bookkeeping_bp.route('/get-all-companies', methods=['GET'])
-def get_all_companies():
-    """Get all companies for dropdown"""
+        }), 500
+
+@bookkeeping_bp.route('/vendor-service-entry', methods=['POST'])
+def create_vendor_service_entry():
+    """Create a new vendor service entry in vendor_services table"""
     try:
-        from shared.utils import get_all_company_accounts
+        data = request.get_json()
 
-        companies = get_all_company_accounts()
+        required_fields = ['vendorId', 'dateOfService', 'particularOfService', 'feesToBePaid']
+        for field in required_fields:
+            if field not in data:
+                return jsonify({
+                    "error": f"Missing required field: {field}",
+                    "message": f"Field '{field}' is required",
+                    "status": "validation_error"
+                }), 400
 
-        if companies:
-            logger.info(f"[COMPANIES] Retrieved {len(companies)} companies")
+        # Validate and convert data types
+        try:
+            vendor_id = int(data['vendorId'])
+            company_id = int(data.get('companyId')) if data.get('companyId') else None
+            fees = float(data['feesToBePaid'])
+            if fees <= 0:
+                raise ValueError("Fees must be positive")
+        except (ValueError, TypeError) as e:
+            return jsonify({
+                "error": f"Invalid data type: {e}",
+                "message": "Please check that IDs are valid integers and fees are a positive number",
+                "status": "validation_error"
+            }), 400
+
+        # Insert into vendor_services
+        query = """
+            INSERT INTO vendor_services (
+                vendor_id, company_id, service_date, particulars,
+                amount, on_account_of, remark
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+            RETURNING id
+        """
+
+        params = (
+            vendor_id,
+            company_id,
+            data['dateOfService'],
+            data['particularOfService'],
+            fees,
+            data.get('onAccountOf'),
+            data.get('remark')
+        )
+
+        result = execute_query(query, params)
+
+        if result:
+            entry_id = result[0]['id']
+            logger.info(f"[VENDOR_SERVICE] Created vendor service entry ID: {entry_id}")
             return jsonify({
                 "status": "success",
-                "data": companies,
-                "message": f"Retrieved {len(companies)} companies successfully",
-                "total": len(companies)
+                "data": {"entry_id": entry_id},
+                "message": f"Vendor service entry created successfully with ID: {entry_id}"
+            }), 201
+        else:
+            return jsonify({
+                "error": "Failed to create entry",
+                "message": "No ID returned from insert operation",
+                "status": "error"
+            }), 500
+
+    except Exception as e:
+        logger.error(f"[VENDOR_SERVICE] Failed to create vendor service entry: {e}")
+        return jsonify({
+            "error": str(e),
+            "message": "Failed to create vendor service entry",
+            "status": "error"
+        }), 500
+
+@bookkeeping_bp.route('/vendor-payment-entry', methods=['POST'])
+def create_vendor_payment_entry():
+    """Create a new vendor payment entry in vendor_payments and bank_ledger"""
+    try:
+        data = request.get_json()
+
+        required_fields = ['vendorId', 'dateOfPayment', 'transactionId', 'amount']
+        for field in required_fields:
+            if field not in data:
+                return jsonify({
+                    "error": f"Missing required field: {field}",
+                    "message": f"Field '{field}' is required",
+                    "status": "validation_error"
+                }), 400
+
+        # Validate and convert data types
+        try:
+            vendor_id = int(data['vendorId'])
+            company_id = int(data.get('companyId')) if data.get('companyId') else None
+            amount = float(data['amount'])
+            if amount <= 0:
+                raise ValueError("Amount must be positive")
+        except (ValueError, TypeError) as e:
+            return jsonify({
+                "error": f"Invalid data type: {e}",
+                "message": "Please check that IDs are valid integers and amount is a positive number",
+                "status": "validation_error"
+            }), 400
+
+        # Check if transaction_id is unique in vendor_payments
+        check_query = "SELECT id FROM vendor_payments WHERE transaction_id = %s"
+        check_result = execute_query(check_query, (data['transactionId'],))
+
+        if check_result and len(check_result) > 0:
+            return jsonify({
+                "error": "Transaction ID already exists",
+                "message": f"Transaction ID '{data['transactionId']}' is already used",
+                "status": "validation_error"
+            }), 400
+
+        # Get vendor name for bank ledger
+        vendor_query = "SELECT vendor_name FROM vendors WHERE id = %s"
+        vendor_result = execute_query(vendor_query, (vendor_id,))
+
+        if not vendor_result:
+            return jsonify({
+                "error": "Vendor not found",
+                "message": f"No vendor found with ID: {vendor_id}",
+                "status": "validation_error"
+            }), 400
+
+        vendor_name = vendor_result[0]['vendor_name']
+
+        # Insert into vendor_payments
+        payment_query = """
+            INSERT INTO vendor_payments (
+                vendor_id, company_id, payment_date, transaction_id,
+                amount, on_account_of, remark
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+            RETURNING id
+        """
+
+        payment_params = (
+            vendor_id,
+            company_id,
+            data['dateOfPayment'],
+            data['transactionId'],
+            amount,
+            data.get('onAccountOf'),
+            data.get('remark')
+        )
+
+        payment_result = execute_query(payment_query, payment_params)
+
+        if payment_result:
+            payment_id = payment_result[0]['id']
+
+            # Insert into bank_ledger
+            bank_query = """
+                INSERT INTO bank_ledger (
+                    payment_date, transaction_id, vendor_id, company_id, vendor_name,
+                    amount, remark
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+                RETURNING id
+            """
+
+            bank_params = (
+                data['dateOfPayment'],
+                data['transactionId'],
+                vendor_id,
+                company_id,
+                vendor_name,
+                amount,
+                f"Payment to {vendor_name} - {data['transactionId']}"
+            )
+
+            bank_result = execute_query(bank_query, bank_params)
+            bank_created = bank_result is not None and len(bank_result) > 0
+
+            logger.info(f"[VENDOR_PAYMENT] Created vendor payment entry ID: {payment_id}, bank entry: {bank_created}")
+
+            return jsonify({
+                "status": "success",
+                "data": {
+                    "payment_id": payment_id,
+                    "bank_entry_created": bank_created
+                },
+                "message": f"Vendor payment entry created successfully with ID: {payment_id}"
+            }), 201
+        else:
+            return jsonify({
+                "error": "Failed to create payment entry",
+                "message": "No ID returned from insert operation",
+                "status": "error"
+            }), 500
+
+    except Exception as e:
+        logger.error(f"[VENDOR_PAYMENT] Failed to create vendor payment entry: {e}")
+        # Return more detailed error for debugging
+        import traceback
+        error_details = traceback.format_exc()
+        logger.error(f"[VENDOR_PAYMENT] Traceback: {error_details}")
+        return jsonify({
+            "error": str(e),
+            "message": "Failed to create vendor payment entry",
+            "status": "error",
+            "debug": {
+                "vendor_id": data.get('vendorId'),
+                "company_id": data.get('companyId'),
+                "amount": data.get('amount'),
+                "transaction_id": data.get('transactionId'),
+                "date": data.get('dateOfPayment')
+            }
+        }), 500
+
+@bookkeeping_bp.route('/vendor-ledger-report', methods=['GET'])
+def get_vendor_ledger_report():
+    """Get vendor ledger report with running balance"""
+    try:
+        vendor_id = request.args.get('vendor_id', type=int)
+        company_id = request.args.get('company_id', type=int)
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
+        limit = request.args.get('limit', 100, type=int)
+        offset = request.args.get('offset', 0, type=int)
+
+        if not vendor_id or not company_id:
+            return jsonify({
+                "error": "Vendor ID and Company ID are required",
+                "message": "Please provide vendor_id and company_id parameters",
+                "status": "validation_error"
+            }), 400
+
+        query = """
+            SELECT * FROM VendorLedgerReport
+            WHERE vendor_id = %s AND company_id = %s
+        """
+        params = [int(vendor_id), int(company_id)]  # Convert to int
+
+        if start_date:
+            query += " AND entry_date >= %s"
+            params.append(start_date)
+        if end_date:
+            query += " AND entry_date <= %s"
+            params.append(end_date)
+
+        query += " ORDER BY entry_date DESC, id DESC LIMIT %s OFFSET %s"
+        params.extend([limit, offset])
+
+        results = execute_query(query, params)
+
+        if results:
+            entries = []
+            for row in results:
+                entries.append({
+                    'id': row['id'],
+                    'entry_date': str(row['entry_date']) if row['entry_date'] else None,
+                    'vendor_name': row['vendor_name'],
+                    'company_name': row['company_name'],
+                    'type': row['type'],
+                    'particulars': row['particulars'],
+                    'remark': row['remark'],
+                    'on_account_of': row['on_account_of'],
+                    'dr': float(row['dr']) if row['dr'] else 0,
+                    'cr': float(row['cr']) if row['cr'] else 0,
+                    'transaction_id': row['transaction_id'],
+                    'balance': float(row['balance']) if row['balance'] else 0
+                })
+
+            logger.info(f"[VENDOR_LEDGER] Retrieved {len(entries)} entries for vendor {vendor_id}, company {company_id}")
+            return jsonify({
+                "status": "success",
+                "data": entries,
+                "message": f"Retrieved {len(entries)} vendor ledger entries",
+                "total": len(entries)
             }), 200
         else:
             return jsonify({
                 "status": "success",
                 "data": [],
-                "message": "No companies found",
+                "message": "No vendor ledger entries found",
                 "total": 0
             }), 200
 
     except Exception as e:
-        logger.error(f"[COMPANIES] Failed to retrieve companies: {e}")
+        logger.error(f"[VENDOR_LEDGER] Failed to retrieve vendor ledger report: {e}")
         return jsonify({
             "error": str(e),
-            "message": "Failed to retrieve companies",
+            "message": "Failed to retrieve vendor ledger report",
             "status": "error"
         }), 500
 
-@bookkeeping_bp.route('/get-all-vendors', methods=['GET'])
-def get_all_vendors():
-    """Get all vendors for dropdown"""
+@bookkeeping_bp.route('/bank-ledger-report', methods=['GET'])
+def get_bank_ledger_report():
+    """Get bank ledger report with running balance"""
     try:
-        from shared.utils import get_all_vendors
+        company_id = request.args.get('company_id', type=int)
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
+        limit = request.args.get('limit', 100, type=int)
+        offset = request.args.get('offset', 0, type=int)
 
-        vendors = get_all_vendors()
+        if not company_id:
+            return jsonify({
+                "error": "Company ID is required",
+                "message": "Please provide company_id parameter",
+                "status": "validation_error"
+            }), 400
 
-        if vendors:
-            logger.info(f"[VENDORS] Retrieved {len(vendors)} vendors")
+        # Get company name for filtering
+        company_query = "SELECT company_name FROM company_details WHERE id = %s"
+        company_result = execute_query(company_query, (company_id,))
+
+        if not company_result:
+            return jsonify({
+                "error": "Company not found",
+                "message": f"No company found with ID: {company_id}",
+                "status": "not_found"
+            }), 404
+
+        company_name = company_result[0]['company_name']
+
+        # Query bank_ledger table directly using company_id
+        query = """
+            SELECT
+                bl.id,
+                bl.payment_date as entry_date,
+                bl.transaction_id,
+                bl.vendor_name,
+                bl.amount,
+                bl.remark as particulars,
+                bl.created_at
+            FROM bank_ledger bl
+            WHERE bl.company_id = %s
+        """
+        params = [company_id]
+
+        logger.info(f"[BANK_LEDGER] Query: {query}")
+        logger.info(f"[BANK_LEDGER] Params: {params}")
+
+        if start_date:
+            query += " AND bl.payment_date >= %s"
+            params.append(start_date)
+        if end_date:
+            query += " AND bl.payment_date <= %s"
+            params.append(end_date)
+
+        query += " ORDER BY bl.payment_date DESC, bl.id DESC LIMIT %s OFFSET %s"
+        params.extend([limit, offset])
+
+        results = execute_query(query, params)
+
+        entries = []
+        running_balance = 0
+
+        if results:
+            # Sort by date ascending for balance calculation
+            sorted_results = sorted(results, key=lambda x: x['entry_date'])
+
+            for row in sorted_results:
+                # For bank ledger, payments are debits (money going out)
+                dr_amount = float(row['amount']) if row['amount'] else 0
+                cr_amount = 0  # Bank ledger typically shows outflows as debits
+
+                # Calculate running balance (DR increases balance in bank context? Wait, need to clarify)
+                # Actually for bank ledger, debits reduce balance, credits increase balance
+                running_balance -= dr_amount  # Payments reduce bank balance
+
+                entries.append({
+                    'id': row['id'],
+                    'entry_date': str(row['entry_date']) if row['entry_date'] else None,
+                    'company_name': company_name,
+                    'particulars': row['particulars'] or f"Payment to {row['vendor_name']} - {row['transaction_id']}",
+                    'transaction_id': row['transaction_id'],
+                    'dr': dr_amount,
+                    'cr': cr_amount,
+                    'balance': running_balance
+                })
+
+            # Sort back to descending for display
+            entries.sort(key=lambda x: x['entry_date'] or '1900-01-01', reverse=True)
+
+            # Apply pagination after sorting
+            paginated_entries = entries[offset:offset + limit]
+
+            logger.info(f"[BANK_LEDGER] Retrieved {len(paginated_entries)} entries for company {company_id}")
             return jsonify({
                 "status": "success",
-                "data": vendors,
-                "message": f"Retrieved {len(vendors)} vendors successfully",
-                "total": len(vendors)
+                "data": paginated_entries,
+                "message": f"Retrieved {len(paginated_entries)} bank ledger entries",
+                "total": len(paginated_entries)
             }), 200
         else:
             return jsonify({
                 "status": "success",
                 "data": [],
-                "message": "No vendors found",
+                "message": "No bank ledger entries found",
                 "total": 0
             }), 200
 
     except Exception as e:
-        logger.error(f"[VENDORS] Failed to retrieve vendors: {e}")
+        logger.error(f"[BANK_LEDGER] Failed to retrieve bank ledger report: {e}")
         return jsonify({
             "error": str(e),
-            "message": "Failed to retrieve vendors",
+            "message": "Failed to retrieve bank ledger report",
             "status": "error"
         }), 500
+
+@bookkeeping_bp.route('/vendor-ledger/<int:vendor_id>', methods=['GET'])
+def get_vendor_ledger(vendor_id):
+    """Get unified vendor ledger combining services and payments with running balance"""
+    try:
+        # Validate vendor exists
+        vendor_check = execute_query("SELECT vendor_name FROM vendors WHERE id = %s", (vendor_id,))
+        if not vendor_check:
+            return jsonify({
+                "error": "Vendor not found",
+                "message": f"No vendor found with ID: {vendor_id}",
+                "status": "not_found"
+            }), 404
+
+        vendor_name = vendor_check[0]['vendor_name']
+
+        # Get query parameters
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
+        limit = request.args.get('limit', 100, type=int)
+        offset = request.args.get('offset', 0, type=int)
+
+        # Build the UNION query
+        union_query = """
+            SELECT
+                'service' AS entry_type,
+                service_date AS entry_date,
+                'service' AS type,
+                particulars,
+                amount AS dr,
+                0 AS cr,
+                'Service' AS entry_type_display,
+                id,
+                vendor_id,
+                NULL AS transaction_id
+            FROM vendor_services
+            WHERE vendor_id = %s
+
+            UNION ALL
+
+            SELECT
+                'payment' AS entry_type,
+                payment_date AS entry_date,
+                'payment' AS type,
+                transaction_id AS particulars,
+                0 AS dr,
+                amount AS cr,
+                'Payment' AS entry_type_display,
+                id,
+                vendor_id,
+                transaction_id
+            FROM vendor_payments
+            WHERE vendor_id = %s
+        """
+
+        params = [vendor_id, vendor_id]
+
+        # Add date filters if provided
+        if start_date:
+            union_query += " AND entry_date >= %s"
+            params.extend([start_date, start_date])
+        if end_date:
+            union_query += " AND entry_date <= %s"
+            params.extend([end_date, end_date])
+
+        # Order by date and apply pagination
+        union_query += " ORDER BY entry_date DESC, type DESC LIMIT %s OFFSET %s"
+        params.extend([limit, offset])
+
+        results = execute_query(union_query, params)
+
+        entries = []
+        running_balance = 0
+
+        if results:
+            # Sort by date ascending for balance calculation
+            sorted_results = sorted(results, key=lambda x: x['entry_date'])
+
+            for row in sorted_results:
+                dr_amount = float(row['dr']) if row['dr'] else 0
+                cr_amount = float(row['cr']) if row['cr'] else 0
+
+                # Calculate running balance (DR increases balance, CR decreases)
+                running_balance += dr_amount - cr_amount
+
+                entries.append({
+                    'id': row['id'],
+                    'entry_type': row['entry_type'],
+                    'date': str(row['entry_date']) if row['entry_date'] else None,
+                    'particulars': row['particulars'] or '',
+                    'type': row['entry_type_display'] or '',
+                    'dr': dr_amount,
+                    'cr': cr_amount,
+                    'balance': running_balance,
+                    'transaction_id': row['transaction_id']
+                })
+
+            # Sort back to descending for display
+            entries.sort(key=lambda x: x['date'] or '1900-01-01', reverse=True)
+
+        logger.info(f"[VENDOR_LEDGER] Retrieved {len(entries)} ledger entries for vendor {vendor_id}")
+
+        return jsonify({
+            "status": "success",
+            "data": {
+                "vendor_name": vendor_name,
+                "entries": entries,
+                "total_entries": len(entries),
+                "pagination": {
+                    "limit": limit,
+                    "offset": offset,
+                    "has_more": len(entries) == limit
+                }
+            },
+            "message": f"Retrieved {len(entries)} ledger entries for {vendor_name}",
+            "total": len(entries)
+        }), 200
+
+    except Exception as e:
+        logger.error(f"[VENDOR_LEDGER] Failed to retrieve vendor ledger for {vendor_id}: {e}")
+        return jsonify({
+            "error": str(e),
+            "message": "Failed to retrieve vendor ledger",
+            "status": "error"
+        }), 500
+
+@bookkeeping_bp.route('/vendor-service/<int:service_id>', methods=['DELETE'])
+def delete_vendor_service(service_id):
+    """Delete a vendor service entry"""
+    try:
+        # Check if the record exists
+        check_query = """
+            SELECT id, vendor_id, particulars, amount
+            FROM vendor_services
+            WHERE id = %s
+        """
+        check_result = execute_query(check_query, (service_id,))
+
+        if not check_result or len(check_result) == 0:
+            return jsonify({
+                "error": "Service entry not found",
+                "message": f"No vendor service entry found with ID: {service_id}",
+                "status": "not_found"
+            }), 404
+
+        service_data = check_result[0]
+
+        # Delete the record
+        delete_query = "DELETE FROM vendor_services WHERE id = %s"
+        execute_query(delete_query, (service_id,), fetch=False)
+
+        logger.info(f"[VENDOR_SERVICE] Deleted service entry ID: {service_id}, Vendor: {service_data['vendor_id']}, Amount: {service_data['amount']}")
+        return jsonify({
+            "status": "success",
+            "message": f"Vendor service entry ID {service_id} deleted successfully"
+        }), 200
+
+    except Exception as e:
+        logger.error(f"[VENDOR_SERVICE] Failed to delete service entry ID {service_id}: {e}")
+        return jsonify({
+            "error": str(e),
+            "message": "Failed to delete vendor service entry",
+            "status": "error"
+        }), 500
+
+@bookkeeping_bp.route('/vendor-payment/<int:payment_id>', methods=['DELETE'])
+def delete_vendor_payment(payment_id):
+    """Delete a vendor payment entry and associated bank ledger entry"""
+    try:
+        # Check if the record exists
+        check_query = """
+            SELECT id, vendor_id, transaction_id, amount
+            FROM vendor_payments
+            WHERE id = %s
+        """
+        check_result = execute_query(check_query, (payment_id,))
+
+        if not check_result or len(check_result) == 0:
+            return jsonify({
+                "error": "Payment entry not found",
+                "message": f"No vendor payment entry found with ID: {payment_id}",
+                "status": "not_found"
+            }), 404
+
+        payment_data = check_result[0]
+
+        # Delete associated bank ledger entry if it exists
+        bank_delete_query = "DELETE FROM bank_ledger WHERE transaction_id = %s"
+        execute_query(bank_delete_query, (payment_data['transaction_id'],), fetch=False)
+        logger.info(f"[BANK_LEDGER] Deleted associated bank entry for payment ID: {payment_id}")
+
+        # Delete the payment record
+        delete_query = "DELETE FROM vendor_payments WHERE id = %s"
+        execute_query(delete_query, (payment_id,), fetch=False)
+
+        logger.info(f"[VENDOR_PAYMENT] Deleted payment entry ID: {payment_id}, Vendor: {payment_data['vendor_id']}, Amount: {payment_data['amount']}")
+        return jsonify({
+            "status": "success",
+            "message": f"Vendor payment entry ID {payment_id} deleted successfully"
+        }), 200
+
+    except Exception as e:
+        logger.error(f"[VENDOR_PAYMENT] Failed to delete payment entry ID {payment_id}: {e}")
+        return jsonify({
+            "error": str(e),
+            "message": "Failed to delete vendor payment entry",
+            "status": "error"
         }), 500

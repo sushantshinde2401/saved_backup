@@ -1,14 +1,31 @@
 import React, { useState, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Download, Eye, FileText, X, Printer } from 'lucide-react';
-import InvoicePreview from '../InvoicePreview';
 
 function PreviewDownloadStep({ formData }) {
-  const [showPreview, setShowPreview] = useState(false);
-  const [previewData, setPreviewData] = useState(null);
+  const navigate = useNavigate();
   const invoiceRef = useRef();
 
   // Prepare invoice data for preview
-  const prepareInvoiceData = () => {
+  const prepareInvoiceData = async () => {
+    // Resolve selected courses to full objects
+    let resolvedCourses = [];
+    if (formData.selectedCourses && formData.selectedCourses.length > 0) {
+      try {
+        const response = await fetch('http://localhost:5000/get-certificate-selections-for-receipt');
+        if (response.ok) {
+          const result = await response.json();
+          const allCertificates = result.data || [];
+          resolvedCourses = formData.selectedCourses.map(id =>
+            allCertificates.find(cert => cert.id === id)
+          ).filter(Boolean);
+        }
+      } catch (error) {
+        console.warn('Failed to resolve selected courses:', error);
+        resolvedCourses = [];
+      }
+    }
+
     const invoiceData = {
       // Company Details
       companyName: formData.companyName || '',
@@ -55,7 +72,7 @@ function PreviewDownloadStep({ formData }) {
       termsOfDelivery: formData.termsOfDelivery || '',
 
       // Selected Courses
-      selectedCourses: formData.selectedCourses || []
+      selectedCourses: resolvedCourses
     };
 
     return invoiceData;
@@ -69,10 +86,14 @@ function PreviewDownloadStep({ formData }) {
     return amount;
   };
 
-  const handlePreview = () => {
-    const invoiceData = prepareInvoiceData();
-    setPreviewData(invoiceData);
-    setShowPreview(true);
+  const handlePreview = async () => {
+    const invoiceData = await prepareInvoiceData();
+    navigate('/bookkeeping/invoice-preview', {
+      state: {
+        data: invoiceData,
+        formData: formData
+      }
+    });
   };
 
   const handleDownload = () => {
@@ -81,10 +102,6 @@ function PreviewDownloadStep({ formData }) {
     }
   };
 
-  // Handle data changes from InvoicePreview controls
-  const handleDataChange = (updatedData) => {
-    setPreviewData(updatedData);
-  };
 
   return (
     <div className="space-y-8">
@@ -164,17 +181,6 @@ function PreviewDownloadStep({ formData }) {
         </div>
       </div>
 
-      {/* Full Screen Invoice Preview */}
-      {showPreview && previewData && (
-        <div className="fixed inset-0 z-50 bg-white">
-          <InvoicePreview
-            ref={invoiceRef}
-            data={previewData}
-            onDataChange={handleDataChange}
-            formData={formData}
-          />
-        </div>
-      )}
     </div>
   );
 }

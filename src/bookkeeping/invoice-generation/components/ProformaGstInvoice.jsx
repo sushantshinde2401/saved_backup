@@ -558,6 +558,8 @@ function ProformaGstInvoice() {
               </div>
             </div>
 
+            <hr className="border-t border-gray-400 my-2" />
+
             {/* Buyer Details Section */}
             <div>
               <h3 className="text-sm font-bold text-gray-800 mb-1">Buyer (Bill to)</h3>
@@ -693,49 +695,7 @@ function ProformaGstInvoice() {
           </div>
         </div>
 
-        {/* Tax Summary Table */}
-        <div className="mb-3">
-          <table className="w-full border-collapse border border-gray-400 text-xs">
-            <thead>
-              <tr>
-                <th className="border border-gray-400 p-1 text-center" rowSpan="2">Taxable Value</th>
-                <th className="border border-gray-400 p-1 text-center" colSpan="2">CGST</th>
-                <th className="border border-gray-400 p-1 text-center" colSpan="2">SGST/UTGST</th>
-                <th className="border border-gray-400 p-1 text-center" rowSpan="2">Total Tax Amount</th>
-              </tr>
-              <tr>
-                <th className="border border-gray-400 p-1 text-center">Rate</th>
-                <th className="border border-gray-400 p-1 text-center">Amount</th>
-                <th className="border border-gray-400 p-1 text-center">Rate</th>
-                <th className="border border-gray-400 p-1 text-center">Amount</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td className="border border-gray-400 p-1 text-right">{totals.taxableAmount.toLocaleString()}</td>
-                <td className="border border-gray-400 p-1 text-center">{cgstRate}%</td>
-                <td className="border border-gray-400 p-1 text-right">{totals.cgstAmount.toLocaleString()}</td>
-                <td className="border border-gray-400 p-1 text-center">{sgstRate}%</td>
-                <td className="border border-gray-400 p-1 text-right">{totals.sgstAmount.toLocaleString()}</td>
-                <td className="border border-gray-400 p-1 text-right">{totals.totalAmount.toLocaleString()}</td>
-              </tr>
-              <tr className="border-t-2 border-gray-600">
-                <td className="border border-gray-400 p-1 font-bold text-right">{totals.taxableAmount.toLocaleString()}</td>
-                <td className="border border-gray-400 p-1 font-bold text-center" colSpan="2">{totals.cgstAmount.toLocaleString()}</td>
-                <td className="border border-gray-400 p-1 font-bold text-center" colSpan="2">{totals.sgstAmount.toLocaleString()}</td>
-                <td className="border border-gray-400 p-1 font-bold text-right">{totals.totalAmount.toLocaleString()}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-
-        {/* Tax Amount in Words */}
-        <div className="mb-3 text-xs">
-          <strong>Tax Amount (in words) :</strong><br />
-          <div className="mt-1">
-            {numberToWords(totals.totalAmount)}
-          </div>
-        </div>
+        <hr className="border-t border-gray-400 my-2" />
 
         {/* Bank Details */}
         {currentData.bankDetails && (

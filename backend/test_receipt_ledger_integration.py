@@ -35,7 +35,7 @@ def test_receipt_ledger_integration():
         # Step 1: Create receipt
         print("📝 Step 1: Creating receipt entry...")
         response = requests.post(
-            f"{base_url}/receipt-amount-received",
+            f"{base_url}/api/bookkeeping/receipt-amount-received",
             json=test_receipt_data,
             headers={"Content-Type": "application/json"}
         )
@@ -47,7 +47,7 @@ def test_receipt_ledger_integration():
 
             # Step 2: Verify receipt was created
             print("🔍 Step 2: Verifying receipt data...")
-            response = requests.get(f"{base_url}/receipt-amount-received/{receipt_id}")
+            response = requests.get(f"{base_url}/api/bookkeeping/receipt-amount-received/{receipt_id}")
             if response.status_code == 200:
                 receipt_data = response.json()['data']
                 print(f"✅ Receipt data verified: Customer={receipt_data['customer_name']}, Amount={receipt_data['amount_received']}")
@@ -55,7 +55,7 @@ def test_receipt_ledger_integration():
                 # Step 3: Check if ledger entry was created
                 print("📊 Step 3: Checking ledger entries...")
                 ledger_response = requests.get(
-                    f"{base_url}/bookkeeping/company-ledger?company_name={test_receipt_data['customer_name']}"
+                    f"{base_url}/api/bookkeeping/company-ledger?company_name={test_receipt_data['customer_name']}"
                 )
 
                 if ledger_response.status_code == 200:
@@ -103,13 +103,13 @@ def test_receipt_ledger_integration():
         # Step 4: Test deletion (only if we have a found_entry)
         if 'found_entry' in locals() and found_entry:
             print("🗑️  Step 4: Testing deletion...")
-            delete_response = requests.delete(f"{base_url}/bookkeeping/company-ledger/{found_entry['id']}")
+            delete_response = requests.delete(f"{base_url}/api/bookkeeping/company-ledger/{found_entry['id']}")
             if delete_response.status_code == 200:
                 print("✅ Ledger entry deleted successfully")
 
                 # Verify deletion by checking ledger again
                 verify_response = requests.get(
-                    f"{base_url}/bookkeeping/company-ledger?company_name={test_receipt_data['customer_name']}"
+                    f"{base_url}/api/bookkeeping/company-ledger?company_name={test_receipt_data['customer_name']}"
                 )
                 if verify_response.status_code == 200:
                     verify_data = verify_response.json()
@@ -123,7 +123,7 @@ def test_receipt_ledger_integration():
                     print("❌ Could not verify deletion")
 
                 # Also verify receipt is deleted
-                receipt_verify = requests.get(f"{base_url}/receipt-amount-received/{receipt_id}")
+                receipt_verify = requests.get(f"{base_url}/api/bookkeeping/receipt-amount-received/{receipt_id}")
                 if receipt_verify.status_code == 404:
                     print("✅ Associated receipt also deleted")
                 else:

@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Building2, Users, AlertCircle, CheckCircle } from 'lucide-react';
-import { getAllCompanies, getAllVendors, getCompanyDetails, createVendorServiceEntry } from '../../../shared/utils/api';
+import { getAllCompanies, getAllVendors, getCompanyDetails, createVendorPaymentEntry } from '../../../shared/utils/api';
 
-function VendorServiceEntry() {
+function VendorPaymentEntry() {
   const navigate = useNavigate();
   const [companies, setCompanies] = useState([]);
   const [vendors, setVendors] = useState([]);
@@ -17,9 +17,9 @@ function VendorServiceEntry() {
   // Removed search state variables as we're using select dropdowns
 
   // New form fields state
-  const [dateOfService, setDateOfService] = useState('');
-  const [particularOfService, setParticularOfService] = useState('');
-  const [feesToBePaid, setFeesToBePaid] = useState('');
+  const [dateOfPayment, setDateOfPayment] = useState('');
+  const [transactionId, setTransactionId] = useState('');
+  const [amount, setAmount] = useState('');
   const [onAccountOf, setOnAccountOf] = useState('');
   const [remark, setRemark] = useState('');
   const [showForm, setShowForm] = useState(false);
@@ -87,7 +87,7 @@ function VendorServiceEntry() {
    setError(null);
 
    // Basic validation
-   if (!dateOfService || !particularOfService || !feesToBePaid) {
+   if (!dateOfPayment || !transactionId || !amount) {
      setError('Please fill in all required fields.');
      return;
    }
@@ -96,9 +96,9 @@ function VendorServiceEntry() {
    const payload = {
      companyId: selectedCompany.id,
      vendorId: selectedVendor.id,
-     dateOfService,
-     particularOfService,
-     feesToBePaid: parseFloat(feesToBePaid),
+     dateOfPayment,
+     transactionId,
+     amount: parseFloat(amount),
      onAccountOf,
      remark
    };
@@ -106,23 +106,23 @@ function VendorServiceEntry() {
    try {
      setSubmitting(true);
 
-     // Call API to save service entry
-     const result = await createVendorServiceEntry(payload);
+     // Call API to save payment entry
+     const result = await createVendorPaymentEntry(payload);
 
      if (result.status === 'success') {
-       alert('Service entry submitted successfully!');
+       alert('Payment entry submitted successfully!');
        // Reset form
-       setDateOfService('');
-       setParticularOfService('');
-       setFeesToBePaid('');
+       setDateOfPayment('');
+       setTransactionId('');
+       setAmount('');
        setOnAccountOf('');
        setRemark('');
      } else {
-       setError(result.message || 'Failed to submit service entry');
+       setError(result.message || 'Failed to submit payment entry');
      }
    } catch (err) {
-     console.error('Error submitting service entry:', err);
-     setError('Failed to submit service entry. Please try again.');
+     console.error('Error submitting payment entry:', err);
+     setError('Failed to submit payment entry. Please try again.');
    } finally {
      setSubmitting(false);
    }
@@ -148,7 +148,7 @@ function VendorServiceEntry() {
             <div className="flex items-center">
               <Building2 className="w-8 h-8 text-orange-700 mr-3" />
               <h1 className="text-3xl font-bold text-gray-800">
-                Vendor Service Entry
+                Vendor Payment Entry
               </h1>
             </div>
             <button
@@ -269,19 +269,19 @@ function VendorServiceEntry() {
           </div>
         </div>
 
-        {/* Service Entry Form */}
+        {/* Payment Entry Form */}
         {showForm && (
           <div className="bg-white rounded-xl shadow-lg p-6 mt-8">
-            <h2 className="text-xl font-bold text-gray-800 mb-4">Service Details</h2>
+            <h2 className="text-xl font-bold text-gray-800 mb-4">Payment Details</h2>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Date of Service <span className="text-red-500">*</span>
+                  Date of Payment <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="date"
-                  value={dateOfService}
-                  onChange={(e) => setDateOfService(e.target.value)}
+                  value={dateOfPayment}
+                  onChange={(e) => setDateOfPayment(e.target.value)}
                   required
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
@@ -289,39 +289,31 @@ function VendorServiceEntry() {
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Particular of Service <span className="text-red-500">*</span>
+                  Transaction Id <span className="text-red-500">*</span>
                 </label>
-                <select
-                  value={particularOfService}
-                  onChange={(e) => setParticularOfService(e.target.value)}
+                <input
+                  type="text"
+                  value={transactionId}
+                  onChange={(e) => setTransactionId(e.target.value)}
                   required
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                >
-                  <option value="">Select service type...</option>
-                  <option value="Consulting">Consulting</option>
-                  <option value="Maintenance">Maintenance</option>
-                  <option value="Training">Training</option>
-                  <option value="Development">Development</option>
-                  <option value="Audit">Audit</option>
-                  <option value="Certification">Certification</option>
-                  <option value="Inspection">Inspection</option>
-                  <option value="Other">Other</option>
-                </select>
+                  placeholder="Enter transaction ID"
+                />
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Fees to be Paid <span className="text-red-500">*</span>
+                  Amount <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="number"
-                  value={feesToBePaid}
-                  onChange={(e) => setFeesToBePaid(e.target.value)}
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
                   required
                   min="0"
                   step="0.01"
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="Enter amount"
+                  placeholder="Enter payment amount"
                 />
               </div>
 
@@ -347,7 +339,7 @@ function VendorServiceEntry() {
                   onChange={(e) => setRemark(e.target.value)}
                   rows="3"
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="Additional notes"
+                  placeholder="Additional remarks"
                 />
               </div>
 
@@ -359,7 +351,7 @@ function VendorServiceEntry() {
                 {submitting && (
                   <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
                 )}
-                {submitting ? 'Submitting...' : 'Submit Service Entry'}
+                {submitting ? 'Submitting...' : 'Submit Payment Entry'}
               </button>
             </form>
           </div>
@@ -384,4 +376,4 @@ function VendorServiceEntry() {
   );
 }
 
-export default VendorServiceEntry;
+export default VendorPaymentEntry;

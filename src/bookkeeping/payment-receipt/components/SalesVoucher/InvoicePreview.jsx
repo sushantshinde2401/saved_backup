@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import {
   ArrowLeft,
   Download,
@@ -14,8 +14,10 @@ import {
   X
 } from 'lucide-react';
 
-function InvoicePreview({ data, onDataChange, formData }) {
+function InvoicePreview() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const { data, formData } = location.state || {};
 
   // State for editable fields
   const [isEditable, setIsEditable] = useState(true);
@@ -82,6 +84,28 @@ function InvoicePreview({ data, onDataChange, formData }) {
   };
 
   const totals = calculateTotals();
+
+  // Group selected courses by candidate name
+  const formatSelectedCourses = () => {
+    const courses = data?.selectedCourses || formData?.selectedCourses || [];
+    if (!courses || courses.length === 0) {
+      return 'No courses selected';
+    }
+
+    const grouped = courses.reduce((acc, course) => {
+      const candidateName = `${course.firstName || ''} ${course.lastName || ''}`.trim() || 'Unknown Candidate';
+      if (!acc[candidateName]) {
+        acc[candidateName] = [];
+      }
+      const certName = course.certificateName || 'Unknown Certificate';
+      acc[candidateName].push(certName);
+      return acc;
+    }, {});
+
+    return Object.entries(grouped)
+      .map(([candidate, certificates]) => `${candidate} (${certificates.join(', ')})`)
+      .join('\n');
+  };
 
   // Convert number to words
   const numberToWords = (num) => {
@@ -251,13 +275,6 @@ function InvoicePreview({ data, onDataChange, formData }) {
     const newFields = { ...optionalFields, [field]: value };
     setOptionalFields(newFields);
 
-    // Notify parent component of changes
-    if (onDataChange) {
-      onDataChange({
-        ...data,
-        [field]: value
-      });
-    }
   };
 
   const deleteOptionalField = (field) => {
@@ -268,36 +285,12 @@ function InvoicePreview({ data, onDataChange, formData }) {
   const OptionalField = ({ label, field }) => {
     if (!visibleFields[field]) return null;
 
-    if (!isEditable) {
-      return optionalFields[field] ? (
-        <div className="text-xs mb-1">
-          <div className="font-medium">{label}:</div>
-          <div className="text-gray-700">{optionalFields[field]}</div>
-        </div>
-      ) : null;
-    }
-
-    return (
+    return optionalFields[field] ? (
       <div className="text-xs mb-1">
-        <div className="font-medium mb-1">{label}:</div>
-        <div className="flex items-center gap-1">
-          <input
-            type="text"
-            defaultValue={optionalFields[field]}
-            onBlur={(e) => handleOptionalFieldChange(field, e.target.value)}
-            className="bg-yellow-50 border border-yellow-300 rounded px-2 py-1 text-xs flex-1"
-            placeholder="Enter value"
-          />
-          <button
-            type="button"
-            onClick={() => deleteOptionalField(field)}
-            className="text-red-500 hover:text-red-700 p-1"
-          >
-            <Trash2 size={10} />
-          </button>
-        </div>
+        <div className="font-medium">{label}:</div>
+        <div className="text-gray-700">{optionalFields[field]}</div>
       </div>
-    );
+    ) : null;
   };
 
   if (!data) return null;
@@ -382,6 +375,9 @@ function InvoicePreview({ data, onDataChange, formData }) {
                     </div>
                   </div>
 
+                  {/* Separator Line */}
+                  <div className="border-t border-gray-400 my-2"></div>
+
                   {/* Customer Details Section */}
                   <div>
                     <h3 className="text-sm font-bold text-gray-800 mb-1">Customer (Bill to)</h3>
@@ -446,7 +442,7 @@ function InvoicePreview({ data, onDataChange, formData }) {
                     <tr>
                       <td className="border border-gray-400 p-1 text-center">1</td>
                       <td className="border border-gray-400 p-1">
-                        <div className="whitespace-pre-line text-xs">Payment Received</div>
+                        <div className="whitespace-pre-line text-xs">{formatSelectedCourses()}</div>
                       </td>
                       <td className="border border-gray-400 p-1 text-right">
                         <span className="text-xs">₹{totals.baseAmount.toLocaleString()}</span>
@@ -498,43 +494,8 @@ function InvoicePreview({ data, onDataChange, formData }) {
                 </div>
               </div>
 
-              {/* GST Summary Table */}
-              {applyGST && (
-                <div className="mb-3">
-                  <table className="w-full border-collapse border border-gray-400 text-xs">
-                    <thead>
-                      <tr>
-                        <th className="border border-gray-400 p-1 text-center" rowSpan="2">Taxable Value</th>
-                        <th className="border border-gray-400 p-1 text-center" colSpan="2">CGST</th>
-                        <th className="border border-gray-400 p-1 text-center" colSpan="2">SGST/UTGST</th>
-                        <th className="border border-gray-400 p-1 text-center" rowSpan="2">Total Tax Amount</th>
-                      </tr>
-                      <tr>
-                        <th className="border border-gray-400 p-1 text-center">Rate</th>
-                        <th className="border border-gray-400 p-1 text-center">Amount</th>
-                        <th className="border border-gray-400 p-1 text-center">Rate</th>
-                        <th className="border border-gray-400 p-1 text-center">Amount</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr>
-                        <td className="border border-gray-400 p-1 text-right">₹{totals.baseAmount.toLocaleString()}</td>
-                        <td className="border border-gray-400 p-1 text-center">{gstRate/2}%</td>
-                        <td className="border border-gray-400 p-1 text-right">₹{(totals.gstAmount/2).toLocaleString()}</td>
-                        <td className="border border-gray-400 p-1 text-center">{gstRate/2}%</td>
-                        <td className="border border-gray-400 p-1 text-right">₹{(totals.gstAmount/2).toLocaleString()}</td>
-                        <td className="border border-gray-400 p-1 text-right">₹{totals.gstAmount.toLocaleString()}</td>
-                      </tr>
-                      <tr className="border-t-2 border-gray-600">
-                        <td className="border border-gray-400 p-1 font-bold text-right">₹{totals.baseAmount.toLocaleString()}</td>
-                        <td className="border border-gray-400 p-1 font-bold text-center" colSpan="2">₹{(totals.gstAmount/2).toLocaleString()}</td>
-                        <td className="border border-gray-400 p-1 font-bold text-center" colSpan="2">₹{(totals.gstAmount/2).toLocaleString()}</td>
-                        <td className="border border-gray-400 p-1 font-bold text-right">₹{totals.gstAmount.toLocaleString()}</td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              )}
+              {/* Separator Line */}
+              <div className="border-t border-gray-400 my-2"></div>
 
               {/* Bank Details */}
               {data.bankDetails && (
@@ -605,16 +566,7 @@ function InvoicePreview({ data, onDataChange, formData }) {
                   <input
                     type="date"
                     value={selectedDate}
-                    onChange={(e) => {
-                      const value = e.target.value;
-                      setSelectedDate(value);
-                      if (onDataChange) {
-                        onDataChange({
-                          ...data,
-                          invoiceDate: value
-                        });
-                      }
-                    }}
+                    onChange={(e) => setSelectedDate(e.target.value)}
                     className="bg-yellow-50 border border-yellow-300 rounded px-2 py-1 text-sm w-full"
                   />
                 </div>
@@ -630,16 +582,7 @@ function InvoicePreview({ data, onDataChange, formData }) {
                   <input
                     type="number"
                     value={amountReceived}
-                    onChange={(e) => {
-                      const value = Number(e.target.value);
-                      setAmountReceived(value);
-                      if (onDataChange) {
-                        onDataChange({
-                          ...data,
-                          amountReceived: value
-                        });
-                      }
-                    }}
+                    onChange={(e) => setAmountReceived(Number(e.target.value))}
                     className="bg-yellow-50 border border-yellow-300 rounded px-2 py-1 text-sm w-full"
                     placeholder="Enter amount"
                   />
@@ -649,16 +592,7 @@ function InvoicePreview({ data, onDataChange, formData }) {
                     <input
                       type="checkbox"
                       checked={applyGST}
-                      onChange={(e) => {
-                        const checked = e.target.checked;
-                        setApplyGST(checked);
-                        if (onDataChange) {
-                          onDataChange({
-                            ...data,
-                            applyGST: checked
-                          });
-                        }
-                      }}
+                      onChange={(e) => setApplyGST(e.target.checked)}
                       className="mr-2"
                     />
                     Apply GST (18%)

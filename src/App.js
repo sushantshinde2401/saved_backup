@@ -18,9 +18,10 @@ import PaymentReceiptPage from './bookkeeping/payment-receipt/components/Payment
 import VendorServiceEntry from './bookkeeping/payment-receipt/components/VendorServiceEntry/VendorServiceEntry';
 import SalesVoucher from './bookkeeping/payment-receipt/components/SalesVoucher/SalesVoucher';
 import ReceiptEntries from './bookkeeping/payment-receipt/components/ReceiptEntries/ReceiptEntries';
-import PaymentEntry from './bookkeeping/payment-receipt/components/VendorPaymentEntry/PaymentEntry';
+import VendorPaymentEntry from './bookkeeping/payment-receipt/components/VendorPaymentEntry/VendorPaymentEntry';
 import ReceiptInvoicePreview from './bookkeeping/payment-receipt/components/ReceiptEntries/ReceiptInvoicePreview';
 import NewStepper from './bookkeeping/payment-receipt/components/SalesVoucher/NewStepper';
+import InvoicePreview from './bookkeeping/payment-receipt/components/SalesVoucher/InvoicePreview';
 import InvoiceGeneration from './bookkeeping/invoice-generation/components/InvoiceGeneration';
 import ProformaGstInvoice from './bookkeeping/invoice-generation/components/ProformaGstInvoice';
 import ProformaInvoice from './bookkeeping/invoice-generation/components/ProformaInvoice';
@@ -56,8 +57,9 @@ function App() {
         <Route path="/bookkeeping/sales-voucher" element={<SalesVoucher />} />
         <Route path="/bookkeeping/receipt-entries" element={<ReceiptEntries />} />
         <Route path="/bookkeeping/receipt-invoice-preview" element={<ReceiptInvoicePreview />} />
-        <Route path="/bookkeeping/payment-receipt-page" element={<PaymentEntry />} />
+        <Route path="/bookkeeping/vendor-payment-entry" element={<VendorPaymentEntry />} />
         <Route path="/bookkeeping/new-invoice-stepper" element={<NewStepper />} />
+        <Route path="/bookkeeping/invoice-preview" element={<InvoicePreview />} />
         <Route path="/bookkeeping/invoice-generation" element={<InvoiceGeneration />} />
         <Route path="/bookkeeping/tax-invoice" element={<ProformaGstInvoice />} />
         <Route path="/bookkeeping/proforma-invoice" element={<ProformaInvoice />} />
