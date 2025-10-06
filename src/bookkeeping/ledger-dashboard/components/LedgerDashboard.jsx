@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
 import BankLedger from './BankLedger';
 import ClientLedger from './ClientLedger';
-import CompanyLedger from './CompanyLedger';
 import TaxLedger from './TaxLedger';
 import ExpenseLedger from './ExpenseLedger';
 import VendorLedger from './VendorLedger';
@@ -17,7 +16,6 @@ const LedgerDashboard = () => {
   const ledgers = [
     { id: 'bank', name: 'Bank Ledger', component: BankLedger },
     { id: 'client', name: 'Client Ledger', component: ClientLedger },
-    { id: 'company', name: 'Company Ledger', component: CompanyLedger },
     { id: 'tax', name: 'Tax Ledger', component: TaxLedger },
     { id: 'expense', name: 'Expense Ledger', component: ExpenseLedger },
     { id: 'vendor', name: 'Vendor Ledger', component: VendorLedger }

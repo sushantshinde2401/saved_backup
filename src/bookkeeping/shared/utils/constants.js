@@ -27,6 +27,7 @@ export const API_ENDPOINTS = {
   UPLOAD_TO_LEDGER: 'http://localhost:5000/api/bookkeeping/upload-to-ledger',
   VENDOR_SERVICE_ENTRY: 'http://localhost:5000/api/bookkeeping/vendor-service-entry',
   VENDOR_PAYMENT_ENTRY: 'http://localhost:5000/api/bookkeeping/vendor-payment-entry',
+  EXPENSE_PAYMENT_ENTRY: 'http://localhost:5000/api/bookkeeping/expense-payment-entry',
   GET_VENDOR_LEDGER: 'http://localhost:5000/api/bookkeeping/vendor-ledger',
   GET_COMPANY_LEDGER: 'http://localhost:5000/api/bookkeeping/company-ledger',
   GET_BANK_LEDGER: 'http://localhost:5000/api/bookkeeping/bank-ledger-report',

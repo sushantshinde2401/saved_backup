@@ -1,0 +1,30 @@
+{
+  "passport_front": {
+    "name": "",
+    "passport_no": "",
+    "date_of_birth": "",
+    "place_of_birth": "",
+    "date_of_issue": "",
+    "date_of_expiry": "",
+    "place_of_issue": ""
+  },
+  "passport_back": {
+    "address": "",
+    "emergency_contact": ""
+  },
+  "cdc": {
+    "cdc_no": "",
+    "indos_no": ""
+  },
+  "session_id": "02b7ee0e-4dc2-4c96-946f-ab277e0ba33d",
+  "temp_folder": "C:\\Users\\shank\\OneDrive\\Desktop\\backup_valueadded-main\\backend\\uploads\\temp/02b7ee0e-4dc2-4c96-946f-ab277e0ba33d",
+  "uploaded_files": {
+    "photo": "ARULPANDY_PHOTO.jpeg",
+    "signature": "SIGN_3.jpg",
+    "passport_front_img": "Screenshot_2025-09-03_115206.png",
+    "passport_back_img": "Screenshot_2025-09-03_115230.png"
+  },
+  "timestamp": "20251006_111457",
+  "last_updated": "2025-10-06T11:14:57.060509",
+  "ocr_enabled": false
+}

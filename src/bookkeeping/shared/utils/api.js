@@ -105,6 +105,14 @@ export const createVendorPaymentEntry = async (paymentData) => {
   });
 };
 
+// Expense payment entry API call
+export const createExpensePaymentEntry = async (expenseData) => {
+  return apiRequest(API_ENDPOINTS.EXPENSE_PAYMENT_ENTRY, {
+    method: 'POST',
+    body: JSON.stringify(expenseData)
+  });
+};
+
 // Get vendor ledger API call
 export const getVendorLedger = async (vendorId, params = {}) => {
   const queryParams = new URLSearchParams(params).toString();

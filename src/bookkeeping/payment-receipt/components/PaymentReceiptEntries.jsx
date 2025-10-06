@@ -1,6 +1,6 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { CreditCard, ArrowLeft, FileText, Receipt } from 'lucide-react';
+import { CreditCard, ArrowLeft, FileText, Receipt, Calculator } from 'lucide-react';
 
 function PaymentReceiptPage() {
   const navigate = useNavigate();
@@ -120,6 +120,26 @@ function PaymentReceiptPage() {
             >
               <CreditCard className="w-5 h-5" />
               Go to Add Expense Payment Entry
+            </button>
+          </div>
+        </div>
+
+        <hr className="my-8 border-gray-300" />
+
+        {/* Adjustment Entry */}
+        <div className="flex justify-center">
+          <div className="bg-white rounded-xl shadow-lg p-6 hover:shadow-xl transition-shadow duration-300 hover:scale-105 transition-transform duration-300 max-w-sm">
+            <div className="flex items-center mb-4">
+              <Calculator className="w-8 h-8 text-teal-700 mr-3" />
+              <h3 className="text-xl font-bold text-gray-800">Adjustment Entry</h3>
+            </div>
+            <p className="text-gray-600 mb-4">Manage adjustment entries for financial corrections</p>
+            <button
+              onClick={() => navigate('/bookkeeping/adjustment-entry')}
+              className="w-full bg-teal-600 hover:bg-teal-700 text-white py-3 px-6 rounded-lg transition-colors font-semibold flex items-center justify-center gap-2 shadow-md hover:shadow-lg"
+            >
+              <Calculator className="w-5 h-5" />
+              Go to Adjustment Entry
             </button>
           </div>
         </div>

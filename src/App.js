@@ -19,6 +19,7 @@ import VendorServiceEntry from './bookkeeping/payment-receipt/components/VendorS
 import SalesVoucher from './bookkeeping/payment-receipt/components/SalesVoucher/SalesVoucher';
 import ReceiptEntries from './bookkeeping/payment-receipt/components/ReceiptEntries/ReceiptEntries';
 import VendorPaymentEntry from './bookkeeping/payment-receipt/components/VendorPaymentEntry/VendorPaymentEntry';
+import AddExpensePaymentEntry from './bookkeeping/payment-receipt/components/AddExpensePaymentEntry/AddExpensePaymentEntry';
 import ReceiptInvoicePreview from './bookkeeping/payment-receipt/components/ReceiptEntries/ReceiptInvoicePreview';
 import NewStepper from './bookkeeping/payment-receipt/components/SalesVoucher/NewStepper';
 import InvoicePreview from './bookkeeping/payment-receipt/components/SalesVoucher/InvoicePreview';
@@ -58,6 +59,7 @@ function App() {
         <Route path="/bookkeeping/receipt-entries" element={<ReceiptEntries />} />
         <Route path="/bookkeeping/receipt-invoice-preview" element={<ReceiptInvoicePreview />} />
         <Route path="/bookkeeping/vendor-payment-entry" element={<VendorPaymentEntry />} />
+        <Route path="/bookkeeping/add-expense-payment-entry" element={<AddExpensePaymentEntry />} />
         <Route path="/bookkeeping/new-invoice-stepper" element={<NewStepper />} />
         <Route path="/bookkeeping/invoice-preview" element={<InvoicePreview />} />
         <Route path="/bookkeeping/invoice-generation" element={<InvoiceGeneration />} />

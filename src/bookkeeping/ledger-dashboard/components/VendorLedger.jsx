@@ -50,7 +50,6 @@ const VendorLedger = () => {
   const [sortConfig, setSortConfig] = useState({ key: 'date', direction: 'desc' });
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedEntry, setSelectedEntry] = useState(null);
-  const [showFilters, setShowFilters] = useState(false);
   const [autoRefresh, setAutoRefresh] = useState(false);
   const [lastRefresh, setLastRefresh] = useState(new Date());
 
@@ -353,13 +352,6 @@ const VendorLedger = () => {
             </div>
             <div className="flex items-center space-x-3">
               <button
-                onClick={() => setShowFilters(!showFilters)}
-                className="flex items-center px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
-              >
-                <Filter className="w-4 h-4 mr-2" />
-                Filters
-              </button>
-              <button
                 onClick={() => {
                   loadLedgerData();
                   setLastRefresh(new Date());
@@ -416,8 +408,7 @@ const VendorLedger = () => {
           </div>
 
           {/* Filters */}
-          {showFilters && (
-            <div className="bg-gray-50 p-4 rounded-lg mb-6">
+          <div className="bg-gray-50 p-4 rounded-lg mb-6">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Vendor Company Name *</label>
@@ -454,7 +445,6 @@ const VendorLedger = () => {
                 </div>
               </div>
             </div>
-          )}
 
           {/* Search and Export */}
           <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
