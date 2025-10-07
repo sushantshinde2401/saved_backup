@@ -188,7 +188,7 @@ const ClientLedger = () => {
     setSortConfig({ key, direction });
   };
 
-  // Sort data
+  // Sort data and calculate running balance
   const sortedData = React.useMemo(() => {
     let sortableItems = [...ledgerData];
     if (sortConfig.key) {
@@ -205,6 +205,14 @@ const ClientLedger = () => {
         return 0;
       });
     }
+
+    // Calculate running balance
+    let runningBalance = 0;
+    sortableItems.forEach(item => {
+      runningBalance += (item.debit || 0) - (item.credit || 0);
+      item.runningBalance = runningBalance;
+    });
+
     return sortableItems;
   }, [ledgerData, sortConfig]);
 
@@ -276,14 +284,15 @@ const ClientLedger = () => {
       searchTerm
     });
 
-    const headers = ['Date', 'Particulars', 'Voucher Type', 'Voucher No.', 'Debit', 'Credit'];
+    const headers = ['Date', 'Particulars', 'Voucher Type', 'Voucher No.', 'Debit', 'Credit', 'Balance'];
     const csvData = filteredData.map(entry => [
       entry.date,
       entry.particulars,
       entry.voucher_type,
       entry.voucher_no,
       entry.debit,
-      entry.credit
+      entry.credit,
+      entry.runningBalance
     ]);
 
     const csvContent = [headers, ...csvData]
@@ -528,6 +537,7 @@ const ClientLedger = () => {
                     { key: 'voucher_no', label: 'Voucher No.' },
                     { key: 'debit', label: 'Debit' },
                     { key: 'credit', label: 'Credit' },
+                    { key: 'balance', label: 'Balance' },
                     { key: 'actions', label: 'Actions' }
                   ].map(({ key, label }) => (
                     <th
@@ -550,7 +560,7 @@ const ClientLedger = () => {
               <tbody className="bg-white divide-y divide-gray-200">
                 {filteredData.length === 0 ? (
                   <tr>
-                    <td colSpan="7" className="px-6 py-12 text-center text-gray-500">
+                    <td colSpan="8" className="px-6 py-12 text-center text-gray-500">
                       {loading ? (
                         <div className="flex items-center justify-center">
                           <RefreshCw className="w-5 h-5 animate-spin mr-2" />
@@ -595,6 +605,11 @@ const ClientLedger = () => {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-medium">
                         {entry.credit > 0 ? formatCurrency(entry.credit) : '-'}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                        <span className={entry.runningBalance >= 0 ? 'text-red-600' : 'text-green-600'}>
+                          {formatCurrency(Math.abs(entry.runningBalance))}
+                        </span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                         <div className="flex items-center space-x-2">

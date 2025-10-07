@@ -15,10 +15,14 @@ import {
   User,
   RefreshCw,
   ArrowLeft,
-  Trash2
+  Trash2,
+  AlertTriangle
 } from 'lucide-react';
 import { API_ENDPOINTS } from '../../shared/utils';
 import { getAllCompanies, getBankLedger, formatCurrency } from '../../shared/utils/api';
+import useLedgerSync from '../../shared/hooks/useLedgerSync';
+import useDeleteLedgerRow from '../../shared/hooks/useDeleteLedgerRow';
+import ConfirmationModal from '../../shared/components/ConfirmationModal';
 
 const BankLedger = () => {
   const navigate = useNavigate();
@@ -49,6 +53,11 @@ const BankLedger = () => {
   const [selectedEntry, setSelectedEntry] = useState(null);
   const [autoRefresh, setAutoRefresh] = useState(false);
   const [lastRefresh, setLastRefresh] = useState(new Date());
+  const [showExpenseEntries, setShowExpenseEntries] = useState(false);
+
+  // Delete functionality state
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [entryToDelete, setEntryToDelete] = useState(null);
 
   // Fetch companies
   const fetchCompanies = async () => {
@@ -119,6 +128,51 @@ const BankLedger = () => {
     }
   };
 
+  // Sync hook for cross-tab updates
+  const { triggerSync } = useLedgerSync({
+    onSync: () => {
+      // Only sync if we have a company selected
+      if (filters.company_id) {
+        console.log('[BANK_LEDGER] Sync triggered, refreshing data');
+        loadLedgerData();
+      }
+    },
+    syncKey: 'expense_ledger_sync', // Use same sync key as ExpenseLedger
+    pollInterval: 15000 // Check every 15 seconds
+  });
+
+  // Delete hook
+  const {
+    deleteLedgerRow,
+    isDeleting,
+    deleteError,
+    resetError
+  } = useDeleteLedgerRow({
+    onSuccess: (entry) => {
+      // Refresh data after successful deletion
+      loadLedgerData();
+      setDeleteModalOpen(false);
+      setEntryToDelete(null);
+      // Trigger sync for other tabs
+      triggerSync();
+    },
+    onError: (error) => {
+      setDeleteModalOpen(false);
+      setEntryToDelete(null);
+    },
+    onOptimisticUpdate: (entry) => {
+      // Remove entry from local state immediately
+      setLedgerData(prev => prev.filter(item => item.id !== entry.id));
+    },
+    onRevertOptimisticUpdate: (entry) => {
+      // Add entry back to local state if deletion failed
+      setLedgerData(prev => {
+        const newData = [...prev, entry];
+        return newData.sort((a, b) => new Date(b.entry_date || '1900-01-01') - new Date(a.entry_date || '1900-01-01'));
+      });
+    }
+  });
+
   // Load companies on component mount
   useEffect(() => {
     fetchCompanies();
@@ -170,11 +224,13 @@ const BankLedger = () => {
     return sortableItems;
   }, [ledgerData, sortConfig]);
 
-  // Filter by search term
-  const filteredData = sortedData.filter(entry =>
-    entry.particulars?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    entry.transaction_id?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  // Filter by search term and expense entries
+  const filteredData = sortedData.filter(entry => {
+    const matchesSearch = entry.particulars?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                          entry.transaction_id?.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesExpenseFilter = !showExpenseEntries || entry.source === 'expense_ledger';
+    return matchesSearch && matchesExpenseFilter;
+  });
 
   // Handle filter changes
   const handleFilterChange = (field, value) => {
@@ -201,6 +257,32 @@ const BankLedger = () => {
     localStorage.setItem('bank_ledger_audit_log', JSON.stringify(auditLog));
   };
 
+  // Delete handlers
+  const handleDeleteClick = (entry) => {
+    setEntryToDelete(entry);
+    setDeleteModalOpen(true);
+    resetError();
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!entryToDelete) return;
+
+    logAuditEvent('DELETE_ATTEMPT', {
+      entry_id: entryToDelete.id,
+      particulars: entryToDelete.particulars,
+      transactionId: entryToDelete.transaction_id,
+      amount: entryToDelete.cr || entryToDelete.dr
+    });
+
+    await deleteLedgerRow(entryToDelete, 'bank-ledger');
+  };
+
+  const handleCancelDelete = () => {
+    setDeleteModalOpen(false);
+    setEntryToDelete(null);
+    resetError();
+  };
+
   // Export functions
   const exportToCSV = () => {
     logAuditEvent('EXPORT_CSV', {
@@ -213,7 +295,7 @@ const BankLedger = () => {
     const csvData = filteredData.map(entry => [
       entry.entry_date,
       entry.particulars,
-      entry.transaction_id,
+      entry.transaction_id || '',
       entry.dr,
       entry.cr,
       entry.balance
@@ -272,36 +354,50 @@ const BankLedger = () => {
               <p className="text-gray-600 mt-1">Tally-style accounting ledger for bank transactions</p>
             </div>
             <div className="flex items-center space-x-3">
-              <button
-                onClick={() => {
-                  loadLedgerData();
-                  setLastRefresh(new Date());
-                  logAuditEvent('MANUAL_REFRESH');
-                }}
-                className="flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
-              >
-                <RefreshCw className="w-4 h-4 mr-2" />
-                Refresh
-              </button>
-              <div className="flex items-center space-x-2">
-                <input
-                  type="checkbox"
-                  id="auto-refresh"
-                  checked={autoRefresh}
-                  onChange={(e) => {
-                    setAutoRefresh(e.target.checked);
-                    logAuditEvent('AUTO_REFRESH_TOGGLE', { enabled: e.target.checked });
-                  }}
-                  className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                />
-                <label htmlFor="auto-refresh" className="text-sm text-gray-700">
-                  Auto-refresh (30s)
-                </label>
-              </div>
-              <div className="text-sm text-gray-500">
-                Last updated: {lastRefresh.toLocaleTimeString()}
-              </div>
-            </div>
+               <button
+                 onClick={() => {
+                   loadLedgerData();
+                   setLastRefresh(new Date());
+                   logAuditEvent('MANUAL_REFRESH');
+                 }}
+                 className="flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+               >
+                 <RefreshCw className="w-4 h-4 mr-2" />
+                 Refresh
+               </button>
+               <button
+                 onClick={() => {
+                   setShowExpenseEntries(!showExpenseEntries);
+                   logAuditEvent('EXPENSE_FILTER_TOGGLE', { enabled: !showExpenseEntries });
+                 }}
+                 className={`flex items-center px-4 py-2 rounded-lg transition-colors ${
+                   showExpenseEntries
+                     ? 'bg-green-600 hover:bg-green-700 text-white'
+                     : 'bg-gray-200 hover:bg-gray-300 text-gray-700'
+                 }`}
+               >
+                 <Filter className="w-4 h-4 mr-2" />
+                 {showExpenseEntries ? 'Show All Entries' : 'Show Expense Entries'}
+               </button>
+               <div className="flex items-center space-x-2">
+                 <input
+                   type="checkbox"
+                   id="auto-refresh"
+                   checked={autoRefresh}
+                   onChange={(e) => {
+                     setAutoRefresh(e.target.checked);
+                     logAuditEvent('AUTO_REFRESH_TOGGLE', { enabled: e.target.checked });
+                   }}
+                   className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                 />
+                 <label htmlFor="auto-refresh" className="text-sm text-gray-700">
+                   Auto-refresh (30s)
+                 </label>
+               </div>
+               <div className="text-sm text-gray-500">
+                 Last updated: {lastRefresh.toLocaleTimeString()}
+               </div>
+             </div>
           </div>
 
           {/* Summary Cards */}
@@ -444,12 +540,15 @@ const BankLedger = () => {
                       </div>
                     </th>
                   ))}
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Actions
+                  </th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
                 {filteredData.length === 0 ? (
                   <tr>
-                    <td colSpan="6" className="px-6 py-12 text-center text-gray-500">
+                    <td colSpan="7" className="px-6 py-12 text-center text-gray-500">
                       {loading ? (
                         <div className="flex items-center justify-center">
                           <RefreshCw className="w-5 h-5 animate-spin mr-2" />
@@ -480,7 +579,7 @@ const BankLedger = () => {
                         {entry.particulars}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-mono">
-                        {entry.transaction_id}
+                        {entry.transaction_id || '-'}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-medium">
                         {entry.dr > 0 ? formatCurrency(entry.dr) : '-'}
@@ -492,6 +591,34 @@ const BankLedger = () => {
                         <span className={entry.balance >= 0 ? 'text-red-600' : 'text-green-600'}>
                           {formatCurrency(Math.abs(entry.balance))}
                         </span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                        <div className="flex items-center space-x-2">
+                          <button
+                            onClick={() => {
+                              setSelectedEntry(entry);
+                              logAuditEvent('VIEW_ENTRY_DETAILS', {
+                                particulars: entry.particulars,
+                                transactionId: entry.transaction_id,
+                                amount: entry.cr || entry.dr
+                              });
+                            }}
+                            className="text-blue-600 hover:text-blue-900 p-1 rounded hover:bg-blue-50 transition-colors"
+                            title="View Details"
+                            aria-label={`View details for ${entry.particulars}`}
+                          >
+                            <Eye className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteClick(entry)}
+                            className="text-red-600 hover:text-red-900 p-1 rounded hover:bg-red-50 transition-colors"
+                            title="Delete Entry"
+                            aria-label={`Delete entry: ${entry.particulars}`}
+                            disabled={isDeleting}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))
@@ -531,6 +658,30 @@ const BankLedger = () => {
           )}
         </div>
       </div>
+
+      {/* Delete Confirmation Modal */}
+      <ConfirmationModal
+        isOpen={deleteModalOpen}
+        onClose={handleCancelDelete}
+        onConfirm={handleConfirmDelete}
+        title="Delete Bank Ledger Entry"
+        message="Are you sure you want to delete this bank ledger entry? This action cannot be undone."
+        confirmText="Delete Entry"
+        cancelText="Cancel"
+        isLoading={isDeleting}
+        variant="danger"
+      >
+        {entryToDelete && (
+          <div className="bg-gray-50 p-3 rounded-lg">
+            <div className="text-sm space-y-1">
+              <div><strong>Date:</strong> {entryToDelete.entry_date ? new Date(entryToDelete.entry_date).toLocaleDateString('en-IN') : '-'}</div>
+              <div><strong>Particulars:</strong> {entryToDelete.particulars}</div>
+              <div><strong>Transaction ID:</strong> {entryToDelete.transaction_id || '-'}</div>
+              <div><strong>Amount:</strong> {entryToDelete.dr > 0 ? formatCurrency(entryToDelete.dr) + ' (DR)' : entryToDelete.cr > 0 ? formatCurrency(entryToDelete.cr) + ' (CR)' : '-'}</div>
+            </div>
+          </div>
+        )}
+      </ConfirmationModal>
     </div>
   );
 };

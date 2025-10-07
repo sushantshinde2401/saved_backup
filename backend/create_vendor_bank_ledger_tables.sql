@@ -36,24 +36,22 @@ CREATE TABLE IF NOT EXISTS VendorLedger (
     )
 );
 
--- BankLedger Table
+-- bank_ledger Table
 -- Stores all bank transactions related to vendor payments
-CREATE TABLE IF NOT EXISTS BankLedger (
+CREATE TABLE IF NOT EXISTS bank_ledger (
     id SERIAL PRIMARY KEY,
-    entry_date DATE NOT NULL,
+    payment_date DATE NOT NULL,
+    transaction_id VARCHAR(100),
+    vendor_id INTEGER REFERENCES vendors(id) ON DELETE CASCADE,
     company_id INTEGER NOT NULL REFERENCES company_details(id) ON DELETE CASCADE,
-    particulars TEXT,
-    transaction_id VARCHAR(100) REFERENCES VendorLedger(transaction_id) ON DELETE CASCADE,
-    dr DECIMAL(15,2) CHECK (dr IS NULL OR dr > 0),
-    cr DECIMAL(15,2) CHECK (cr IS NULL OR cr > 0),
+    vendor_name VARCHAR(255),
+    amount DECIMAL(15,2) CHECK (amount IS NULL OR amount > 0),
+    remark TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
-    -- For vendor payments, dr = payment amount, cr = null
-    -- Can be extended for other bank transactions
-    CONSTRAINT bank_ledger_amount_check CHECK (
-        (dr IS NOT NULL AND cr IS NULL) OR (dr IS NULL AND cr IS NOT NULL) OR (dr IS NULL AND cr IS NULL)
-    )
+    -- For vendor payments, amount = payment amount
+    CONSTRAINT bank_ledger_amount_check CHECK (amount IS NULL OR amount > 0)
 );
 
 -- ===========================================
@@ -67,10 +65,10 @@ CREATE INDEX IF NOT EXISTS idx_vendor_ledger_entry_date ON VendorLedger(entry_da
 CREATE INDEX IF NOT EXISTS idx_vendor_ledger_type ON VendorLedger(type);
 CREATE INDEX IF NOT EXISTS idx_vendor_ledger_transaction_id ON VendorLedger(transaction_id);
 
--- Indexes for BankLedger performance
-CREATE INDEX IF NOT EXISTS idx_bank_ledger_company_id ON BankLedger(company_id);
-CREATE INDEX IF NOT EXISTS idx_bank_ledger_entry_date ON BankLedger(entry_date);
-CREATE INDEX IF NOT EXISTS idx_bank_ledger_transaction_id ON BankLedger(transaction_id);
+-- Indexes for bank_ledger performance
+CREATE INDEX IF NOT EXISTS idx_bank_ledger_company_id ON bank_ledger(company_id);
+CREATE INDEX IF NOT EXISTS idx_bank_ledger_payment_date ON bank_ledger(payment_date);
+CREATE INDEX IF NOT EXISTS idx_bank_ledger_transaction_id ON bank_ledger(transaction_id);
 
 -- ===========================================
 -- TRIGGERS
@@ -87,20 +85,22 @@ BEGIN
         FROM vendors
         WHERE id = NEW.vendor_id;
 
-        INSERT INTO BankLedger (
-            entry_date,
-            company_id,
-            particulars,
+        INSERT INTO bank_ledger (
+            payment_date,
             transaction_id,
-            dr,
-            cr
+            vendor_id,
+            company_id,
+            vendor_name,
+            amount,
+            remark
         ) VALUES (
             NEW.entry_date,
-            NEW.company_id,
-            'Payment to Vendor ' || COALESCE(vendor_name, 'Unknown'),
             NEW.transaction_id,
+            NEW.vendor_id,
+            NEW.company_id,
+            vendor_name,
             NEW.cr,
-            NULL
+            'Auto-inserted from vendor payment'
         );
     END IF;
 
@@ -150,22 +150,22 @@ ORDER BY vl.vendor_id, vl.company_id, vl.entry_date, vl.id;
 CREATE OR REPLACE VIEW BankLedgerReport AS
 SELECT
     bl.id,
-    bl.entry_date,
+    bl.payment_date as entry_date,
     cd.company_name,
-    bl.particulars,
+    bl.remark as particulars,
     bl.transaction_id,
-    bl.dr,
-    bl.cr,
-    -- Running balance calculation for bank: SUM(dr - cr) ordered by date and id
-    SUM(COALESCE(bl.dr, 0) - COALESCE(bl.cr, 0))
+    0 as dr,
+    bl.amount as cr,
+    -- Running balance calculation for bank: SUM(amount) ordered by date and id
+    SUM(COALESCE(bl.amount, 0))
         OVER (
             PARTITION BY bl.company_id
-            ORDER BY bl.entry_date, bl.id
+            ORDER BY bl.payment_date, bl.id
             ROWS UNBOUNDED PRECEDING
         ) AS balance
-FROM BankLedger bl
+FROM bank_ledger bl
 JOIN company_details cd ON bl.company_id = cd.id
-ORDER BY bl.company_id, bl.entry_date, bl.id;
+ORDER BY bl.company_id, bl.payment_date, bl.id;
 
 -- ===========================================
 -- SAMPLE DATA AND QUERIES
@@ -231,6 +231,6 @@ VALUES ('2025-09-12', 8, 1, 'service', 'Certification Services', 7000.00);
 -- ===========================================
 
 COMMENT ON TABLE VendorLedger IS 'Stores vendor transactions including service bills and payments';
-COMMENT ON TABLE BankLedger IS 'Stores bank transactions, primarily auto-populated from vendor payments';
+COMMENT ON TABLE bank_ledger IS 'Stores bank transactions, primarily auto-populated from vendor payments';
 COMMENT ON VIEW VendorLedgerReport IS 'Vendor ledger with running balance calculation using window functions';
 COMMENT ON VIEW BankLedgerReport IS 'Bank ledger with running balance calculation using window functions';

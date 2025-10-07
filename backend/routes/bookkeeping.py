@@ -888,11 +888,11 @@ def create_receipt_amount_received():
             receipt_id = result[0]['receipt_amount_id']
             logger.info(f"[RECEIPT] Created receipt amount received record ID: {receipt_id}")
 
-            # After creating receipt, insert into CompanyLedger
+            # After creating receipt, insert into CompanyLedger and Bank Ledger
             try:
                 # Retrieve the receipt data we just inserted
                 receipt_query = """
-                    SELECT customer_name, transaction_date, account_no, amount_received
+                    SELECT customer_name, transaction_date, account_no, amount_received, company_name, transaction_id
                     FROM ReceiptAmountReceived
                     WHERE receipt_amount_id = %s
                 """
@@ -904,9 +904,19 @@ def create_receipt_amount_received():
                     transaction_date = receipt_data['transaction_date']
                     account_no = receipt_data['account_no']
                     amount_received = receipt_data['amount_received']
+                    company_name = receipt_data['company_name']
+                    transaction_id = receipt_data['transaction_id']
+
+                    # Get company_id for bank ledger insertion
+                    company_id = None
+                    if company_name:
+                        company_query = "SELECT id FROM company_details WHERE company_name = %s LIMIT 1"
+                        company_result = execute_query(company_query, (company_name,))
+                        if company_result:
+                            company_id = company_result[0]['id']
 
                     if customer_name:
-                        # Insert into CompanyLedger
+                        # Insert into CompanyLedger (Client Ledger)
                         ledger_query = """
                             INSERT INTO CompanyLedger (
                                 company_name, date, particulars, voucher_no, voucher_type,
@@ -928,15 +938,47 @@ def create_receipt_amount_received():
                             'Auto'
                         ), fetch=False)
 
-                        logger.info(f"[LEDGER] Auto-inserted ledger entry for receipt ID: {receipt_id}, company: {customer_name}")
+                        logger.info(f"[LEDGER] Auto-inserted client ledger entry for receipt ID: {receipt_id}, company: {customer_name}")
+
+                        # Insert into Bank Ledger (expense_ledger with account_type='bank')
+                        if company_id:
+                            bank_ledger_query = """
+                                INSERT INTO expense_ledger (
+                                    transaction_id, expense_type, company, vendor_name,
+                                    amount, expense_date, payment_method, particulars, debit, credit,
+                                    account_type, company_id
+                                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                            """
+
+                            bank_particulars = f"Receipt from {customer_name} - {transaction_id or ''}"
+
+                            execute_query(bank_ledger_query, (
+                                transaction_id,  # transaction_id
+                                'Receipt',  # expense_type
+                                company_name,  # company
+                                customer_name,  # vendor_name (customer paying)
+                                amount_received,  # amount
+                                transaction_date,  # expense_date
+                                data.get('payment_type', 'Bank Transfer'),  # payment_method
+                                bank_particulars,  # particulars
+                                0,  # debit
+                                amount_received,  # credit
+                                'bank',  # account_type
+                                company_id  # company_id
+                            ), fetch=False)
+
+                            logger.info(f"[BANK_LEDGER] Auto-inserted bank ledger entry for receipt ID: {receipt_id}, transaction: {transaction_id}")
+                        else:
+                            logger.warning(f"[BANK_LEDGER] No company_id found for company '{company_name}', skipping bank ledger insertion")
+
                     else:
-                        logger.warning(f"[LEDGER] No customer_name found for receipt ID: {receipt_id}, skipping ledger insertion")
+                        logger.warning(f"[LEDGER] No customer_name found for receipt ID: {receipt_id}, skipping ledger insertions")
 
                 else:
                     logger.error(f"[LEDGER] Could not retrieve receipt data for ID: {receipt_id}")
 
             except Exception as ledger_e:
-                logger.error(f"[LEDGER] Failed to auto-insert ledger entry for receipt ID {receipt_id}: {ledger_e}")
+                logger.error(f"[LEDGER] Failed to auto-insert ledger entries for receipt ID {receipt_id}: {ledger_e}")
                 # Don't fail the receipt creation if ledger insertion fails
 
             return jsonify({
@@ -1119,22 +1161,41 @@ def update_receipt_amount_received(receipt_id):
 
 @bookkeeping_bp.route('/receipt-amount-received/<int:receipt_id>', methods=['DELETE'])
 def delete_receipt_amount_received(receipt_id):
-    """Delete a receipt amount received record and its corresponding ledger entry"""
+    """Delete a receipt amount received record and its corresponding ledger entries"""
     try:
-        # First, delete the corresponding ledger entry if it exists
+        # First, get the receipt data to find transaction_id for bank ledger deletion
+        receipt_query = "SELECT transaction_id FROM ReceiptAmountReceived WHERE receipt_amount_id = %s"
+        receipt_result = execute_query(receipt_query, (receipt_id,))
+
+        if not receipt_result or len(receipt_result) == 0:
+            return jsonify({
+                "error": "Receipt not found",
+                "message": f"No receipt amount received record found with ID: {receipt_id}",
+                "status": "not_found"
+            }), 404
+
+        transaction_id = receipt_result[0]['transaction_id']
+
+        # Delete from expense_ledger (bank ledger entries) if transaction_id exists
+        if transaction_id:
+            bank_ledger_delete_query = "DELETE FROM expense_ledger WHERE transaction_id = %s AND account_type = 'bank' AND expense_type = 'Receipt'"
+            execute_query(bank_ledger_delete_query, (transaction_id,), fetch=False)
+            logger.info(f"[BANK_LEDGER] Deleted associated bank ledger entry for receipt ID: {receipt_id}, transaction: {transaction_id}")
+
+        # Delete the corresponding client ledger entry
         voucher_no = f"RCPT-{receipt_id}"
         ledger_delete_query = "DELETE FROM CompanyLedger WHERE voucher_no = %s"
         execute_query(ledger_delete_query, (voucher_no,), fetch=False)
-        logger.info(f"[LEDGER] Deleted associated ledger entry for receipt ID: {receipt_id}")
+        logger.info(f"[LEDGER] Deleted associated client ledger entry for receipt ID: {receipt_id}")
 
-        # Then delete the receipt record
+        # Finally delete the receipt record
         query = "DELETE FROM ReceiptAmountReceived WHERE receipt_amount_id = %s"
         execute_query(query, (receipt_id,), fetch=False)
 
         logger.info(f"[RECEIPT] Deleted receipt amount received record ID: {receipt_id}")
         return jsonify({
             "status": "success",
-            "message": f"Receipt amount received record ID {receipt_id} and associated ledger entry deleted successfully"
+            "message": f"Receipt amount received record ID {receipt_id} and associated ledger entries deleted successfully"
         }), 200
 
     except Exception as e:
@@ -1276,7 +1337,7 @@ def get_company_ledger():
 
 @bookkeeping_bp.route('/company-ledger/<int:ledger_id>', methods=['DELETE'])
 def delete_company_ledger_entry(ledger_id):
-    """Delete a company ledger entry and associated receipt if applicable"""
+    """Delete a company ledger entry and associated receipt and bank ledger entries if applicable"""
     try:
         # First, get the ledger entry to check its type
         select_query = """
@@ -1284,25 +1345,38 @@ def delete_company_ledger_entry(ledger_id):
             FROM CompanyLedger
             WHERE id = %s
         """
-        ledger_result = execute_query(select_query, (ledger_id,))
+        ledger_results = execute_query(select_query, (ledger_id,))
 
-        if not ledger_result or len(ledger_result) == 0:
+        if not ledger_results or len(ledger_results) == 0:
             return jsonify({
                 "error": "Ledger entry not found",
                 "message": f"No ledger entry found with ID: {ledger_id}",
                 "status": "not_found"
             }), 404
 
-        ledger_entry = ledger_result[0]
+        ledger_entry = ledger_results[0]
         voucher_no = ledger_entry['voucher_no']
         entry_type = ledger_entry['entry_type']
 
-        # If this is an auto-generated receipt entry, also delete the receipt
+        # If this is an auto-generated receipt entry, also delete the receipt and bank ledger entries
         if voucher_no and voucher_no.startswith('RCPT-'):
             try:
                 # Extract receipt ID from voucher_no (format: RCPT-{receipt_id})
                 receipt_id_str = voucher_no.replace('RCPT-', '')
                 receipt_id = int(receipt_id_str)
+
+                # Get transaction_id from the receipt to delete bank ledger entry
+                receipt_query = "SELECT transaction_id FROM ReceiptAmountReceived WHERE receipt_amount_id = %s"
+                receipt_results = execute_query(receipt_query, (receipt_id,))
+
+                if receipt_results and len(receipt_results) > 0:
+                    transaction_id = receipt_results[0]['transaction_id']
+
+                    # Delete from expense_ledger (bank ledger) if transaction_id exists
+                    if transaction_id:
+                        bank_ledger_delete_query = "DELETE FROM expense_ledger WHERE transaction_id = %s AND account_type = 'bank' AND expense_type = 'Receipt'"
+                        execute_query(bank_ledger_delete_query, (transaction_id,), fetch=False)
+                        logger.info(f"[BANK_LEDGER] Deleted associated bank ledger entry for receipt ID: {receipt_id}, transaction: {transaction_id}")
 
                 # Delete from ReceiptAmountReceived
                 receipt_delete_query = "DELETE FROM ReceiptAmountReceived WHERE receipt_amount_id = %s"
@@ -1311,16 +1385,21 @@ def delete_company_ledger_entry(ledger_id):
 
             except (ValueError, Exception) as receipt_e:
                 logger.warning(f"[RECEIPT] Could not delete associated receipt for ledger {ledger_id}: {receipt_e}")
-                # Continue with ledger deletion even if receipt deletion fails
+                # For atomicity, we should fail the entire operation if receipt deletion fails
+                return jsonify({
+                    "error": "Failed to delete associated records",
+                    "message": f"Could not delete associated receipt data: {str(receipt_e)}",
+                    "status": "error"
+                }), 500
 
         # Delete from CompanyLedger
         ledger_delete_query = "DELETE FROM CompanyLedger WHERE id = %s"
         execute_query(ledger_delete_query, (ledger_id,), fetch=False)
 
-        logger.info(f"[LEDGER] Deleted ledger entry ID: {ledger_id}")
+        logger.info(f"[LEDGER] Successfully deleted ledger entry ID: {ledger_id} and all associated records")
         return jsonify({
             "status": "success",
-            "message": f"Ledger entry {ledger_id} deleted successfully"
+            "message": f"Ledger entry {ledger_id} and associated records deleted successfully"
         }), 200
 
     except Exception as e:
@@ -1539,6 +1618,129 @@ def create_vendor_payment_entry():
             }
         }), 500
 
+@bookkeeping_bp.route('/expense-payment-entry', methods=['POST'])
+def create_expense_payment_entry():
+    """Create a new expense payment entry with double-entry accounting"""
+    try:
+        data = request.get_json()
+
+        # Use provided transaction ID or generate unique one
+        transaction_id = data.get('transactionId')
+        if not transaction_id:
+            import uuid
+            transaction_id = str(uuid.uuid4())[:8].upper()
+
+        # Get company_id if company name is provided
+        company_id = None
+        if data.get('company'):
+            company_query = "SELECT id FROM company_details WHERE company_name = %s LIMIT 1"
+            company_result = execute_query(company_query, (data['company'],))
+            if company_result:
+                company_id = company_result[0]['id']
+
+        # Convert amount to float if provided
+        amount = float(data.get('amount', 0)) if data.get('amount') else 0
+
+        # Create double-entry accounting entries
+        expense_particulars = f"Payment to {data.get('vendorName', 'Vendor')} for {data.get('description', data.get('expenseType', 'Expense'))}"
+        bank_particulars = f"Expense payment for {data.get('expenseType', 'Expense')} to {data.get('vendorName', 'Vendor')}"
+
+        # Insert expense ledger entry (debit)
+        expense_query = """
+            INSERT INTO expense_ledger (
+                transaction_id, expense_type, company, vendor_name, vendor_gst_number,
+                amount, expense_date, payment_method, description, particulars,
+                debit, credit, account_type, company_id
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING id
+        """
+
+        expense_params = (
+            transaction_id,
+            data.get('expenseType'),
+            data.get('company'),
+            data.get('vendorName'),
+            data.get('vendorGstNumber'),
+            amount,
+            data.get('expenseDate'),
+            data.get('paymentMethod'),
+            data.get('description'),
+            expense_particulars,
+            amount,  # debit
+            0,       # credit
+            'expense',
+            company_id
+        )
+
+        expense_result = execute_query(expense_query, expense_params)
+
+        # Insert bank ledger entry (credit)
+        bank_query = """
+            INSERT INTO expense_ledger (
+                transaction_id, expense_type, company, vendor_name, vendor_gst_number,
+                amount, expense_date, payment_method, description, particulars,
+                debit, credit, account_type, company_id
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING id
+        """
+
+        bank_params = (
+            transaction_id,
+            data.get('expenseType'),
+            data.get('company'),
+            data.get('vendorName'),
+            data.get('vendorGstNumber'),
+            amount,
+            data.get('expenseDate'),
+            data.get('paymentMethod'),
+            data.get('description'),
+            bank_particulars,
+            0,       # debit
+            amount,  # credit
+            'bank',
+            company_id
+        )
+
+        bank_result = execute_query(bank_query, bank_params)
+
+        if expense_result and bank_result:
+            expense_id = expense_result[0]['id']
+            bank_id = bank_result[0]['id']
+
+            # Log audit trail
+            logger.info(f"[EXPENSE_PAYMENT] Created expense payment entry - Transaction ID: {transaction_id}, Amount: {amount}, Company: {data.get('company')}")
+
+            # Flag for GST reconciliation if GST number provided
+            gst_flag = bool(data.get('vendorGstNumber'))
+
+            return jsonify({
+                "status": "success",
+                "data": {
+                    "transaction_id": transaction_id,
+                    "expense_entry_id": expense_id,
+                    "bank_entry_id": bank_id,
+                    "gst_reconciliation_flag": gst_flag
+                },
+                "message": f"Expense payment entry created successfully with transaction ID: {transaction_id}"
+            }), 201
+        else:
+            return jsonify({
+                "error": "Failed to create ledger entries",
+                "message": "Database insertion failed",
+                "status": "error"
+            }), 500
+
+    except Exception as e:
+        logger.error(f"[EXPENSE_PAYMENT] Failed to create expense payment entry: {e}")
+        import traceback
+        error_details = traceback.format_exc()
+        logger.error(f"[EXPENSE_PAYMENT] Traceback: {error_details}")
+        return jsonify({
+            "error": str(e),
+            "message": "Failed to create expense payment entry",
+            "status": "error"
+        }), 500
+
 @bookkeeping_bp.route('/vendor-ledger-report', methods=['GET'])
 def get_vendor_ledger_report():
     """Get vendor ledger report with running balance"""
@@ -1618,13 +1820,14 @@ def get_vendor_ledger_report():
 
 @bookkeeping_bp.route('/bank-ledger-report', methods=['GET'])
 def get_bank_ledger_report():
-    """Get bank ledger report with running balance"""
+    """Get bank ledger report with running balance, including expense credit entries"""
     try:
         company_id = request.args.get('company_id', type=int)
         start_date = request.args.get('start_date')
         end_date = request.args.get('end_date')
         limit = request.args.get('limit', 100, type=int)
         offset = request.args.get('offset', 0, type=int)
+        include_expenses = request.args.get('include_expenses', 'true').lower() == 'true'
 
         if not company_id:
             return jsonify({
@@ -1646,35 +1849,80 @@ def get_bank_ledger_report():
 
         company_name = company_result[0]['company_name']
 
-        # Query bank_ledger table directly using company_id
-        query = """
+        # Build UNION query for bank_ledger and expense_ledger credit entries with proper date filtering
+        query_parts = []
+
+        # Bank ledger entries
+        bank_query = """
             SELECT
                 bl.id,
                 bl.payment_date as entry_date,
                 bl.transaction_id,
                 bl.vendor_name,
-                bl.amount,
+                bl.amount as amount,
                 bl.remark as particulars,
-                bl.created_at
+                bl.created_at,
+                'bank_ledger' as source_table,
+                NULL as expense_type,
+                0 as debit,
+                bl.amount as credit
             FROM bank_ledger bl
             WHERE bl.company_id = %s
         """
-        params = [company_id]
+        bank_params = [company_id]
 
-        logger.info(f"[BANK_LEDGER] Query: {query}")
-        logger.info(f"[BANK_LEDGER] Params: {params}")
-
+        # Add date filters to bank query
         if start_date:
-            query += " AND bl.payment_date >= %s"
-            params.append(start_date)
+            bank_query += " AND bl.payment_date >= %s"
+            bank_params.append(start_date)
         if end_date:
-            query += " AND bl.payment_date <= %s"
-            params.append(end_date)
+            bank_query += " AND bl.payment_date <= %s"
+            bank_params.append(end_date)
 
-        query += " ORDER BY bl.payment_date DESC, bl.id DESC LIMIT %s OFFSET %s"
+        query_parts.append(bank_query)
+
+        # Add expense ledger credit entries if requested
+        if include_expenses:
+            expense_query = """
+                UNION ALL
+                SELECT
+                    el.id,
+                    el.expense_date as entry_date,
+                    el.transaction_id,
+                    el.vendor_name,
+                    el.amount as amount,
+                    el.particulars,
+                    el.created_at,
+                    'expense_ledger' as source_table,
+                    el.expense_type,
+                    el.debit,
+                    el.credit
+                FROM expense_ledger el
+                WHERE el.company_id = %s AND el.account_type = 'bank' AND el.credit > 0
+            """
+            expense_params = [company_id]
+
+            # Add date filters to expense query
+            if start_date:
+                expense_query += " AND el.expense_date >= %s"
+                expense_params.append(start_date)
+            if end_date:
+                expense_query += " AND el.expense_date <= %s"
+                expense_params.append(end_date)
+
+            query_parts.append(expense_query)
+            bank_params.extend(expense_params)
+
+        full_query = "".join(query_parts)
+        params = bank_params
+
+        full_query += " ORDER BY entry_date DESC, id DESC LIMIT %s OFFSET %s"
         params.extend([limit, offset])
 
-        results = execute_query(query, params)
+        logger.info(f"[BANK_LEDGER] Query: {full_query}")
+        logger.info(f"[BANK_LEDGER] Params: {params}")
+
+        results = execute_query(full_query, params)
 
         entries = []
         running_balance = 0
@@ -1684,23 +1932,23 @@ def get_bank_ledger_report():
             sorted_results = sorted(results, key=lambda x: x['entry_date'])
 
             for row in sorted_results:
-                # For bank ledger, payments are debits (money going out)
-                dr_amount = float(row['amount']) if row['amount'] else 0
-                cr_amount = 0  # Bank ledger typically shows outflows as debits
+                dr_amount = float(row['debit']) if row['debit'] else 0
+                cr_amount = float(row['credit']) if row['credit'] else 0
 
-                # Calculate running balance (DR increases balance in bank context? Wait, need to clarify)
-                # Actually for bank ledger, debits reduce balance, credits increase balance
-                running_balance -= dr_amount  # Payments reduce bank balance
+                # Calculate running balance (DR reduces balance, CR increases balance)
+                running_balance += cr_amount - dr_amount
 
                 entries.append({
                     'id': row['id'],
                     'entry_date': str(row['entry_date']) if row['entry_date'] else None,
                     'company_name': company_name,
-                    'particulars': row['particulars'] or f"Payment to {row['vendor_name']} - {row['transaction_id']}",
+                    'particulars': row['particulars'] or f"Entry - {row['transaction_id']}",
                     'transaction_id': row['transaction_id'],
                     'dr': dr_amount,
                     'cr': cr_amount,
-                    'balance': running_balance
+                    'balance': running_balance,
+                    'source': row['source_table'],
+                    'expense_type': row['expense_type']
                 })
 
             # Sort back to descending for display
@@ -1736,9 +1984,13 @@ def get_bank_ledger_report():
 def get_vendor_ledger(vendor_id):
     """Get unified vendor ledger combining services and payments with running balance"""
     try:
+        logger.info(f"[VENDOR_LEDGER] Starting request for vendor_id: {vendor_id}")
+
         # Validate vendor exists
+        logger.info(f"[VENDOR_LEDGER] Checking if vendor {vendor_id} exists")
         vendor_check = execute_query("SELECT vendor_name FROM vendors WHERE id = %s", (vendor_id,))
         if not vendor_check:
+            logger.warning(f"[VENDOR_LEDGER] Vendor {vendor_id} not found")
             return jsonify({
                 "error": "Vendor not found",
                 "message": f"No vendor found with ID: {vendor_id}",
@@ -1746,6 +1998,7 @@ def get_vendor_ledger(vendor_id):
             }), 404
 
         vendor_name = vendor_check[0]['vendor_name']
+        logger.info(f"[VENDOR_LEDGER] Found vendor: {vendor_name}")
 
         # Get query parameters
         start_date = request.args.get('start_date')
@@ -1753,8 +2006,13 @@ def get_vendor_ledger(vendor_id):
         limit = request.args.get('limit', 100, type=int)
         offset = request.args.get('offset', 0, type=int)
 
-        # Build the UNION query
-        union_query = """
+        logger.info(f"[VENDOR_LEDGER] Query params - start_date: {start_date}, end_date: {end_date}, limit: {limit}, offset: {offset}")
+
+        # Build the UNION query with proper date filtering
+        union_query_parts = []
+
+        # Services query
+        services_query = """
             SELECT
                 'service' AS entry_type,
                 service_date AS entry_date,
@@ -1768,9 +2026,21 @@ def get_vendor_ledger(vendor_id):
                 NULL AS transaction_id
             FROM vendor_services
             WHERE vendor_id = %s
+        """
+        services_params = [vendor_id]
 
-            UNION ALL
+        # Add date filters to services query
+        if start_date:
+            services_query += " AND service_date >= %s"
+            services_params.append(start_date)
+        if end_date:
+            services_query += " AND service_date <= %s"
+            services_params.append(end_date)
 
+        union_query_parts.append(services_query)
+
+        # Payments query
+        payments_query = """
             SELECT
                 'payment' AS entry_type,
                 payment_date AS entry_date,
@@ -1785,22 +2055,32 @@ def get_vendor_ledger(vendor_id):
             FROM vendor_payments
             WHERE vendor_id = %s
         """
+        payments_params = [vendor_id]
 
-        params = [vendor_id, vendor_id]
-
-        # Add date filters if provided
+        # Add date filters to payments query
         if start_date:
-            union_query += " AND entry_date >= %s"
-            params.extend([start_date, start_date])
+            payments_query += " AND payment_date >= %s"
+            payments_params.append(start_date)
         if end_date:
-            union_query += " AND entry_date <= %s"
-            params.extend([end_date, end_date])
+            payments_query += " AND payment_date <= %s"
+            payments_params.append(end_date)
+
+        union_query_parts.append(payments_query)
+
+        # Combine queries
+        union_query = " UNION ALL ".join(union_query_parts)
+        params = services_params + payments_params
+        logger.info(f"[VENDOR_LEDGER] Final query params: {params}")
 
         # Order by date and apply pagination
         union_query += " ORDER BY entry_date DESC, type DESC LIMIT %s OFFSET %s"
         params.extend([limit, offset])
 
+        logger.info(f"[VENDOR_LEDGER] Final query: {union_query}")
+        logger.info(f"[VENDOR_LEDGER] Final params: {params}")
+
         results = execute_query(union_query, params)
+        logger.info(f"[VENDOR_LEDGER] Query executed successfully, results count: {len(results) if results else 0}")
 
         entries = []
         running_balance = 0
@@ -1851,10 +2131,16 @@ def get_vendor_ledger(vendor_id):
 
     except Exception as e:
         logger.error(f"[VENDOR_LEDGER] Failed to retrieve vendor ledger for {vendor_id}: {e}")
+        import traceback
+        logger.error(f"[VENDOR_LEDGER] Traceback: {traceback.format_exc()}")
         return jsonify({
             "error": str(e),
             "message": "Failed to retrieve vendor ledger",
-            "status": "error"
+            "status": "error",
+            "debug_info": {
+                "vendor_id": vendor_id,
+                "query_params": dict(request.args)
+            }
         }), 500
 
 @bookkeeping_bp.route('/vendor-service/<int:service_id>', methods=['DELETE'])
@@ -1937,5 +2223,230 @@ def delete_vendor_payment(payment_id):
         return jsonify({
             "error": str(e),
             "message": "Failed to delete vendor payment entry",
+            "status": "error"
+        }), 500
+
+@bookkeeping_bp.route('/expense-ledger', methods=['GET'])
+def get_expense_ledger():
+    """Get expense ledger entries (debit entries only) with filtering and pagination"""
+    try:
+        # Get query parameters
+        company_id = request.args.get('company_id', type=int)
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
+        expense_type = request.args.get('expense_type', '').strip()
+        limit = request.args.get('limit', 50, type=int)
+        offset = request.args.get('offset', 0, type=int)
+
+        if not company_id:
+            return jsonify({
+                "error": "Company ID is required",
+                "message": "Please provide company_id parameter",
+                "status": "validation_error"
+            }), 400
+
+        # Query expense_ledger table for debit entries only
+        query = """
+            SELECT
+                id,
+                transaction_id,
+                expense_type,
+                company,
+                vendor_name,
+                vendor_gst_number,
+                amount,
+                expense_date,
+                payment_method,
+                description,
+                particulars,
+                debit,
+                credit,
+                account_type,
+                created_at
+            FROM expense_ledger
+            WHERE company_id = %s AND debit > 0
+        """
+        params = [company_id]
+
+        if start_date:
+            query += " AND expense_date >= %s"
+            params.append(start_date)
+        if end_date:
+            query += " AND expense_date <= %s"
+            params.append(end_date)
+        if expense_type:
+            query += " AND expense_type ILIKE %s"
+            params.append(f"%{expense_type}%")
+
+        query += " ORDER BY expense_date DESC, created_at DESC LIMIT %s OFFSET %s"
+        params.extend([limit, offset])
+
+        results = execute_query(query, params)
+
+        entries = []
+        total_debit = 0
+        total_credit = 0
+
+        if results:
+            logger.info(f"[EXPENSE_LEDGER] Found {len(results)} debit entries in expense_ledger")
+            for row in results:
+                debit_amount = float(row['debit']) if row['debit'] else 0
+                credit_amount = float(row['credit']) if row['credit'] else 0
+                entries.append({
+                    'id': row['id'],
+                    'transaction_id': row['transaction_id'] or '',
+                    'expense_date': str(row['expense_date']) if row['expense_date'] else None,
+                    'expense_type': row['expense_type'] or '',
+                    'vendor_name': row['vendor_name'] or '',
+                    'particulars': row['particulars'] or '',
+                    'debit': debit_amount,
+                    'credit': credit_amount,
+                    'amount': float(row['amount']) if row['amount'] else 0,
+                    'payment_method': row['payment_method'] or '',
+                    'description': row['description'] or '',
+                    'company': row['company'] or '',
+                    'account_type': row['account_type'] or 'expense'
+                })
+                total_debit += debit_amount
+                total_credit += credit_amount
+
+        # Calculate summary
+        closing_balance = total_debit - total_credit
+        balance_type = 'Outstanding' if closing_balance > 0 else 'Advance' if closing_balance < 0 else 'Settled'
+
+        summary = {
+            'opening_balance': 0,
+            'total_debit': total_debit,
+            'total_credit': total_credit,
+            'closing_balance': abs(closing_balance),
+            'balance_type': balance_type
+        }
+
+        logger.info(f"[EXPENSE_LEDGER] Returning {len(entries)} debit entries for company {company_id}")
+
+        return jsonify({
+            "status": "success",
+            "data": {
+                "entries": entries,
+                "summary": summary,
+                "total_entries": len(entries),
+                "pagination": {
+                    "limit": limit,
+                    "offset": offset,
+                    "has_more": len(entries) == limit
+                }
+            },
+            "message": f"Retrieved {len(entries)} expense ledger debit entries",
+            "total": len(entries)
+        }), 200
+
+    except Exception as e:
+        logger.error(f"[EXPENSE_LEDGER] Failed to retrieve expense ledger: {e}")
+        return jsonify({
+            "error": str(e),
+            "message": "Failed to retrieve expense ledger data",
+            "status": "error"
+        }), 500
+
+@bookkeeping_bp.route('/expense-ledger/<int:entry_id>', methods=['DELETE'])
+def delete_expense_ledger_entry(entry_id):
+    """Delete an expense ledger entry and its corresponding credit entry if applicable"""
+    try:
+        # Check if the record exists
+        check_query = """
+            SELECT id, expense_type, amount, account_type, debit, credit, company, vendor_name, expense_date
+            FROM expense_ledger
+            WHERE id = %s
+        """
+        check_result = execute_query(check_query, (entry_id,))
+
+        if not check_result or len(check_result) == 0:
+            return jsonify({
+                "error": "Expense ledger entry not found",
+                "message": f"No expense ledger entry found with ID: {entry_id}",
+                "status": "not_found"
+            }), 404
+
+        entry_data = check_result[0]
+
+        # If this is a debit entry (expense), also delete the corresponding credit entry (bank)
+        if entry_data['account_type'] == 'expense' and entry_data['debit'] > 0:
+            # Find the corresponding credit entry by matching key fields
+            # Since transaction_id was dropped, match by expense_type, company, vendor_name, amount, expense_date
+            credit_query = """
+                SELECT id
+                FROM expense_ledger
+                WHERE expense_type = %s AND company = %s AND vendor_name = %s AND amount = %s
+                      AND expense_date = %s AND account_type = 'bank' AND credit > 0
+            """
+            credit_result = execute_query(credit_query, (
+                entry_data['expense_type'],
+                entry_data['company'],
+                entry_data['vendor_name'],
+                entry_data['amount'],
+                entry_data['expense_date']
+            ))
+
+            if credit_result and len(credit_result) > 0:
+                credit_entry_id = credit_result[0]['id']
+                # Delete the credit entry
+                delete_credit_query = "DELETE FROM expense_ledger WHERE id = %s"
+                execute_query(delete_credit_query, (credit_entry_id,), fetch=False)
+                logger.info(f"[EXPENSE_LEDGER] Deleted corresponding credit entry ID: {credit_entry_id} for expense entry {entry_id}")
+
+        # Delete the specific entry
+        delete_query = "DELETE FROM expense_ledger WHERE id = %s"
+        execute_query(delete_query, (entry_id,), fetch=False)
+
+        logger.info(f"[EXPENSE_LEDGER] Deleted expense ledger entry ID: {entry_id}, Amount: {entry_data['amount']}")
+        return jsonify({
+            "status": "success",
+            "message": f"Expense ledger entry ID {entry_id} deleted successfully"
+        }), 200
+
+    except Exception as e:
+        logger.error(f"[EXPENSE_LEDGER] Failed to delete expense ledger entry ID {entry_id}: {e}")
+        return jsonify({
+            "error": str(e),
+            "message": "Failed to delete expense ledger entry",
+            "status": "error"
+        }), 500
+
+@bookkeeping_bp.route('/bank-ledger/<int:entry_id>', methods=['DELETE'])
+def delete_bank_ledger_entry(entry_id):
+    """Delete a bank ledger entry (from expense_ledger where account_type='bank')"""
+    try:
+        # Check if the record exists and is a bank ledger entry
+        check_query = """
+            SELECT id, expense_type, amount, account_type, debit, credit, company, vendor_name, expense_date, transaction_id
+            FROM expense_ledger
+            WHERE id = %s AND account_type = 'bank'
+        """
+        check_result = execute_query(check_query, (entry_id,))
+
+        if not check_result or len(check_result) == 0:
+            return jsonify({
+                "error": "Bank ledger entry not found",
+                "message": f"No bank ledger entry found with ID: {entry_id}",
+                "status": "not_found"
+            }), 404
+
+        entry_data = check_result[0]
+
+        # Delete the bank ledger entry
+        delete_query = "DELETE FROM expense_ledger WHERE id = %s AND account_type = 'bank'"
+        execute_query(delete_query, (entry_id,), fetch=False)
+
+        logger.info(f"[BANK_LEDGER] Deleted bank ledger entry ID: {entry_id}, Transaction: {entry_data.get('transaction_id', 'N/A')}, Amount: {entry_data['amount']}")
+        return jsonify({
+            "status": "success",
+            "message": f"Bank ledger entry ID {entry_id} deleted successfully"
+        }), 200
+
+    except Exception as e:
+        logger.error(f"[BANK_LEDGER] Failed to delete bank ledger entry ID {entry_id}: {e}")
+        return jsonify({
+            "error": str(e),
+            "message": "Failed to delete bank ledger entry",
             "status": "error"
         }), 500

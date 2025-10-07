@@ -126,3 +126,10 @@ export const getBankLedger = async (params = {}) => {
   const url = `${API_ENDPOINTS.GET_BANK_LEDGER}${queryParams ? '?' + queryParams : ''}`;
   return apiRequest(url);
 };
+
+// Get expense ledger API call
+export const getExpenseLedger = async (params = {}) => {
+  const queryParams = new URLSearchParams(params).toString();
+  const url = `${API_ENDPOINTS.GET_EXPENSE_LEDGER}${queryParams ? '?' + queryParams : ''}`;
+  return apiRequest(url);
+};

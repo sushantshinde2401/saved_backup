@@ -3,8 +3,16 @@ import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, DollarSign, AlertCircle, CheckCircle } from 'lucide-react';
 import { createExpensePaymentEntry, formatCurrency } from '../../../shared/utils/api';
 
-const EXPENSE_TYPES = ['Rent', 'Office Supplies', 'Travel', 'Utilities'];
+const EXPENSE_TYPES = ['Office Supplies', 'Travel', 'Utilities', 'Rent'];
 const PAYMENT_METHODS = ['Cash', 'Bank Transfer', 'Credit Card'];
+const COMPANIES = [
+  'ANGEL SEAFARER DOCUMENTATION PRIVATE LIMITED',
+  'ANGEL MARITIME ACADEMY PRIVATE LIMITED',
+  'Moreshwar Shipping Services',
+  'BALLALESHWAR SHIPPING SERVICES',
+  'SIDDHIVINAYAK MARINE CONSULTANCY',
+  'ABC Corp'
+];
 
 function AddExpensePaymentEntry() {
   const navigate = useNavigate();
@@ -16,6 +24,7 @@ function AddExpensePaymentEntry() {
   const [company, setCompany] = useState('');
   const [amount, setAmount] = useState('');
   const [expenseDate, setExpenseDate] = useState('');
+  const [transactionId, setTransactionId] = useState('');
   const [description, setDescription] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('');
   const [vendorName, setVendorName] = useState('');
@@ -26,7 +35,7 @@ function AddExpensePaymentEntry() {
     setError(null);
 
     // Basic validation
-    if (!expenseType || !company || !amount || !expenseDate || !paymentMethod || !vendorName) {
+    if (!expenseType || !company || !amount || !expenseDate || !transactionId || !paymentMethod || !vendorName) {
       setError('Please fill in all required fields.');
       return;
     }
@@ -37,6 +46,7 @@ function AddExpensePaymentEntry() {
       company,
       amount: parseFloat(amount),
       expenseDate,
+      transactionId,
       description,
       paymentMethod,
       vendorName,
@@ -56,6 +66,7 @@ function AddExpensePaymentEntry() {
         setCompany('');
         setAmount('');
         setExpenseDate('');
+        setTransactionId('');
         setDescription('');
         setPaymentMethod('');
         setVendorName('');
@@ -130,14 +141,19 @@ function AddExpensePaymentEntry() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Company <span className="text-red-500">*</span>
                 </label>
-                <input
-                  type="text"
+                <select
                   value={company}
                   onChange={(e) => setCompany(e.target.value)}
                   required
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                  placeholder="Enter company name"
-                />
+                >
+                  <option value="">Select company...</option>
+                  {COMPANIES.map((comp) => (
+                    <option key={comp} value={comp}>
+                      {comp}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               <div>
@@ -166,6 +182,20 @@ function AddExpensePaymentEntry() {
                   onChange={(e) => setExpenseDate(e.target.value)}
                   required
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Transaction Id <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={transactionId}
+                  onChange={(e) => setTransactionId(e.target.value)}
+                  required
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                  placeholder="Enter transaction ID"
                 />
               </div>
 

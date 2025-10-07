@@ -4,7 +4,7 @@ import { API_ENDPOINTS } from '../utils/constants';
 
 /**
  * Custom hook for deleting ledger rows with optimistic updates
- * Supports different ledger types: company-ledger, vendor-service, vendor-payment
+ * Supports different ledger types: company-ledger, vendor-service, vendor-payment, expense-ledger, bank-ledger
  *
  * @param {Object} options - Configuration options
  * @param {Function} options.onSuccess - Callback when deletion succeeds
@@ -25,7 +25,7 @@ export const useDeleteLedgerRow = ({
   /**
    * Delete a ledger entry with optimistic updates
    * @param {Object} entry - The ledger entry to delete
-   * @param {string} ledgerType - Type of ledger ('company-ledger', 'vendor-service', 'vendor-payment')
+   * @param {string} ledgerType - Type of ledger ('company-ledger', 'vendor-service', 'vendor-payment', 'expense-ledger', 'bank-ledger')
    */
   const deleteLedgerRow = async (entry, ledgerType) => {
     if (!entry || !entry.id) {
@@ -58,6 +58,12 @@ export const useDeleteLedgerRow = ({
           break;
         case 'vendor-payment':
           endpoint = `${API_ENDPOINTS.DELETE_VENDOR_PAYMENT}/${entry.id}`;
+          break;
+        case 'expense-ledger':
+          endpoint = `${API_ENDPOINTS.DELETE_EXPENSE_LEDGER}/${entry.id}`;
+          break;
+        case 'bank-ledger':
+          endpoint = `${API_ENDPOINTS.DELETE_BANK_LEDGER}/${entry.id}`;
           break;
         default:
           throw new Error(`Unsupported ledger type: ${ledgerType}`);
