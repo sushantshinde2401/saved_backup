@@ -1228,7 +1228,80 @@ def get_company_ledger():
 
         logger.info(f"[LEDGER] Fetching ledger data for company: {company_name}")
 
-        # Query CompanyLedger table for entries
+        # Ensure all required tables exist
+        create_company_ledger_query = """
+            CREATE TABLE IF NOT EXISTS CompanyLedger (
+                id SERIAL PRIMARY KEY,
+                company_name VARCHAR(255) NOT NULL,
+                date DATE NOT NULL,
+                particulars TEXT,
+                voucher_no VARCHAR(100),
+                voucher_type VARCHAR(50) DEFAULT 'Receipt',
+                debit DECIMAL(15,2) DEFAULT 0,
+                credit DECIMAL(15,2) DEFAULT 0,
+                candidate_name VARCHAR(255),
+                entry_type VARCHAR(50) DEFAULT 'Manual',
+                reference_id VARCHAR(100),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """
+        execute_query(create_company_ledger_query, fetch=False)
+
+        # Ensure client_adjustments table exists
+        create_client_adjustments_query = """
+            CREATE TABLE IF NOT EXISTS client_adjustments (
+                id SERIAL PRIMARY KEY,
+                company_id INTEGER NOT NULL,
+                customer_id INTEGER NOT NULL,
+                date_of_service DATE NOT NULL,
+                particular_of_service TEXT NOT NULL,
+                adjustment_amount DECIMAL(15,2) NOT NULL CHECK (adjustment_amount != 0),
+                on_account_of TEXT,
+                remark TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (company_id) REFERENCES company_details(id),
+                FOREIGN KEY (customer_id) REFERENCES b2bcustomersdetails(id)
+            )
+        """
+        execute_query(create_client_adjustments_query, fetch=False)
+
+        # Ensure vendor_adjustments table exists
+        create_vendor_adjustments_query = """
+            CREATE TABLE IF NOT EXISTS vendor_adjustments (
+                id SERIAL PRIMARY KEY,
+                company_id INTEGER NOT NULL,
+                vendor_id INTEGER NOT NULL,
+                date_of_service DATE NOT NULL,
+                particular_of_service TEXT NOT NULL,
+                adjustment_amount DECIMAL(15,2) NOT NULL CHECK (adjustment_amount != 0),
+                on_account_of TEXT,
+                remark TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (company_id) REFERENCES company_details(id),
+                FOREIGN KEY (vendor_id) REFERENCES vendors(id)
+            )
+        """
+        execute_query(create_vendor_adjustments_query, fetch=False)
+
+        # Create indexes if they don't exist
+        index_queries = [
+            "CREATE INDEX IF NOT EXISTS idx_company_ledger_company_name ON CompanyLedger(company_name)",
+            "CREATE INDEX IF NOT EXISTS idx_company_ledger_date ON CompanyLedger(date)",
+            "CREATE INDEX IF NOT EXISTS idx_company_ledger_voucher_no ON CompanyLedger(voucher_no)"
+        ]
+        for index_query in index_queries:
+            try:
+                execute_query(index_query, fetch=False)
+            except Exception as idx_e:
+                logger.warning(f"[LEDGER] Could not create index: {idx_e}")
+
+        # Build UNION query for CompanyLedger and adjustment entries
+        union_queries = []
+
+        # CompanyLedger entries
         ledger_query = """
             SELECT
                 id,
@@ -1240,7 +1313,8 @@ def get_company_ledger():
                 debit,
                 credit,
                 entry_type,
-                created_at
+                created_at,
+                'ledger' as source_table
             FROM CompanyLedger
             WHERE company_name ILIKE %s
         """
@@ -1259,11 +1333,75 @@ def get_company_ledger():
             ledger_query += " AND voucher_type ILIKE %s"
             ledger_params.append(f"%{voucher_type}%")
 
-        ledger_query += " ORDER BY date DESC, created_at DESC"
+        union_queries.append(ledger_query)
 
-        logger.info(f"[LEDGER] Executing query with params: {ledger_params}")
+        # Client adjustments for this company
+        client_adjustment_query = """
+            SELECT
+                ca.id,
+                b2b.company_name,
+                ca.date_of_service as date,
+                ca.particular_of_service as particulars,
+                CONCAT('ADJ-', ca.id) as voucher_no,
+                'Adjustment' as voucher_type,
+                CASE WHEN ca.adjustment_amount < 0 THEN ABS(ca.adjustment_amount) ELSE 0 END as debit,
+                CASE WHEN ca.adjustment_amount > 0 THEN ca.adjustment_amount ELSE 0 END as credit,
+                'Adjustment' as entry_type,
+                ca.created_at,
+                'client_adjustment' as source_table
+            FROM client_adjustments ca
+            JOIN b2bcustomersdetails b2b ON ca.customer_id = b2b.id
+            WHERE b2b.company_name ILIKE %s
+        """
+        client_params = [f"%{company_name}%"]
 
-        ledger_results = execute_query(ledger_query, ledger_params)
+        if start_date:
+            client_adjustment_query += " AND ca.date_of_service >= %s"
+            client_params.append(start_date)
+        if end_date:
+            client_adjustment_query += " AND ca.date_of_service <= %s"
+            client_params.append(end_date)
+
+        union_queries.append(client_adjustment_query)
+        ledger_params.extend(client_params)
+
+        # Vendor adjustments for this company
+        vendor_adjustment_query = """
+            SELECT
+                va.id,
+                cd.company_name,
+                va.date_of_service as date,
+                va.particular_of_service as particulars,
+                CONCAT('ADJ-', va.id) as voucher_no,
+                'Adjustment' as voucher_type,
+                CASE WHEN va.adjustment_amount < 0 THEN ABS(va.adjustment_amount) ELSE 0 END as debit,
+                CASE WHEN va.adjustment_amount > 0 THEN va.adjustment_amount ELSE 0 END as credit,
+                'Adjustment' as entry_type,
+                va.created_at,
+                'vendor_adjustment' as source_table
+            FROM vendor_adjustments va
+            JOIN company_details cd ON va.company_id = cd.id
+            WHERE cd.company_name ILIKE %s
+        """
+        vendor_params = [f"%{company_name}%"]
+
+        if start_date:
+            vendor_adjustment_query += " AND va.date_of_service >= %s"
+            vendor_params.append(start_date)
+        if end_date:
+            vendor_adjustment_query += " AND va.date_of_service <= %s"
+            vendor_params.append(end_date)
+
+        union_queries.append(vendor_adjustment_query)
+        ledger_params.extend(vendor_params)
+
+        # Combine all queries
+        full_query = " UNION ALL ".join(union_queries)
+        full_query += " ORDER BY date DESC, created_at DESC"
+
+        logger.info(f"[LEDGER] Executing combined query with params: {ledger_params}")
+
+        ledger_results = execute_query(full_query, ledger_params)
 
         entries = []
         total_debit = 0
@@ -1337,9 +1475,9 @@ def get_company_ledger():
 
 @bookkeeping_bp.route('/company-ledger/<int:ledger_id>', methods=['DELETE'])
 def delete_company_ledger_entry(ledger_id):
-    """Delete a company ledger entry and associated receipt and bank ledger entries if applicable"""
+    """Delete a company ledger entry or adjustment entry based on the source table"""
     try:
-        # First, get the ledger entry to check its type
+        # First, check if this is a regular CompanyLedger entry
         select_query = """
             SELECT id, voucher_no, company_name, entry_type
             FROM CompanyLedger
@@ -1347,60 +1485,107 @@ def delete_company_ledger_entry(ledger_id):
         """
         ledger_results = execute_query(select_query, (ledger_id,))
 
-        if not ledger_results or len(ledger_results) == 0:
+        if ledger_results and len(ledger_results) > 0:
+            # This is a regular CompanyLedger entry
+            ledger_entry = ledger_results[0]
+            voucher_no = ledger_entry['voucher_no']
+            entry_type = ledger_entry['entry_type']
+
+            # If this is an auto-generated receipt entry, also delete the receipt and bank ledger entries
+            if voucher_no and voucher_no.startswith('RCPT-'):
+                try:
+                    # Extract receipt ID from voucher_no (format: RCPT-{receipt_id})
+                    receipt_id_str = voucher_no.replace('RCPT-', '')
+                    receipt_id = int(receipt_id_str)
+
+                    # Get transaction_id from the receipt to delete bank ledger entry
+                    receipt_query = "SELECT transaction_id FROM ReceiptAmountReceived WHERE receipt_amount_id = %s"
+                    receipt_results = execute_query(receipt_query, (receipt_id,))
+
+                    if receipt_results and len(receipt_results) > 0:
+                        transaction_id = receipt_results[0]['transaction_id']
+
+                        # Delete from expense_ledger (bank ledger) if transaction_id exists
+                        if transaction_id:
+                            bank_ledger_delete_query = "DELETE FROM expense_ledger WHERE transaction_id = %s AND account_type = 'bank' AND expense_type = 'Receipt'"
+                            execute_query(bank_ledger_delete_query, (transaction_id,), fetch=False)
+                            logger.info(f"[BANK_LEDGER] Deleted associated bank ledger entry for receipt ID: {receipt_id}, transaction: {transaction_id}")
+
+                    # Delete from ReceiptAmountReceived
+                    receipt_delete_query = "DELETE FROM ReceiptAmountReceived WHERE receipt_amount_id = %s"
+                    execute_query(receipt_delete_query, (receipt_id,), fetch=False)
+                    logger.info(f"[RECEIPT] Deleted associated receipt ID: {receipt_id} for ledger entry {ledger_id}")
+
+                except (ValueError, Exception) as receipt_e:
+                    logger.warning(f"[RECEIPT] Could not delete associated receipt for ledger {ledger_id}: {receipt_e}")
+                    # For atomicity, we should fail the entire operation if receipt deletion fails
+                    return jsonify({
+                        "error": "Failed to delete associated records",
+                        "message": f"Could not delete associated receipt data: {str(receipt_e)}",
+                        "status": "error"
+                    }), 500
+
+            # Delete from CompanyLedger
+            ledger_delete_query = "DELETE FROM CompanyLedger WHERE id = %s"
+            execute_query(ledger_delete_query, (ledger_id,), fetch=False)
+
+            logger.info(f"[LEDGER] Successfully deleted CompanyLedger entry ID: {ledger_id} and all associated records")
             return jsonify({
-                "error": "Ledger entry not found",
-                "message": f"No ledger entry found with ID: {ledger_id}",
-                "status": "not_found"
-            }), 404
+                "status": "success",
+                "message": f"Ledger entry {ledger_id} and associated records deleted successfully"
+            }), 200
 
-        ledger_entry = ledger_results[0]
-        voucher_no = ledger_entry['voucher_no']
-        entry_type = ledger_entry['entry_type']
+        # If not found in CompanyLedger, check if it's an adjustment entry
+        # Check client_adjustments table
+        client_adjustment_query = """
+            SELECT id, company_id, customer_id, particular_of_service, adjustment_amount
+            FROM client_adjustments
+            WHERE id = %s
+        """
+        client_results = execute_query(client_adjustment_query, (ledger_id,))
 
-        # If this is an auto-generated receipt entry, also delete the receipt and bank ledger entries
-        if voucher_no and voucher_no.startswith('RCPT-'):
-            try:
-                # Extract receipt ID from voucher_no (format: RCPT-{receipt_id})
-                receipt_id_str = voucher_no.replace('RCPT-', '')
-                receipt_id = int(receipt_id_str)
+        if client_results and len(client_results) > 0:
+            # This is a client adjustment entry
+            adjustment_data = client_results[0]
 
-                # Get transaction_id from the receipt to delete bank ledger entry
-                receipt_query = "SELECT transaction_id FROM ReceiptAmountReceived WHERE receipt_amount_id = %s"
-                receipt_results = execute_query(receipt_query, (receipt_id,))
+            # Delete from client_adjustments
+            delete_query = "DELETE FROM client_adjustments WHERE id = %s"
+            execute_query(delete_query, (ledger_id,), fetch=False)
 
-                if receipt_results and len(receipt_results) > 0:
-                    transaction_id = receipt_results[0]['transaction_id']
+            logger.info(f"[CLIENT_ADJUSTMENT] Deleted client adjustment entry ID: {ledger_id}, Amount: {adjustment_data['adjustment_amount']}")
+            return jsonify({
+                "status": "success",
+                "message": f"Client adjustment entry {ledger_id} deleted successfully"
+            }), 200
 
-                    # Delete from expense_ledger (bank ledger) if transaction_id exists
-                    if transaction_id:
-                        bank_ledger_delete_query = "DELETE FROM expense_ledger WHERE transaction_id = %s AND account_type = 'bank' AND expense_type = 'Receipt'"
-                        execute_query(bank_ledger_delete_query, (transaction_id,), fetch=False)
-                        logger.info(f"[BANK_LEDGER] Deleted associated bank ledger entry for receipt ID: {receipt_id}, transaction: {transaction_id}")
+        # Check vendor_adjustments table
+        vendor_adjustment_query = """
+            SELECT id, company_id, vendor_id, particular_of_service, adjustment_amount
+            FROM vendor_adjustments
+            WHERE id = %s
+        """
+        vendor_results = execute_query(vendor_adjustment_query, (ledger_id,))
 
-                # Delete from ReceiptAmountReceived
-                receipt_delete_query = "DELETE FROM ReceiptAmountReceived WHERE receipt_amount_id = %s"
-                execute_query(receipt_delete_query, (receipt_id,), fetch=False)
-                logger.info(f"[RECEIPT] Deleted associated receipt ID: {receipt_id} for ledger entry {ledger_id}")
+        if vendor_results and len(vendor_results) > 0:
+            # This is a vendor adjustment entry
+            adjustment_data = vendor_results[0]
 
-            except (ValueError, Exception) as receipt_e:
-                logger.warning(f"[RECEIPT] Could not delete associated receipt for ledger {ledger_id}: {receipt_e}")
-                # For atomicity, we should fail the entire operation if receipt deletion fails
-                return jsonify({
-                    "error": "Failed to delete associated records",
-                    "message": f"Could not delete associated receipt data: {str(receipt_e)}",
-                    "status": "error"
-                }), 500
+            # Delete from vendor_adjustments
+            delete_query = "DELETE FROM vendor_adjustments WHERE id = %s"
+            execute_query(delete_query, (ledger_id,), fetch=False)
 
-        # Delete from CompanyLedger
-        ledger_delete_query = "DELETE FROM CompanyLedger WHERE id = %s"
-        execute_query(ledger_delete_query, (ledger_id,), fetch=False)
+            logger.info(f"[VENDOR_ADJUSTMENT] Deleted vendor adjustment entry ID: {ledger_id}, Amount: {adjustment_data['adjustment_amount']}")
+            return jsonify({
+                "status": "success",
+                "message": f"Vendor adjustment entry {ledger_id} deleted successfully"
+            }), 200
 
-        logger.info(f"[LEDGER] Successfully deleted ledger entry ID: {ledger_id} and all associated records")
+        # If not found in any table, return 404
         return jsonify({
-            "status": "success",
-            "message": f"Ledger entry {ledger_id} and associated records deleted successfully"
-        }), 200
+            "error": "Ledger entry not found",
+            "message": f"No ledger entry found with ID: {ledger_id}",
+            "status": "not_found"
+        }), 404
 
     except Exception as e:
         logger.error(f"[LEDGER] Failed to delete ledger entry {ledger_id}: {e}")
@@ -2067,9 +2252,37 @@ def get_vendor_ledger(vendor_id):
 
         union_query_parts.append(payments_query)
 
+        # Vendor adjustments query
+        adjustments_query = """
+            SELECT
+                'adjustment' AS entry_type,
+                va.date_of_service AS entry_date,
+                'adjustment' AS type,
+                va.particular_of_service AS particulars,
+                CASE WHEN va.adjustment_amount < 0 THEN ABS(va.adjustment_amount) ELSE 0 END AS dr,
+                CASE WHEN va.adjustment_amount > 0 THEN va.adjustment_amount ELSE 0 END AS cr,
+                'Adjustment' AS entry_type_display,
+                va.id,
+                va.vendor_id,
+                CONCAT('ADJ-', va.id) AS transaction_id
+            FROM vendor_adjustments va
+            WHERE va.vendor_id = %s
+        """
+        adjustments_params = [vendor_id]
+
+        # Add date filters to adjustments query
+        if start_date:
+            adjustments_query += " AND va.date_of_service >= %s"
+            adjustments_params.append(start_date)
+        if end_date:
+            adjustments_query += " AND va.date_of_service <= %s"
+            adjustments_params.append(end_date)
+
+        union_query_parts.append(adjustments_query)
+
         # Combine queries
         union_query = " UNION ALL ".join(union_query_parts)
-        params = services_params + payments_params
+        params = services_params + payments_params + adjustments_params
         logger.info(f"[VENDOR_LEDGER] Final query params: {params}")
 
         # Order by date and apply pagination
@@ -2182,11 +2395,101 @@ def delete_vendor_service(service_id):
             "status": "error"
         }), 500
 
+@bookkeeping_bp.route('/vendor-ledger/<int:ledger_id>', methods=['DELETE'])
+def delete_vendor_ledger_entry(ledger_id):
+    """Delete a vendor ledger entry (service, payment, or adjustment) based on the source table"""
+    try:
+        # First, check if this is a vendor service entry
+        service_query = """
+            SELECT id, vendor_id, particulars, amount
+            FROM vendor_services
+            WHERE id = %s
+        """
+        service_result = execute_query(service_query, (ledger_id,))
+
+        if service_result and len(service_result) > 0:
+            # This is a vendor service entry
+            service_data = service_result[0]
+
+            # Delete from vendor_services
+            delete_query = "DELETE FROM vendor_services WHERE id = %s"
+            execute_query(delete_query, (ledger_id,), fetch=False)
+
+            logger.info(f"[VENDOR_SERVICE] Deleted service entry ID: {ledger_id}, Vendor: {service_data['vendor_id']}, Amount: {service_data['amount']}")
+            return jsonify({
+                "status": "success",
+                "message": f"Vendor service entry {ledger_id} deleted successfully"
+            }), 200
+
+        # Check if this is a vendor payment entry
+        payment_query = """
+            SELECT id, vendor_id, transaction_id, amount
+            FROM vendor_payments
+            WHERE id = %s
+        """
+        payment_result = execute_query(payment_query, (ledger_id,))
+
+        if payment_result and len(payment_result) > 0:
+            # This is a vendor payment entry
+            payment_data = payment_result[0]
+
+            # Delete associated bank ledger entry if it exists
+            bank_delete_query = "DELETE FROM bank_ledger WHERE transaction_id = %s"
+            execute_query(bank_delete_query, (payment_data['transaction_id'],), fetch=False)
+            logger.info(f"[BANK_LEDGER] Deleted associated bank entry for payment ID: {ledger_id}")
+
+            # Delete the payment record
+            delete_query = "DELETE FROM vendor_payments WHERE id = %s"
+            execute_query(delete_query, (ledger_id,), fetch=False)
+
+            logger.info(f"[VENDOR_PAYMENT] Deleted payment entry ID: {ledger_id}, Vendor: {payment_data['vendor_id']}, Amount: {payment_data['amount']}")
+            return jsonify({
+                "status": "success",
+                "message": f"Vendor payment entry {ledger_id} deleted successfully"
+            }), 200
+
+        # Check if this is a vendor adjustment entry
+        adjustment_query = """
+            SELECT id, vendor_id, particular_of_service, adjustment_amount
+            FROM vendor_adjustments
+            WHERE id = %s
+        """
+        adjustment_result = execute_query(adjustment_query, (ledger_id,))
+
+        if adjustment_result and len(adjustment_result) > 0:
+            # This is a vendor adjustment entry
+            adjustment_data = adjustment_result[0]
+
+            # Delete from vendor_adjustments
+            delete_query = "DELETE FROM vendor_adjustments WHERE id = %s"
+            execute_query(delete_query, (ledger_id,), fetch=False)
+
+            logger.info(f"[VENDOR_ADJUSTMENT] Deleted adjustment entry ID: {ledger_id}, Vendor: {adjustment_data['vendor_id']}, Amount: {adjustment_data['adjustment_amount']}")
+            return jsonify({
+                "status": "success",
+                "message": f"Vendor adjustment entry {ledger_id} deleted successfully"
+            }), 200
+
+        # If not found in any table, return 404
+        return jsonify({
+            "error": "Ledger entry not found",
+            "message": f"No vendor ledger entry found with ID: {ledger_id}",
+            "status": "not_found"
+        }), 404
+
+    except Exception as e:
+        logger.error(f"[VENDOR_LEDGER] Failed to delete vendor ledger entry {ledger_id}: {e}")
+        return jsonify({
+            "error": str(e),
+            "message": "Failed to delete vendor ledger entry",
+            "status": "error"
+        }), 500
+
 @bookkeeping_bp.route('/vendor-payment/<int:payment_id>', methods=['DELETE'])
 def delete_vendor_payment(payment_id):
     """Delete a vendor payment entry and associated bank ledger entry"""
     try:
-        # Check if the record exists
+        # Check if the record exists in vendor_payments
         check_query = """
             SELECT id, vendor_id, transaction_id, amount
             FROM vendor_payments
@@ -2195,11 +2498,28 @@ def delete_vendor_payment(payment_id):
         check_result = execute_query(check_query, (payment_id,))
 
         if not check_result or len(check_result) == 0:
-            return jsonify({
-                "error": "Payment entry not found",
-                "message": f"No vendor payment entry found with ID: {payment_id}",
-                "status": "not_found"
-            }), 404
+            # Check if the ID exists in other vendor-related tables to provide better error message
+            service_check = execute_query("SELECT id FROM vendor_services WHERE id = %s", (payment_id,))
+            adjustment_check = execute_query("SELECT id FROM vendor_adjustments WHERE id = %s", (payment_id,))
+
+            if service_check and len(service_check) > 0:
+                return jsonify({
+                    "error": "Invalid entry type",
+                    "message": f"ID {payment_id} belongs to a vendor service entry, not a payment entry. Please refresh the page and try again.",
+                    "status": "invalid_type"
+                }), 400
+            elif adjustment_check and len(adjustment_check) > 0:
+                return jsonify({
+                    "error": "Invalid entry type",
+                    "message": f"ID {payment_id} belongs to a vendor adjustment entry, not a payment entry. Please refresh the page and try again.",
+                    "status": "invalid_type"
+                }), 400
+            else:
+                return jsonify({
+                    "error": "Payment entry not found",
+                    "message": f"No vendor payment entry found with ID: {payment_id}",
+                    "status": "not_found"
+                }), 404
 
         payment_data = check_result[0]
 
@@ -2448,5 +2768,153 @@ def delete_bank_ledger_entry(entry_id):
         return jsonify({
             "error": str(e),
             "message": "Failed to delete bank ledger entry",
+            "status": "error"
+        }), 500
+
+@bookkeeping_bp.route('/adjustments', methods=['POST'])
+def create_adjustment():
+    """Create a new adjustment entry"""
+    try:
+        data = request.get_json()
+
+        required_fields = ['adjustment_type', 'company_id', 'date_of_service', 'particular_of_service', 'adjustment_amount']
+        for field in required_fields:
+            if field not in data:
+                return jsonify({
+                    "error": f"Missing required field: {field}",
+                    "message": f"Field '{field}' is required",
+                    "status": "validation_error"
+                }), 400
+
+        # Validate adjustment_type
+        if data['adjustment_type'] not in ['client', 'vendor']:
+            return jsonify({
+                "error": "Invalid adjustment type",
+                "message": "Adjustment type must be 'client' or 'vendor'",
+                "status": "validation_error"
+            }), 400
+
+        # Validate that either customer_id or vendor_id is provided based on type
+        if data['adjustment_type'] == 'client' and 'customer_id' not in data:
+            return jsonify({
+                "error": "Missing customer_id",
+                "message": "customer_id is required for client adjustments",
+                "status": "validation_error"
+            }), 400
+
+        if data['adjustment_type'] == 'vendor' and 'vendor_id' not in data:
+            return jsonify({
+                "error": "Missing vendor_id",
+                "message": "vendor_id is required for vendor adjustments",
+                "status": "validation_error"
+            }), 400
+
+        # Validate amount is non-zero
+        try:
+            amount = float(data['adjustment_amount'])
+            if amount == 0:
+                raise ValueError("Amount must be non-zero")
+        except (ValueError, TypeError):
+            return jsonify({
+                "error": "Invalid adjustment amount",
+                "message": "Adjustment amount must be a non-zero number",
+                "status": "validation_error"
+            }), 400
+
+        # Ensure appropriate adjustment table exists
+        if data['adjustment_type'] == 'client':
+            create_table_query = """
+                CREATE TABLE IF NOT EXISTS client_adjustments (
+                    id SERIAL PRIMARY KEY,
+                    company_id INTEGER NOT NULL,
+                    customer_id INTEGER NOT NULL,
+                    date_of_service DATE NOT NULL,
+                    particular_of_service TEXT NOT NULL,
+                    adjustment_amount DECIMAL(15,2) NOT NULL CHECK (adjustment_amount != 0),
+                    on_account_of TEXT,
+                    remark TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (company_id) REFERENCES company_details(id),
+                    FOREIGN KEY (customer_id) REFERENCES b2bcustomersdetails(id)
+                )
+            """
+        else:  # vendor
+            create_table_query = """
+                CREATE TABLE IF NOT EXISTS vendor_adjustments (
+                    id SERIAL PRIMARY KEY,
+                    company_id INTEGER NOT NULL,
+                    vendor_id INTEGER NOT NULL,
+                    date_of_service DATE NOT NULL,
+                    particular_of_service TEXT NOT NULL,
+                    adjustment_amount DECIMAL(15,2) NOT NULL CHECK (adjustment_amount != 0),
+                    on_account_of TEXT,
+                    remark TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (company_id) REFERENCES company_details(id),
+                    FOREIGN KEY (vendor_id) REFERENCES vendors(id)
+                )
+            """
+        execute_query(create_table_query, fetch=False)
+
+        # Insert adjustment entry into appropriate table
+        if data['adjustment_type'] == 'client':
+            insert_query = """
+                INSERT INTO client_adjustments (
+                    company_id, customer_id, date_of_service, particular_of_service,
+                    adjustment_amount, on_account_of, remark
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+                RETURNING id
+            """
+            params = (
+                data['company_id'],
+                data['customer_id'],
+                data['date_of_service'],
+                data['particular_of_service'],
+                amount,
+                data.get('on_account_of'),
+                data.get('remark')
+            )
+        else:  # vendor
+            insert_query = """
+                INSERT INTO vendor_adjustments (
+                    company_id, vendor_id, date_of_service, particular_of_service,
+                    adjustment_amount, on_account_of, remark
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+                RETURNING id
+            """
+            params = (
+                data['company_id'],
+                data['vendor_id'],
+                data['date_of_service'],
+                data['particular_of_service'],
+                amount,
+                data.get('on_account_of'),
+                data.get('remark')
+            )
+
+        result = execute_query(insert_query, params)
+
+        if result:
+            adjustment_id = result[0]['id']
+            logger.info(f"[ADJUSTMENT] Created adjustment entry ID: {adjustment_id}, Type: {data['adjustment_type']}, Amount: {amount}")
+            return jsonify({
+                "status": "success",
+                "data": {"adjustment_id": adjustment_id},
+                "message": f"Adjustment entry created successfully with ID: {adjustment_id}"
+            }), 201
+        else:
+            return jsonify({
+                "error": "Failed to create adjustment",
+                "message": "No ID returned from insert operation",
+                "status": "error"
+            }), 500
+
+    except Exception as e:
+        logger.error(f"[ADJUSTMENT] Failed to create adjustment entry: {e}")
+        return jsonify({
+            "error": str(e),
+            "message": "Failed to create adjustment entry",
             "status": "error"
         }), 500

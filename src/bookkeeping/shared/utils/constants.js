@@ -33,6 +33,7 @@ export const API_ENDPOINTS = {
   GET_BANK_LEDGER: 'http://localhost:5000/api/bookkeeping/bank-ledger-report',
   GET_EXPENSE_LEDGER: 'http://localhost:5000/api/bookkeeping/expense-ledger',
   // Delete endpoints
+  DELETE_VENDOR_LEDGER: 'http://localhost:5000/api/bookkeeping/vendor-ledger',
   DELETE_VENDOR_SERVICE: 'http://localhost:5000/api/bookkeeping/vendor-service',
   DELETE_VENDOR_PAYMENT: 'http://localhost:5000/api/bookkeeping/vendor-payment',
   DELETE_EXPENSE_LEDGER: 'http://localhost:5000/api/bookkeeping/expense-ledger',

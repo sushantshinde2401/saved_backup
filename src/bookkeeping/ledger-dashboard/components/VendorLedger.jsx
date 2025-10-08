@@ -243,7 +243,21 @@ const VendorLedger = () => {
   const handleConfirmDelete = async () => {
     if (!entryToDelete) return;
 
-    const ledgerType = entryToDelete.entry_type === 'service' ? 'vendor-service' : 'vendor-payment';
+    // Determine ledger type based on entry_type from backend
+    let ledgerType;
+    switch (entryToDelete.entry_type) {
+      case 'service':
+        ledgerType = 'vendor-service';
+        break;
+      case 'payment':
+        ledgerType = 'vendor-payment';
+        break;
+      case 'adjustment':
+        ledgerType = 'vendor-adjustment';
+        break;
+      default:
+        ledgerType = 'vendor-payment'; // fallback
+    }
 
     logAuditEvent('DELETE_ATTEMPT', {
       entry_id: entryToDelete.id,

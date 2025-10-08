@@ -21,35 +21,12 @@ function ReceivedPayment({ formData, onInputChange, onUploadReceiptData, savedRe
         const result = await response.json();
         setB2bCustomers(result.data || []);
       } else {
-        // Fallback to provided customer names if API fails
-        setB2bCustomers([
-          { id: 1, company_name: 'Tech Solutions India Pvt Ltd' },
-          { id: 2, company_name: 'Global Manufacturing Corp' },
-          { id: 3, company_name: 'Digital Services Hub' },
-          { id: 4, company_name: 'Logistics & Supply Chain Ltd' },
-          { id: 5, company_name: 'Healthcare Solutions Inc' },
-          { id: 6, company_name: 'Education Technology Pvt Ltd' },
-          { id: 7, company_name: 'Construction & Engineering Co' },
-          { id: 8, company_name: 'Retail Chain Solutions' },
-          { id: 9, company_name: 'Automotive Parts Ltd' },
-          { id: 10, company_name: 'Software Development Corp' }
-        ]);
+        console.error('Failed to load B2B customers: API returned error');
+        setB2bCustomers([]);
       }
     } catch (error) {
       console.error('Error loading B2B customers:', error);
-      // Fallback to provided customer names
-      setB2bCustomers([
-        { id: 1, company_name: 'Tech Solutions India Pvt Ltd' },
-        { id: 2, company_name: 'Global Manufacturing Corp' },
-        { id: 3, company_name: 'Digital Services Hub' },
-        { id: 4, company_name: 'Logistics & Supply Chain Ltd' },
-        { id: 5, company_name: 'Healthcare Solutions Inc' },
-        { id: 6, company_name: 'Education Technology Pvt Ltd' },
-        { id: 7, company_name: 'Construction & Engineering Co' },
-        { id: 8, company_name: 'Retail Chain Solutions' },
-        { id: 9, company_name: 'Automotive Parts Ltd' },
-        { id: 10, company_name: 'Software Development Corp' }
-      ]);
+      setB2bCustomers([]);
     } finally {
       setLoadingCustomers(false);
     }

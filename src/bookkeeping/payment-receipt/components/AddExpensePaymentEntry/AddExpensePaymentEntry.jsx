@@ -1,23 +1,38 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, DollarSign, AlertCircle, CheckCircle } from 'lucide-react';
-import { createExpensePaymentEntry, formatCurrency } from '../../../shared/utils/api';
+import { ArrowLeft, DollarSign, AlertCircle, CheckCircle, Loader } from 'lucide-react';
+import { createExpensePaymentEntry, formatCurrency, getAllCompanies } from '../../../shared/utils/api';
 
 const EXPENSE_TYPES = ['Office Supplies', 'Travel', 'Utilities', 'Rent'];
 const PAYMENT_METHODS = ['Cash', 'Bank Transfer', 'Credit Card'];
-const COMPANIES = [
-  'ANGEL SEAFARER DOCUMENTATION PRIVATE LIMITED',
-  'ANGEL MARITIME ACADEMY PRIVATE LIMITED',
-  'Moreshwar Shipping Services',
-  'BALLALESHWAR SHIPPING SERVICES',
-  'SIDDHIVINAYAK MARINE CONSULTANCY',
-  'ABC Corp'
-];
 
 function AddExpensePaymentEntry() {
   const navigate = useNavigate();
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
+  const [companies, setCompanies] = useState([]);
+  const [loadingCompanies, setLoadingCompanies] = useState(true);
+
+  // Load companies on component mount
+  useEffect(() => {
+    const loadCompanies = async () => {
+      try {
+        const response = await getAllCompanies();
+        if (response.status === 'success') {
+          setCompanies(response.data || []);
+        } else {
+          setError('Failed to load companies');
+        }
+      } catch (err) {
+        console.error('Error loading companies:', err);
+        setError('Failed to load companies');
+      } finally {
+        setLoadingCompanies(false);
+      }
+    };
+
+    loadCompanies();
+  }, []);
 
   // Form fields state
   const [expenseType, setExpenseType] = useState('');
@@ -145,15 +160,24 @@ function AddExpensePaymentEntry() {
                   value={company}
                   onChange={(e) => setCompany(e.target.value)}
                   required
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                  disabled={loadingCompanies}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
                 >
-                  <option value="">Select company...</option>
-                  {COMPANIES.map((comp) => (
-                    <option key={comp} value={comp}>
-                      {comp}
+                  <option value="">
+                    {loadingCompanies ? 'Loading companies...' : 'Select company...'}
+                  </option>
+                  {companies.map((comp) => (
+                    <option key={comp.id} value={comp.company_name}>
+                      {comp.company_name}
                     </option>
                   ))}
                 </select>
+                {loadingCompanies && (
+                  <div className="mt-1 flex items-center text-sm text-blue-600">
+                    <Loader className="w-4 h-4 animate-spin mr-2" />
+                    Loading companies...
+                  </div>
+                )}
               </div>
 
               <div>

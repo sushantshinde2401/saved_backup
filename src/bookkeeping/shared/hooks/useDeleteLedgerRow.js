@@ -54,10 +54,10 @@ export const useDeleteLedgerRow = ({
           endpoint = `${API_ENDPOINTS.GET_COMPANY_LEDGER}/${entry.id}`;
           break;
         case 'vendor-service':
-          endpoint = `${API_ENDPOINTS.DELETE_VENDOR_SERVICE}/${entry.id}`;
-          break;
         case 'vendor-payment':
-          endpoint = `${API_ENDPOINTS.DELETE_VENDOR_PAYMENT}/${entry.id}`;
+        case 'vendor-adjustment':
+          // Use unified vendor ledger delete endpoint for all vendor entry types
+          endpoint = `${API_ENDPOINTS.DELETE_VENDOR_LEDGER}/${entry.id}`;
           break;
         case 'expense-ledger':
           endpoint = `${API_ENDPOINTS.DELETE_EXPENSE_LEDGER}/${entry.id}`;
@@ -92,14 +92,32 @@ export const useDeleteLedgerRow = ({
 
     } catch (error) {
       console.error('[DELETE_LEDGER_ROW] Error deleting entry:', error);
+      console.log('[DELETE_LEDGER_ROW] Error message:', error.message);
 
-      // Revert optimistic update
-      onRevertOptimisticUpdate?.(originalEntry);
+      // Check if it's a 404 error (entry not found)
+      const isNotFound = error.message.includes('404') ||
+                        error.message.toLowerCase().includes('not found') ||
+                        error.message.includes('No ledger entry found') ||
+                        error.message.includes('entry not found');
 
-      const errorMessage = error.message || 'Failed to delete record. Please try again.';
-      setDeleteError(errorMessage);
-      toast.error(errorMessage);
-      onError?.(error, originalEntry);
+      console.log('[DELETE_LEDGER_ROW] Is 404 error:', isNotFound);
+
+      if (isNotFound) {
+        // For 404 errors, don't revert the optimistic update since the entry doesn't exist
+        // Instead, refresh the data to ensure UI is in sync
+        console.log('[DELETE_LEDGER_ROW] Handling 404 - refreshing data');
+        toast.warning('Entry was already deleted or not found. Refreshing data...');
+        // Trigger a refresh by calling onSuccess without the entry
+        onSuccess?.(null, null);
+      } else {
+        // For other errors, revert the optimistic update
+        console.log('[DELETE_LEDGER_ROW] Handling other error - reverting');
+        onRevertOptimisticUpdate?.(originalEntry);
+        const errorMessage = error.message || 'Failed to delete record. Please try again.';
+        setDeleteError(errorMessage);
+        toast.error(errorMessage);
+        onError?.(error, originalEntry);
+      }
     } finally {
       setIsDeleting(false);
     }
