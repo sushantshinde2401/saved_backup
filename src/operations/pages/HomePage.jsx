@@ -1,6 +1,6 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Briefcase, BookOpen, Database, Ship, Award } from 'lucide-react';
+import { Briefcase, BookOpen, Database, Ship, Award, Shield } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 function HomePage() {
@@ -196,6 +196,24 @@ function HomePage() {
             Professional Maritime Training • Certificate Management • Quality Assurance
           </p>
         </motion.div>
+      </motion.div>
+
+      {/* Admin Panel Floating Button */}
+      <motion.div
+        initial={{ opacity: 0, scale: 0.8 }}
+        animate={{ opacity: 1, scale: 1 }}
+        transition={{ delay: 1.5, duration: 0.5 }}
+        className="fixed bottom-6 left-6 z-50"
+      >
+        <motion.button
+          onClick={() => navigate('/admin-panel')}
+          whileHover={{ scale: 1.1, y: -3 }}
+          whileTap={{ scale: 0.9 }}
+          className="group relative bg-gradient-to-r from-red-500 to-orange-500 hover:from-red-600 hover:to-orange-600 text-white p-4 rounded-full shadow-2xl transition-all duration-300"
+        >
+          <div className="absolute inset-0 bg-gradient-to-r from-red-400 to-orange-400 rounded-full blur opacity-30 group-hover:opacity-50 transition-opacity duration-300"></div>
+          <Shield size={24} className="relative z-10" />
+        </motion.button>
       </motion.div>
     </div>
   );

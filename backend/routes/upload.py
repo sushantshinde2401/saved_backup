@@ -15,7 +15,7 @@ upload_bp = Blueprint('upload', __name__)
 @upload_bp.route('/upload-images', methods=['POST', 'OPTIONS'])
 def upload_images():
     """
-    Handle multiple file uploads and perform OCR processing
+    Handle multiple file uploads, store images temporarily in session-based temp folder, and perform OCR processing
     Expected files: photo, signature, passport_front_img, passport_back_img, cdc_img (optional), marksheet (optional)
     """
     try:
@@ -32,45 +32,119 @@ def upload_images():
         # Generate session ID for this upload session
         session_id = generate_session_id()
 
-        # Create temporary session folder
+        # Create temp session folder
         temp_session_folder = f"{Config.TEMP_FOLDER}/{session_id}"
-        import os
         os.makedirs(temp_session_folder, exist_ok=True)
 
-        # Save uploaded files to temporary session folder
-        saved_files = {}
+        # File validation settings
+        MAX_IMAGE_SIZE = 5 * 1024 * 1024  # 5MB per image
+        ALLOWED_IMAGE_TYPES = {'image/jpeg', 'image/png', 'image/jpg', 'image/gif'}
 
-        for file_key in ['photo', 'signature', 'passport_front_img', 'passport_back_img', 'cdc_img', 'marksheet']:
-            if file_key in request.files:
-                file = request.files[file_key]
-                if file and file.filename != '' and allowed_file(file.filename):
-                    # Keep original filename for temp storage
-                    from werkzeug.utils import secure_filename
-                    filename = secure_filename(file.filename)
+        # Process and validate uploaded files
+        uploaded_files = {}
+        temp_file_paths = {}
 
-                    # Save to temp session folder
-                    file_path = f"{temp_session_folder}/{filename}"
-                    file.save(file_path)
-                    saved_files[file_key] = file_path
+        try:
+            for file_key in ['photo', 'signature', 'passport_front_img', 'passport_back_img', 'cdc_img', 'marksheet']:
+                if file_key in request.files:
+                    file = request.files[file_key]
+                    if file and file.filename != '':
+                        # Validate file extension
+                        if not allowed_file(file.filename):
+                            # Clean up any already uploaded files
+                            for path in temp_file_paths.values():
+                                if os.path.exists(path):
+                                    os.remove(path)
+                            if os.path.exists(temp_session_folder):
+                                os.rmdir(temp_session_folder)
+                            return jsonify({"error": f"Invalid file type for {file_key}. Allowed extensions: {', '.join(Config.ALLOWED_EXTENSIONS)}"}), 400
 
-                    print(f"[TEMP UPLOAD] Saved {file_key}: {filename} to session {session_id}")
+                        # Read file data for validation
+                        file_data = file.read()
+                        file_size = len(file_data)
+
+                        # Validate file size (5MB max for images)
+                        if file_size > MAX_IMAGE_SIZE:
+                            # Clean up any already uploaded files
+                            for path in temp_file_paths.values():
+                                if os.path.exists(path):
+                                    os.remove(path)
+                            if os.path.exists(temp_session_folder):
+                                os.rmdir(temp_session_folder)
+                            return jsonify({"error": f"File {file_key} too large. Maximum size: 5MB"}), 400
+
+                        # Determine MIME type
+                        import mimetypes
+                        mime_type, _ = mimetypes.guess_type(file.filename)
+                        if not mime_type:
+                            mime_type = 'application/octet-stream'
+
+                        # For image files, validate MIME type
+                        if file_key in ['photo', 'signature', 'passport_front_img', 'passport_back_img', 'cdc_img']:
+                            if mime_type not in ALLOWED_IMAGE_TYPES:
+                                # Clean up any already uploaded files
+                                for path in temp_file_paths.values():
+                                    if os.path.exists(path):
+                                        os.remove(path)
+                                if os.path.exists(temp_session_folder):
+                                    os.rmdir(temp_session_folder)
+                                return jsonify({"error": f"Invalid image type for {file_key}. Allowed: JPEG, PNG"}), 400
+
+                        # Secure filename
+                        from werkzeug.utils import secure_filename
+                        filename = secure_filename(file.filename)
+
+                        # Check for duplicate filenames in same session
+                        temp_file_path = f"{temp_session_folder}/{filename}"
+                        if os.path.exists(temp_file_path):
+                            # Clean up any already uploaded files
+                            for path in temp_file_paths.values():
+                                if os.path.exists(path):
+                                    os.remove(path)
+                            if os.path.exists(temp_session_folder):
+                                os.rmdir(temp_session_folder)
+                            return jsonify({"error": f"Duplicate filename {filename} in session"}), 400
+
+                        # Save file to temp session folder
+                        with open(temp_file_path, 'wb') as f:
+                            f.write(file_data)
+
+                        uploaded_files[file_key] = filename
+                        temp_file_paths[file_key] = temp_file_path
+                        print(f"[TEMP STORAGE] Saved {file_key}: {filename} to {temp_file_path}")
+        except Exception as file_error:
+            # Clean up on any file processing error
+            for path in temp_file_paths.values():
+                if os.path.exists(path):
+                    os.remove(path)
+            if os.path.exists(temp_session_folder):
+                os.rmdir(temp_session_folder)
+            return jsonify({"error": f"File processing error: {str(file_error)}"}), 500
 
         # Perform OCR on passport and CDC images (skip if disabled)
         ocr_data = {}
 
         if Config.ENABLE_OCR:
-            # Extract passport front data
-            if 'passport_front_img' in saved_files:
-                ocr_data['passport_front'] = extract_passport_front_data(saved_files['passport_front_img'])
+            try:
+                # Extract passport front data
+                if 'passport_front_img' in temp_file_paths:
+                    ocr_data['passport_front'] = extract_passport_front_data(temp_file_paths['passport_front_img'])
 
-            # Extract passport back data
-            if 'passport_back_img' in saved_files:
-                ocr_data['passport_back'] = extract_passport_back_data(saved_files['passport_back_img'])
+                # Extract passport back data
+                if 'passport_back_img' in temp_file_paths:
+                    ocr_data['passport_back'] = extract_passport_back_data(temp_file_paths['passport_back_img'])
 
-            # Extract CDC data if provided
-            if 'cdc_img' in saved_files:
-                ocr_data['cdc'] = extract_cdc_data(saved_files['cdc_img'])
-            else:
+                # Extract CDC data if provided
+                if 'cdc_img' in temp_file_paths:
+                    ocr_data['cdc'] = extract_cdc_data(temp_file_paths['cdc_img'])
+                else:
+                    ocr_data['cdc'] = {"cdc_no": "", "indos_no": ""}
+
+            except Exception as ocr_error:
+                print(f"[OCR] Error during OCR processing: {ocr_error}")
+                # Continue with placeholder data
+                ocr_data['passport_front'] = {"name": "", "passport_no": "", "date_of_birth": "", "place_of_birth": "", "date_of_issue": "", "date_of_expiry": "", "place_of_issue": ""}
+                ocr_data['passport_back'] = {"address": "", "emergency_contact": ""}
                 ocr_data['cdc'] = {"cdc_no": "", "indos_no": ""}
         else:
             print("[OCR] OCR processing disabled - skipping AI extraction")
@@ -81,35 +155,25 @@ def upload_images():
 
         # Add session information to OCR data
         ocr_data['session_id'] = session_id
-        ocr_data['temp_folder'] = temp_session_folder
-        ocr_data['uploaded_files'] = {
-            key: os.path.basename(path) for key, path in saved_files.items()
-        }
+        ocr_data['uploaded_files'] = uploaded_files
+        ocr_data['temp_file_paths'] = temp_file_paths
         ocr_data['timestamp'] = datetime.now().strftime("%Y%m%d_%H%M%S")
         ocr_data['last_updated'] = datetime.now().isoformat()
         ocr_data['ocr_enabled'] = Config.ENABLE_OCR
 
-        # Save OCR data to JSON file with session ID
-        json_filename = f"structured_passport_data_{session_id}.json"
-        json_path = f"{Config.JSON_FOLDER}/{json_filename}"
-        import json
-        with open(json_path, 'w') as json_file:
-            json.dump(ocr_data, json_file, indent=2)
-
-        print(f"[JSON] Saved data: {json_filename}")
-        print(f"[TEMP STORAGE] Files saved to session folder: {session_id}")
-        for file_key, file_path in saved_files.items():
-            print(f"[TEMP STORAGE] {file_key}: {os.path.basename(file_path)}")
+        print(f"[TEMP STORAGE] Images stored temporarily for session: {session_id}")
+        for file_key, filename in uploaded_files.items():
+            print(f"[TEMP STORAGE] {file_key}: {filename}")
 
         return jsonify({
             "status": "success",
-            "message": "Files uploaded successfully" + (" with OCR processing" if Config.ENABLE_OCR else " (OCR disabled)"),
+            "message": "Images uploaded and stored temporarily" + (" with OCR processing" if Config.ENABLE_OCR else " (OCR disabled)"),
             "data": ocr_data,
             "session_id": session_id,
-            "json_file": json_filename,
-            "files_processed": len(saved_files),
-            "temp_folder": temp_session_folder,
-            "ocr_enabled": Config.ENABLE_OCR
+            "json_file": None,  # Not used in new implementation
+            "files_processed": len(uploaded_files),
+            "ocr_enabled": Config.ENABLE_OCR,
+            "storage_type": "temp_folder"
         }), 200
 
     except Exception as e:
@@ -276,6 +340,36 @@ def test_chatgpt_ocr():
             "chatgpt_enabled": Config.ENABLE_CHATGPT_FILTERING,
             "api_key_configured": bool(Config.OPENAI_API_KEY and Config.OPENAI_API_KEY != "your_openai_api_key_here")
         }), 200
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+@upload_bp.route('/image/<int:image_id>', methods=['GET'])
+def get_image(image_id):
+    """
+    Retrieve and serve an image from the database by its ID
+    """
+    try:
+        from database.db_connection import execute_query
+
+        # Query for the image data
+        result = execute_query("""
+            SELECT file_data, mime_type, file_name
+            FROM candidate_uploads
+            WHERE id = %s AND file_data IS NOT NULL
+        """, (image_id,))
+
+        if not result:
+            return jsonify({"error": "Image not found"}), 404
+
+        file_data = result[0]['file_data']
+        mime_type = result[0]['mime_type'] or 'application/octet-stream'
+        file_name = result[0]['file_name'] or f'image_{image_id}'
+
+        # Return the image with appropriate headers
+        from flask import Response
+        response = Response(file_data, mimetype=mime_type)
+        response.headers['Content-Disposition'] = f'inline; filename="{file_name}"'
+        return response
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500

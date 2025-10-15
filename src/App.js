@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 
 // Operations Section
 import HomePage from './operations/pages/HomePage';
+import AdminPanel from './operations/pages/AdminPanel';
 import UploadDocx from './operations/pages/UploadDocx';
 import CandidateDetail from './operations/pages/CandidateDetail';
 import CourseSelection from './operations/pages/CourseSelection';
@@ -43,6 +44,7 @@ function App() {
         <Route path="/" element={<HomePage />} />
 
         {/* Operations Section */}
+        <Route path="/admin-panel" element={<AdminPanel />} />
         <Route path="/upload-docx" element={<UploadDocx />} />
         <Route path="/candidate-details" element={<CandidateDetail />} />
         <Route path="/course-selection" element={<CourseSelection />} />

@@ -12,143 +12,179 @@ candidate_bp = Blueprint('candidate', __name__)
 
 @candidate_bp.route('/save-candidate-data', methods=['POST'])
 def save_candidate_data():
-    """Save candidate form data and organize files into candidate folder"""
+    """Save candidate form data and images atomically to database"""
+    conn = None
     try:
         data = request.get_json()
 
         if not data:
             return jsonify({"error": "No data provided"}), 400
 
-        # Extract candidate information for folder naming
+        # Extract candidate information
         first_name = sanitize_folder_name(data.get('firstName', ''))
         last_name = sanitize_folder_name(data.get('lastName', ''))
         passport_no = sanitize_folder_name(data.get('passport', ''))
         session_id = data.get('session_id', '')
 
+        # Extract additional data
+        ocr_data = data.get('ocr_data')
+        certificate_selections = data.get('certificate_selections')
+
+        # Validate required fields
         if not all([first_name, last_name, passport_no]):
-            return jsonify({"error": "firstName, lastName, and passport are required for file organization"}), 400
+            return jsonify({"error": "firstName, lastName, and passport are required"}), 400
 
-        # Create candidate folder name
-        candidate_folder_name = f"{first_name}_{last_name}_{passport_no}"
+        if not session_id:
+            return jsonify({"error": "session_id is required"}), 400
 
-        # Create unique candidate folder in images directory
-        candidate_folder_path, final_folder_name = create_unique_candidate_folder(
-            Config.IMAGES_FOLDER,
-            candidate_folder_name
+        # Validate session_id format (should be UUID-like)
+        import re
+        if not re.match(r'^[a-f0-9\-]{36}$', session_id):
+            return jsonify({"error": "Invalid session_id format"}), 400
+
+        # Validate email format if provided
+        email = data.get('email', '')
+        if email and not re.match(r'^[^\s@]+@[^\s@]+\.[^\s@]+$', email):
+            return jsonify({"error": "Invalid email format"}), 400
+
+        # Validate phone format if provided
+        phone = data.get('phone', '')
+        if phone and not re.match(r'^\+?[\d\s\-\(\)]{10,}$', phone):
+            return jsonify({"error": "Invalid phone format"}), 400
+
+        # Create candidate name
+        candidate_name = f"{first_name}_{last_name}_{passport_no}"
+
+        # Check if candidate name already exists
+        from database.db_connection import execute_query
+        existing_candidate = execute_query(
+            "SELECT id FROM candidates WHERE candidate_name = %s",
+            (candidate_name,)
         )
+        if existing_candidate:
+            return jsonify({"error": f"Candidate with name '{candidate_name}' already exists"}), 409
 
-        # Move files from temp session folder to candidate folder
-        moved_files = []
-        if session_id:
-            temp_session_folder = f"{Config.TEMP_FOLDER}/{session_id}"
-            moved_files, move_errors = move_files_to_candidate_folder(
-                temp_session_folder,
-                candidate_folder_path
-            )
+        # Check if temp session folder exists
+        temp_session_folder = f"{Config.TEMP_FOLDER}/{session_id}"
+        if not os.path.exists(temp_session_folder):
+            return jsonify({"error": "Invalid session or session expired"}), 400
 
-            if move_errors:
-                print(f"[WARNING] File move errors: {move_errors}")
+        # Get list of temp files
+        temp_files = []
+        for filename in os.listdir(temp_session_folder):
+            file_path = os.path.join(temp_session_folder, filename)
+            if os.path.isfile(file_path):
+                temp_files.append(filename)
 
-        # Add metadata to candidate data
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        data.update({
-            'timestamp': timestamp,
-            'last_updated': datetime.now().isoformat(),
-            'candidate_folder': final_folder_name,
-            'candidate_folder_path': candidate_folder_path,
-            'moved_files': moved_files,
-            'session_id': session_id
-        })
+        if not temp_files:
+            return jsonify({"error": "No files found in session"}), 400
 
-        # Insert candidate data into both PostgreSQL tables
-        db_insert_success = False
-        db_result = None
+        # Start atomic transaction
+        from database.db_connection import DatabaseConnection, execute_query
+        conn = DatabaseConnection.get_connection()
+        conn.autocommit = False  # Start transaction
+
         try:
-            # Use the new dual insertion function
-            db_result = save_candidate_with_files(
-                candidate_name=candidate_folder_name,
-                candidate_folder=final_folder_name,
-                candidate_folder_path=candidate_folder_path,
-                json_data=data,
-                moved_files=moved_files
-            )
+            # Step 1: Insert images into candidate_uploads table
+            image_ids = []
+            for filename in temp_files[:6]:  # Limit to 6 images
+                file_path = os.path.join(temp_session_folder, filename)
 
-            db_insert_success = db_result["success"]
-            candidate_id = db_result["candidate_id"]
-            upload_ids = db_result["upload_ids"]
+                # Read file data
+                with open(file_path, 'rb') as f:
+                    file_data = f.read()
 
-            print(f"[DB] ✅ Successfully inserted candidate record (ID: {candidate_id}) and {len(upload_ids)} file records into database")
-            print(f"[DB] Upload record IDs: {upload_ids}")
+                file_size = len(file_data)
+                file_type = filename.rsplit('.', 1)[1].lower() if '.' in filename else ''
+
+                # Determine MIME type
+                import mimetypes
+                mime_type, _ = mimetypes.guess_type(filename)
+                if not mime_type:
+                    mime_type = 'application/octet-stream'
+
+                # Insert image
+                query = """
+                    INSERT INTO candidate_uploads (
+                        candidate_name, session_id, file_name, file_type, file_data,
+                        mime_type, file_size, upload_time
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+                    RETURNING id
+                """
+
+                result = execute_query(query, (
+                    candidate_name, session_id, filename, file_type, file_data,
+                    mime_type, file_size
+                ), fetch=True)
+
+                if result:
+                    image_ids.append(result[0]['id'])
+                    print(f"[DB] ✅ Inserted image {filename} with ID: {result[0]['id']}")
+
+            # Step 2: Insert candidate data
+            candidate_query = """
+                INSERT INTO candidates (
+                    candidate_name, session_id, json_data, ocr_data, certificate_selections,
+                    is_current_candidate, is_certificate_selection, last_updated
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+                ON CONFLICT (candidate_name)
+                DO UPDATE SET
+                    session_id = EXCLUDED.session_id,
+                    json_data = EXCLUDED.json_data,
+                    ocr_data = EXCLUDED.ocr_data,
+                    certificate_selections = EXCLUDED.certificate_selections,
+                    is_current_candidate = EXCLUDED.is_current_candidate,
+                    is_certificate_selection = EXCLUDED.is_certificate_selection,
+                    last_updated = CURRENT_TIMESTAMP
+                RETURNING id
+            """
+
+            import json
+            candidate_result = execute_query(candidate_query, (
+                candidate_name, session_id, json.dumps(data),
+                json.dumps(ocr_data) if ocr_data else None,
+                json.dumps(certificate_selections) if certificate_selections else None,
+                False, False
+            ), fetch=True)
+
+            if not candidate_result:
+                raise Exception("Failed to insert candidate record")
+
+            record_id = candidate_result[0]['id']
+
+            # Commit transaction
+            conn.commit()
+
+            # Step 3: Clean up temp folder
+            import shutil
+            shutil.rmtree(temp_session_folder)
+            print(f"[CLEANUP] Removed temp session folder: {temp_session_folder}")
+
+            print(f"[SUCCESS] ✅ Atomically saved candidate {candidate_name} with {len(image_ids)} images")
+
+            return jsonify({
+                "status": "success",
+                "message": "Candidate data and images saved atomically",
+                "candidate_name": candidate_name,
+                "record_id": record_id,
+                "files_count": len(image_ids),
+                "session_id": session_id,
+                "filename": candidate_name,  # For frontend compatibility
+                "storage_type": "separate_tables"
+            }), 200
 
         except Exception as db_error:
-            print(f"[DB] ❌ Failed to insert into database: {db_error}")
-            print("[DB] Continuing with file operations - database can be synced later")
-            # Don't fail the entire operation if DB insert fails
-            # This ensures backward compatibility
-
-        # Save current candidate data for certificate generation
-        current_candidate_filename = "current_candidate_for_certificate.json"
-        current_candidate_path = f"{Config.JSON_FOLDER}/{current_candidate_filename}"
-
-        try:
-            # Ensure JSON folder exists
-            os.makedirs(Config.JSON_FOLDER, exist_ok=True)
-
-            # Debug: Print the data being saved
-            print(f"[DEBUG] Saving candidate data to {current_candidate_path}")
-            print(f"[DEBUG] Data keys: {list(data.keys())}")
-            print(f"[DEBUG] Candidate: {data.get('firstName')} {data.get('lastName')} - {data.get('passport')}")
-
-            with open(current_candidate_path, 'w', encoding='utf-8') as f:
-                json.dump(data, f, indent=2, ensure_ascii=False)
-
-            # Verify the file was written
-            if os.path.exists(current_candidate_path):
-                file_size = os.path.getsize(current_candidate_path)
-                print(f"[JSON] ✅ Successfully updated {current_candidate_filename} ({file_size} bytes)")
-                print(f"[JSON] ✅ Candidate: {data.get('firstName')} {data.get('lastName')} - {data.get('passport')}")
-            else:
-                raise Exception("File was not created after write operation")
-
-        except Exception as save_error:
-            print(f"[ERROR] ❌ Failed to save current candidate for certificate: {save_error}")
-            print(f"[ERROR] ❌ Attempted path: {current_candidate_path}")
-            print(f"[ERROR] ❌ JSON folder exists: {os.path.exists(Config.JSON_FOLDER)}")
-            # This is critical for certificate generation, so we should return an error
-            return jsonify({
-                "error": f"Failed to save candidate data for certificate generation: {save_error}",
-                "status": "partial_failure"
-            }), 500
-
-        print(f"[SUCCESS] Candidate data saved successfully")
-        print(f"[SUCCESS] Files organized in folder: {final_folder_name}")
-        print(f"[SUCCESS] Moved {len(moved_files)} files to candidate folder")
-
-        # Prepare response data
-        response_data = {
-            "status": "success",
-            "message": "Candidate data saved and files organized successfully",
-            "filename": current_candidate_filename,
-            "candidate_folder": final_folder_name,
-            "moved_files": moved_files,
-            "files_count": len(moved_files),
-            "database_inserted": db_insert_success,
-            "database_records": len(moved_files) if db_insert_success else 0
-        }
-
-        # Add detailed database information if successful
-        if db_insert_success and db_result:
-            response_data.update({
-                "candidate_id": db_result["candidate_id"],
-                "upload_ids": db_result["upload_ids"],
-                "database_tables": ["candidates", "candidate_uploads"]
-            })
-
-        return jsonify(response_data), 200
+            if conn:
+                conn.rollback()
+            print(f"[DB] ❌ Transaction failed: {db_error}")
+            raise
 
     except Exception as e:
         print(f"[ERROR] Save candidate data failed: {e}")
         return jsonify({"error": str(e)}), 500
+    finally:
+        if conn:
+            DatabaseConnection.return_connection(conn)
 
 @candidate_bp.route('/get-candidate-data/<filename>', methods=['GET'])
 def get_candidate_data(filename):
@@ -172,11 +208,20 @@ def get_candidate_data(filename):
 
 @candidate_bp.route('/get-all-candidates', methods=['GET'])
 def get_all_candidates():
-    """Get all candidates from database with their file information"""
+    """Get all candidates with their images from separate tables"""
     try:
-        # Get all candidates from database using direct query
         from database.db_connection import execute_query
-        query = "SELECT * FROM candidates ORDER BY created_at DESC LIMIT 1000"
+
+        # Query to get all candidates
+        query = """
+            SELECT
+                c.id, c.candidate_name, c.session_id, c.json_data, c.created_at,
+                c.ocr_data, c.certificate_selections
+            FROM candidates c
+            ORDER BY c.created_at DESC
+            LIMIT 1000
+        """
+
         candidates = execute_query(query)
 
         if not candidates:
@@ -187,27 +232,41 @@ def get_all_candidates():
                 "total": 0
             }), 200
 
-        # Group by candidate_name to show unique candidates with their files
-        candidate_groups = {}
+        # Format the results
+        result = []
         for record in candidates:
-            candidate_name = record['candidate_name']
-            if candidate_name not in candidate_groups:
-                candidate_groups[candidate_name] = {
-                    'candidate_name': candidate_name,
-                    'files': [],
-                    'candidate_data': record['json_data'],
-                    'upload_time': record['upload_time'].isoformat() if record['upload_time'] else None
-                }
-            candidate_groups[candidate_name]['files'].append({
-                'id': record['id'],
-                'file_name': record['file_name'],
-                'file_type': record['file_type'],
-                'file_path': record['file_path'],
-                'upload_time': record['upload_time'].isoformat() if record['upload_time'] else None
-            })
+            # Get images for this candidate's session
+            files = []
+            if record['session_id']:
+                images_query = """
+                    SELECT id, file_name, file_type, mime_type, file_size, upload_time
+                    FROM candidate_uploads
+                    WHERE session_id = %s AND file_data IS NOT NULL
+                    ORDER BY upload_time
+                    LIMIT 6
+                """
+                images = execute_query(images_query, (record['session_id'],))
+                for i, img in enumerate(images):
+                    files.append({
+                        'id': img['id'],
+                        'file_name': img['file_name'],
+                        'file_type': img['file_type'],
+                        'mime_type': img['mime_type'],
+                        'file_size': img['file_size'],
+                        'image_num': i + 1,
+                        'upload_time': img['upload_time'].isoformat() if img['upload_time'] else None
+                    })
 
-        # Convert to list
-        result = list(candidate_groups.values())
+            result.append({
+                'id': record['id'],
+                'candidate_name': record['candidate_name'],
+                'session_id': record['session_id'],
+                'candidate_data': record['json_data'] if record['json_data'] else {},
+                'ocr_data': record['ocr_data'] if record['ocr_data'] else {},
+                'certificate_selections': record['certificate_selections'] if record['certificate_selections'] else {},
+                'files': files,
+                'created_at': record['created_at'].isoformat() if record['created_at'] else None
+            })
 
         return jsonify({
             "status": "success",
@@ -226,10 +285,10 @@ def get_all_candidates():
 
 @candidate_bp.route('/search-candidates', methods=['GET'])
 def search_candidates():
-    """Search candidates by name, email, or passport"""
+    """Search candidates by name, email, passport, or candidate_name"""
     try:
         search_term = request.args.get('q', '').strip()
-        search_field = request.args.get('field', 'firstName')  # firstName, lastName, email, passport
+        search_field = request.args.get('field', 'firstName')  # firstName, lastName, email, passport, candidate_name
 
         if not search_term:
             return jsonify({
@@ -237,20 +296,71 @@ def search_candidates():
                 "message": "Search term is required"
             }), 400
 
-        # Search in database using direct query
+        # Search in candidates table
         from database.db_connection import execute_query
-        query = f"""
-            SELECT * FROM candidates
-            WHERE json_data->>'{search_field}' ILIKE %s
-            ORDER BY created_at DESC
-            LIMIT 50
-        """
-        results = execute_query(query, (f"%{search_term}%",))
+
+        if search_field == 'candidate_name':
+            query = """
+                SELECT id, candidate_name, session_id, json_data, created_at,
+                       ocr_data, certificate_selections
+                FROM candidates
+                WHERE candidate_name ILIKE %s
+                ORDER BY created_at DESC
+                LIMIT 50
+            """
+            params = (f"%{search_term}%",)
+        else:
+            query = f"""
+                SELECT id, candidate_name, session_id, json_data, created_at,
+                       ocr_data, certificate_selections
+                FROM candidates
+                WHERE json_data->>'{search_field}' ILIKE %s
+                ORDER BY created_at DESC
+                LIMIT 50
+            """
+            params = (f"%{search_term}%",)
+
+        results = execute_query(query, params)
+
+        # Format results with images
+        formatted_results = []
+        for record in results:
+            files = []
+            if record['session_id']:
+                images_query = """
+                    SELECT id, file_name, file_type, mime_type, file_size, upload_time
+                    FROM candidate_uploads
+                    WHERE session_id = %s AND file_data IS NOT NULL
+                    ORDER BY upload_time
+                    LIMIT 6
+                """
+                images = execute_query(images_query, (record['session_id'],))
+                for i, img in enumerate(images):
+                    files.append({
+                        'id': img['id'],
+                        'file_name': img['file_name'],
+                        'file_type': img['file_type'],
+                        'mime_type': img['mime_type'],
+                        'file_size': img['file_size'],
+                        'image_num': i + 1,
+                        'upload_time': img['upload_time'].isoformat() if img['upload_time'] else None
+                    })
+
+            formatted_results.append({
+                'id': record['id'],
+                'candidate_name': record['candidate_name'],
+                'session_id': record['session_id'],
+                'candidate_data': record['json_data'] if record['json_data'] else {},
+                'ocr_data': record['ocr_data'] if record['ocr_data'] else {},
+                'certificate_selections': record['certificate_selections'] if record['certificate_selections'] else {},
+                'files': files,
+                'created_at': record['created_at'].isoformat() if record['created_at'] else None
+            })
 
         return jsonify({
             "status": "success",
-            "data": results,
-            "message": f"Found {len(results)} candidates matching '{search_term}' in {search_field}",
+            "data": formatted_results,
+            "message": f"Found {len(formatted_results)} candidates matching '{search_term}' in {search_field}",
             "search_term": search_term,
             "search_field": search_field
         }), 200
@@ -265,86 +375,34 @@ def search_candidates():
 
 @candidate_bp.route('/get-current-candidate-for-certificate', methods=['GET'])
 def get_current_candidate_for_certificate():
-    """STEP 2: Get current candidate data for certificate generation - returns most recent data"""
+    """Get current candidate data for certificate generation from consolidated candidates table"""
     try:
-        from datetime import datetime
+        from database.db_connection import execute_query
 
-        # Get data from database
-        db_data = None
-        db_timestamp = None
-        try:
-            recent_candidates = get_candidate_data_from_db(limit=1)
-            if recent_candidates:
-                db_data = recent_candidates[0]['json_data']
-                db_timestamp = recent_candidates[0]['created_at']
-                print(f"[DB] Retrieved candidate data from database: {db_data.get('firstName')} {db_data.get('lastName')} (timestamp: {db_timestamp})")
-        except Exception as db_error:
-            print(f"[DB] Failed to retrieve from database: {db_error}")
+        # For now, get the most recently created candidate as "current"
+        # In the future, we might add an is_current_candidate column to candidates table
+        result = execute_query("""
+            SELECT json_data, candidate_name, created_at
+            FROM candidates
+            ORDER BY created_at DESC
+            LIMIT 1
+        """)
 
-        # Get data from JSON file
-        json_data = None
-        json_timestamp = None
-        json_path = f"{Config.JSON_FOLDER}/current_candidate_for_certificate.json"
-
-        if os.path.exists(json_path):
-            try:
-                with open(json_path, 'r', encoding='utf-8') as json_file:
-                    json_data = json.load(json_file)
-                json_timestamp_str = json_data.get('last_updated')
-                if json_timestamp_str:
-                    try:
-                        json_timestamp = datetime.fromisoformat(json_timestamp_str.replace('Z', '+00:00'))
-                    except:
-                        json_timestamp = datetime.fromisoformat(json_timestamp_str)
-                print(f"[JSON] Retrieved candidate data from JSON file: {json_data.get('firstName')} {json_data.get('lastName')} (timestamp: {json_timestamp})")
-            except json.JSONDecodeError as json_error:
-                print(f"[ERROR] Invalid JSON in current candidate file: {json_error}")
-            except Exception as json_error:
-                print(f"[ERROR] Failed to read JSON file: {json_error}")
-
-        # Determine which data source is more recent
-        selected_data = None
-        selected_source = None
-
-        if db_data and json_data:
-            # Both sources have data, compare timestamps
-            if db_timestamp and json_timestamp:
-                if json_timestamp > db_timestamp:
-                    selected_data = json_data
-                    selected_source = "json_file"
-                    print(f"[SYNC] JSON file is more recent ({json_timestamp} > {db_timestamp})")
-                else:
-                    selected_data = db_data
-                    selected_source = "database"
-                    print(f"[SYNC] Database is more recent ({db_timestamp} >= {json_timestamp})")
-            elif json_timestamp:
-                selected_data = json_data
-                selected_source = "json_file"
-                print("[SYNC] Using JSON file (no database timestamp)")
-            else:
-                selected_data = db_data
-                selected_source = "database"
-                print("[SYNC] Using database (no JSON timestamp)")
-        elif json_data:
-            selected_data = json_data
-            selected_source = "json_file"
-            print("[SYNC] Using JSON file (database unavailable)")
-        elif db_data:
-            selected_data = db_data
-            selected_source = "database"
-            print("[SYNC] Using database (JSON file unavailable)")
-        else:
-            # No data available from either source
-            print("[WARNING] No current candidate data found in database or JSON file")
+        if not result:
+            print("[WARNING] No candidate data found in database")
             return jsonify({
-                "error": "No current candidate data found",
+                "error": "No candidate data found",
                 "message": "Please complete the candidate details form first",
                 "status": "not_found"
             }), 404
 
-        # Validate that the selected data contains required fields
+        candidate_record = result[0]
+        # json_data is stored as JSONB, so it's already parsed as dict
+        candidate_data = candidate_record['json_data'] if candidate_record['json_data'] else {}
+
+        # Validate that the data contains required fields
         required_fields = ['firstName', 'lastName', 'passport']
-        missing_fields = [field for field in required_fields if not selected_data.get(field)]
+        missing_fields = [field for field in required_fields if not candidate_data.get(field)]
 
         if missing_fields:
             print(f"[WARNING] Current candidate data missing required fields: {missing_fields}")
@@ -355,12 +413,12 @@ def get_current_candidate_for_certificate():
                 "missing_fields": missing_fields
             }), 400
 
-        print(f"[SUCCESS] Returning most recent candidate data: {selected_data.get('firstName')} {selected_data.get('lastName')} from {selected_source}")
+        print(f"[SUCCESS] Retrieved current candidate data from database: {candidate_data.get('firstName')} {candidate_data.get('lastName')}")
         return jsonify({
             "status": "success",
-            "data": selected_data,
+            "data": candidate_data,
             "message": "Current candidate data retrieved successfully",
-            "source": selected_source
+            "source": "database"
         }), 200
 
     except Exception as e:
@@ -370,3 +428,100 @@ def get_current_candidate_for_certificate():
             "message": "Internal server error while retrieving candidate data",
             "status": "server_error"
         }), 500
+
+@candidate_bp.route('/update-candidate-data', methods=['POST'])
+def update_candidate_data():
+    """Update existing candidate data by ID"""
+    try:
+        data = request.get_json()
+
+        if not data:
+            return jsonify({"error": "No data provided"}), 400
+
+        candidate_id = data.get('id')
+        if candidate_id is None:
+            return jsonify({"error": "Candidate ID is required"}), 400
+
+        try:
+            candidate_id = int(candidate_id)
+        except ValueError:
+            return jsonify({"error": "Invalid candidate ID"}), 400
+
+        # Remove id from data to update
+        update_data = {k: v for k, v in data.items() if k != 'id'}
+
+        from database.db_connection import execute_query
+
+        # Check if candidate exists
+        existing = execute_query("SELECT id FROM candidates WHERE id = %s", (candidate_id,))
+        if not existing:
+            return jsonify({"error": "Candidate not found"}), 404
+
+        # Update the json_data field
+        query = """
+            UPDATE candidates
+            SET json_data = %s, last_updated = CURRENT_TIMESTAMP
+            WHERE id = %s
+        """
+
+        execute_query(query, (json.dumps(update_data), candidate_id), fetch=False)
+
+        return jsonify({
+            "status": "success",
+            "message": "Candidate data updated successfully",
+            "candidate_id": candidate_id
+        }), 200
+
+    except Exception as e:
+        print(f"[ERROR] Update candidate data failed: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@candidate_bp.route('/image/<int:candidate_id>/<int:image_num>', methods=['GET'])
+def get_candidate_image(candidate_id, image_num):
+    """
+    Retrieve and serve an image from the candidate_uploads table by candidate ID and image number
+    """
+    try:
+        from database.db_connection import execute_query
+
+        # Validate image_num
+        if image_num < 1 or image_num > 6:
+            return jsonify({"error": "Invalid image number. Must be 1-6"}), 400
+
+        # First get the session_id from candidates table
+        candidate_result = execute_query("""
+            SELECT session_id FROM candidates WHERE id = %s
+        """, (candidate_id,))
+
+        if not candidate_result:
+            return jsonify({"error": "Candidate not found"}), 404
+
+        session_id = candidate_result[0]['session_id']
+        if not session_id:
+            return jsonify({"error": "No images found for this candidate"}), 404
+
+        # Get the image from candidate_uploads ordered by upload_time
+        result = execute_query("""
+            SELECT file_data, file_name, mime_type
+            FROM candidate_uploads
+            WHERE session_id = %s AND file_data IS NOT NULL
+            ORDER BY upload_time
+            LIMIT 1 OFFSET %s
+        """, (session_id, image_num - 1))
+
+        if not result:
+            return jsonify({"error": "Image not found"}), 404
+
+        file_data = result[0]['file_data']
+        file_name = result[0]['file_name'] or f'candidate_{candidate_id}_image_{image_num}'
+        mime_type = result[0]['mime_type'] or 'application/octet-stream'
+
+        # Return the image with appropriate headers
+        from flask import Response
+        response = Response(file_data, mimetype=mime_type)
+        response.headers['Content-Disposition'] = f'inline; filename="{file_name}"'
+        return response
+
+    except Exception as e:
+        print(f"[ERROR] Failed to get candidate image {candidate_id}/{image_num}: {e}")
+        return jsonify({"error": str(e)}), 500

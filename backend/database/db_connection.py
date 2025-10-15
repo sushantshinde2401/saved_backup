@@ -371,61 +371,112 @@ def insert_or_update_candidate(candidate_name, candidate_folder, candidate_folde
         logger.error(f"[DB] Failed to insert/update candidate: {e}")
         raise
 
-def save_candidate_with_files(candidate_name, candidate_folder, candidate_folder_path, json_data, moved_files):
+def save_candidate_with_files(candidate_name, candidate_folder, candidate_folder_path, json_data, moved_files, session_id=None, ocr_data=None, certificate_selections=None):
     """
-    Save candidate data to both candidates and candidate_uploads tables
+    Save candidate data to candidates table with reference to images in candidate_uploads table
 
     Args:
         candidate_name (str): Unique name of the candidate
         candidate_folder (str): Name of the candidate folder
         candidate_folder_path (str): Full path to the candidate folder
         json_data (dict): Candidate form data
-        moved_files (list): List of moved file names
+        moved_files (list): List of moved file names (for reference only)
+        session_id (str): Session ID linking to images in candidate_uploads
+        ocr_data (dict): OCR extracted data
+        certificate_selections (dict): Certificate selection data
 
     Returns:
-        dict: Result with success status and record IDs
+        dict: Result with success status and record ID
     """
-    candidate_id = None
-    upload_ids = []
-
     try:
-        # First, insert/update the candidate record
-        candidate_id = insert_or_update_candidate(
-            candidate_name=candidate_name,
-            candidate_folder=candidate_folder,
-            candidate_folder_path=candidate_folder_path,
-            json_data=json_data
-        )
-        logger.info(f"[DB] ✅ Candidate record saved with ID: {candidate_id}")
+        # Get image count from candidate_uploads for this session
+        if session_id:
+            image_count_query = "SELECT COUNT(*) as count FROM candidate_uploads WHERE session_id = %s"
+            image_result = execute_query(image_count_query, (session_id,))
+            files_count = image_result[0]['count'] if image_result else 0
+        else:
+            files_count = 0
 
-        # Then, insert records for each moved file
-        for file_info in moved_files:
-            file_path = os.path.join(candidate_folder_path, file_info)
-            file_name = file_info
-            file_type = os.path.splitext(file_info)[1].lstrip('.')  # Get extension without dot
+        # Insert or update candidate record (images stored separately in candidate_uploads)
+        query = """
+            INSERT INTO candidates (
+                candidate_name, candidate_folder, candidate_folder_path, json_data,
+                session_id, ocr_data, certificate_selections,
+                is_current_candidate, is_certificate_selection, last_updated
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+            ON CONFLICT (candidate_name)
+            DO UPDATE SET
+                candidate_folder = EXCLUDED.candidate_folder,
+                candidate_folder_path = EXCLUDED.candidate_folder_path,
+                json_data = EXCLUDED.json_data,
+                session_id = EXCLUDED.session_id,
+                ocr_data = EXCLUDED.ocr_data,
+                certificate_selections = EXCLUDED.certificate_selections,
+                is_current_candidate = EXCLUDED.is_current_candidate,
+                is_certificate_selection = EXCLUDED.is_certificate_selection,
+                last_updated = CURRENT_TIMESTAMP
+            RETURNING id
+        """
 
-            upload_id = insert_candidate_upload(
-                candidate_name=candidate_name,
-                file_name=file_name,
-                file_type=file_type,
-                file_path=file_path,
-                json_data=json_data
-            )
-            upload_ids.append(upload_id)
-            logger.info(f"[DB] ✅ File record saved with ID: {upload_id} for {file_name}")
+        result = execute_query(query, (
+            candidate_name, candidate_folder, candidate_folder_path, json.dumps(json_data),
+            session_id, json.dumps(ocr_data) if ocr_data else None, json.dumps(certificate_selections) if certificate_selections else None,
+            False, False  # is_current_candidate, is_certificate_selection
+        ))
 
-        logger.info(f"[DB] ✅ Successfully saved candidate and {len(upload_ids)} file records")
-        return {
-            "success": True,
-            "candidate_id": candidate_id,
-            "upload_ids": upload_ids,
-            "files_count": len(upload_ids)
-        }
+        if result:
+            record_id = result[0]['id']
+            logger.info(f"[DB] ✅ Successfully saved candidate record ID: {record_id} for {candidate_name} (images linked via session_id: {session_id})")
+            return {
+                "success": True,
+                "record_id": record_id,
+                "files_count": files_count,
+                "session_id": session_id
+            }
+        else:
+            raise Exception("No ID returned from insert/update")
 
     except Exception as e:
-        logger.error(f"[DB] ❌ Failed to save candidate with files: {e}")
-        # Note: In a production system, you might want to implement rollback logic here
-        # For now, we'll let the calling code handle partial failures
+        logger.error(f"[DB] ❌ Failed to save candidate: {e}")
+def insert_image_blob(candidate_name, session_id, file_name, file_type, file_data, mime_type, file_size):
+    """
+    Insert an image file as BLOB data into candidate_uploads table
+
+    Args:
+        candidate_name (str): Name of the candidate/session
+        session_id (str): Session ID
+        file_name (str): Original filename
+        file_type (str): File extension
+        file_data (bytes): Binary file data
+        mime_type (str): MIME type
+        file_size (int): File size in bytes
+
+    Returns:
+        int: ID of the inserted record
+    """
+    query = """
+        INSERT INTO candidate_uploads (
+            candidate_name, session_id, file_name, file_type, file_data,
+            mime_type, file_size, upload_time
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+        RETURNING id
+    """
+
+    try:
+        result = execute_query(query, (
+            candidate_name, session_id, file_name, file_type, file_data,
+            mime_type, file_size
+        ))
+        if result:
+            record_id = result[0]['id']
+            logger.info(f"[DB] ✅ Inserted image BLOB record ID: {record_id} for {file_name} ({file_size} bytes)")
+            return record_id
+        else:
+            raise Exception("No ID returned from insert")
+    except Exception as e:
+        logger.error(f"[DB] ❌ Failed to insert image BLOB: {e}")
+        raise
+        raise
 def insert_receipt_invoice_data(receipt_data):
     """
     Insert a new ReceiptInvoiceData record

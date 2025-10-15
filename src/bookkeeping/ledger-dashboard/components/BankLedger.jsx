@@ -4,7 +4,6 @@ import { toast } from 'react-toastify';
 import {
   Calendar,
   Search,
-  Filter,
   Download,
   Eye,
   ChevronUp,
@@ -53,7 +52,6 @@ const BankLedger = () => {
   const [selectedEntry, setSelectedEntry] = useState(null);
   const [autoRefresh, setAutoRefresh] = useState(false);
   const [lastRefresh, setLastRefresh] = useState(new Date());
-  const [showExpenseEntries, setShowExpenseEntries] = useState(false);
 
   // Delete functionality state
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
@@ -224,12 +222,11 @@ const BankLedger = () => {
     return sortableItems;
   }, [ledgerData, sortConfig]);
 
-  // Filter by search term and expense entries
+  // Filter by search term
   const filteredData = sortedData.filter(entry => {
     const matchesSearch = entry.particulars?.toLowerCase().includes(searchTerm.toLowerCase()) ||
                           entry.transaction_id?.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesExpenseFilter = !showExpenseEntries || entry.source === 'expense_ledger';
-    return matchesSearch && matchesExpenseFilter;
+    return matchesSearch;
   });
 
   // Handle filter changes
@@ -364,20 +361,6 @@ const BankLedger = () => {
                >
                  <RefreshCw className="w-4 h-4 mr-2" />
                  Refresh
-               </button>
-               <button
-                 onClick={() => {
-                   setShowExpenseEntries(!showExpenseEntries);
-                   logAuditEvent('EXPENSE_FILTER_TOGGLE', { enabled: !showExpenseEntries });
-                 }}
-                 className={`flex items-center px-4 py-2 rounded-lg transition-colors ${
-                   showExpenseEntries
-                     ? 'bg-green-600 hover:bg-green-700 text-white'
-                     : 'bg-gray-200 hover:bg-gray-300 text-gray-700'
-                 }`}
-               >
-                 <Filter className="w-4 h-4 mr-2" />
-                 {showExpenseEntries ? 'Show All Entries' : 'Show Expense Entries'}
                </button>
                <div className="flex items-center space-x-2">
                  <input

@@ -426,35 +426,20 @@ function NewStepper() {
   // Get current candidate ID from the most recent candidate
   const getCurrentCandidateId = async () => {
     try {
-      const response = await fetch('http://localhost:5000/candidate/get-current-candidate-for-certificate');
+      // Get all candidates and return the most recent one
+      const response = await fetch('http://localhost:5000/candidate/get-all-candidates');
       if (response.ok) {
         const result = await response.json();
-        if (result.status === 'success' && result.data) {
-          // The data doesn't have candidate_id, so we need to search by name
-          const firstName = result.data.firstName;
-          const lastName = result.data.lastName;
-          const passport = result.data.passport;
-          if (firstName && lastName && passport) {
-            const searchResponse = await fetch(`http://localhost:5000/candidate/search-candidates?q=${encodeURIComponent(firstName)}&field=firstName`);
-            if (searchResponse.ok) {
-              const searchResult = await searchResponse.json();
-              if (searchResult.data && searchResult.data.length > 0) {
-                // Find the one that matches
-                const candidate = searchResult.data.find(c =>
-                  c.json_data?.lastName === lastName && c.json_data?.passport === passport
-                );
-                if (candidate) {
-                  return candidate.candidate_id || candidate.id;
-                }
-              }
-            }
-          }
+        if (result.status === 'success' && result.data && result.data.length > 0) {
+          // Return the most recent candidate's ID (first in the list since ordered by created_at DESC)
+          const mostRecentCandidate = result.data[0];
+          return mostRecentCandidate.id;
         }
       }
     } catch (error) {
       console.warn('Failed to get current candidate ID:', error);
     }
-    return 1; // Fallback
+    throw new Error('No candidates found');
   };
 
   // Get or create candidate ID based on customer type
@@ -532,25 +517,16 @@ function NewStepper() {
       }
     } catch (error) {
       console.error('Error in getCandidateId:', error);
-      // Fallback: try to use a default candidate or show error
-      toast.error(`Failed to get candidate ID: ${error.message}. Using fallback.`);
-      return 1; // Fallback to existing behavior
+      throw error;
     }
-    return 1; // Fallback
   };
 
   // Save Steps 1-4 data to ReceiptInvoiceData table
   const saveInvoiceData = async () => {
     dispatch({ type: 'SET_UPLOADING_INVOICE', payload: true });
     try {
-      // Get dynamic candidate ID with fallback
-      let candidateId = 1; // Default fallback
-      try {
-        candidateId = await getCandidateId();
-      } catch (candidateError) {
-        console.warn('Candidate ID retrieval failed, using default:', candidateError);
-        toast.warn('Using default candidate ID due to backend connectivity issues');
-      }
+      // Get dynamic candidate ID
+      const candidateId = await getCandidateId();
 
       // Calculate GST if applied
       const baseAmount = parseFloat(state.formData.amountReceived) || 0;
@@ -623,14 +599,8 @@ function NewStepper() {
   const saveReceiptData = async () => {
     dispatch({ type: 'SET_UPLOADING_RECEIPT', payload: true });
     try {
-      // Get dynamic candidate ID with fallback (reuse the same logic)
-      let candidateId = 1; // Default fallback
-      try {
-        candidateId = await getCandidateId();
-      } catch (candidateError) {
-        console.warn('Candidate ID retrieval failed for receipt, using default:', candidateError);
-        toast.warn('Using default candidate ID for receipt due to backend connectivity issues');
-      }
+      // Get dynamic candidate ID
+      const candidateId = await getCandidateId();
 
       // Prepare data for ReceiptAmountReceived table
       const receiptData = {
@@ -675,7 +645,18 @@ function NewStepper() {
   // Clear all data function
   const clearData = () => {
     if (window.confirm('Are you sure you want to clear all data? This will reset the stepper to step 1 and clear all entered information.')) {
-      dispatch({ type: 'CLEAR_ALL_DATA' });
+      // Reset to step 1
+      dispatch({ type: 'SET_CURRENT_STEP', payload: 1 });
+
+      // Clear form data but preserve loaded reference data (company accounts, customers, etc.)
+      Object.keys(initialState.formData).forEach(field => {
+        dispatch({ type: 'UPDATE_FORM_DATA', field, value: initialState.formData[field] });
+      });
+
+      // Clear saved data states
+      dispatch({ type: 'SET_SAVED_INVOICE_DATA', payload: null });
+      dispatch({ type: 'SET_SAVED_RECEIPT_DATA', payload: null });
+
       localStorage.removeItem('newStepperState');
       toast.info('All data has been cleared and stepper reset.');
     }

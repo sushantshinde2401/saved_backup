@@ -85,31 +85,56 @@ def download_pdf(filename):
 
 @files_bp.route('/download-image/<filename>', methods=['GET'])
 def download_image(filename):
-    """Download image file"""
+    """Download image file from database BLOB storage"""
     try:
+        from database.db_connection import execute_query
+        import json
+        from io import BytesIO
+
+        # First try to find file in database by filename
+        result = execute_query("""
+            SELECT file_data, file_name, mime_type, file_size
+            FROM candidate_uploads
+            WHERE file_name = %s AND file_data IS NOT NULL
+            ORDER BY upload_time DESC
+            LIMIT 1
+        """, (filename,))
+
+        if result:
+            # File found in database BLOB storage
+            file_info = result[0]
+            file_obj = BytesIO(file_info['file_data'])
+
+            return send_file(
+                file_obj,
+                as_attachment=True,
+                download_name=file_info['file_name'],
+                mimetype=file_info['mime_type'] or 'application/octet-stream'
+            )
+
+        # Fallback: try filesystem (for backward compatibility during migration)
         file_path = os.path.join(Config.IMAGES_FOLDER, filename)
-        
-        if not os.path.exists(file_path):
-            return create_error_response("File not found", 404)
-        
-        # Determine mimetype based on extension
-        ext = filename.lower().split('.')[-1]
-        mimetype_map = {
-            'jpg': 'image/jpeg',
-            'jpeg': 'image/jpeg',
-            'png': 'image/png',
-            'gif': 'image/gif',
-            'bmp': 'image/bmp'
-        }
-        mimetype = mimetype_map.get(ext, 'application/octet-stream')
-        
-        return send_file(
-            file_path,
-            as_attachment=True,
-            download_name=filename,
-            mimetype=mimetype
-        )
-        
+        if os.path.exists(file_path):
+            # Determine mimetype based on extension
+            ext = filename.lower().split('.')[-1]
+            mimetype_map = {
+                'jpg': 'image/jpeg',
+                'jpeg': 'image/jpeg',
+                'png': 'image/png',
+                'gif': 'image/gif',
+                'bmp': 'image/bmp'
+            }
+            mimetype = mimetype_map.get(ext, 'application/octet-stream')
+
+            return send_file(
+                file_path,
+                as_attachment=True,
+                download_name=filename,
+                mimetype=mimetype
+            )
+
+        return create_error_response("File not found in database or filesystem", 404)
+
     except Exception as e:
         return create_error_response(f"Failed to download image: {str(e)}", 500)
 
