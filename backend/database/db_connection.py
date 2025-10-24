@@ -371,7 +371,7 @@ def insert_or_update_candidate(candidate_name, candidate_folder, candidate_folde
         logger.error(f"[DB] Failed to insert/update candidate: {e}")
         raise
 
-def save_candidate_with_files(candidate_name, candidate_folder, candidate_folder_path, json_data, moved_files, session_id=None, ocr_data=None, certificate_selections=None):
+def save_candidate_with_files(candidate_name, candidate_folder, candidate_folder_path, json_data, moved_files, session_id=None, ocr_data=None):
     """
     Save candidate data to candidates table with reference to images in candidate_uploads table
 
@@ -383,7 +383,6 @@ def save_candidate_with_files(candidate_name, candidate_folder, candidate_folder
         moved_files (list): List of moved file names (for reference only)
         session_id (str): Session ID linking to images in candidate_uploads
         ocr_data (dict): OCR extracted data
-        certificate_selections (dict): Certificate selection data
 
     Returns:
         dict: Result with success status and record ID
@@ -401,9 +400,8 @@ def save_candidate_with_files(candidate_name, candidate_folder, candidate_folder
         query = """
             INSERT INTO candidates (
                 candidate_name, candidate_folder, candidate_folder_path, json_data,
-                session_id, ocr_data, certificate_selections,
-                is_current_candidate, is_certificate_selection, last_updated
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+                session_id, ocr_data, last_updated
+            ) VALUES (%s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
             ON CONFLICT (candidate_name)
             DO UPDATE SET
                 candidate_folder = EXCLUDED.candidate_folder,
@@ -411,17 +409,13 @@ def save_candidate_with_files(candidate_name, candidate_folder, candidate_folder
                 json_data = EXCLUDED.json_data,
                 session_id = EXCLUDED.session_id,
                 ocr_data = EXCLUDED.ocr_data,
-                certificate_selections = EXCLUDED.certificate_selections,
-                is_current_candidate = EXCLUDED.is_current_candidate,
-                is_certificate_selection = EXCLUDED.is_certificate_selection,
                 last_updated = CURRENT_TIMESTAMP
             RETURNING id
         """
 
         result = execute_query(query, (
             candidate_name, candidate_folder, candidate_folder_path, json.dumps(json_data),
-            session_id, json.dumps(ocr_data) if ocr_data else None, json.dumps(certificate_selections) if certificate_selections else None,
-            False, False  # is_current_candidate, is_certificate_selection
+            session_id, json.dumps(ocr_data) if ocr_data else None
         ))
 
         if result:

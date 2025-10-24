@@ -5,9 +5,6 @@
 ALTER TABLE candidates
 ADD COLUMN IF NOT EXISTS session_id VARCHAR(255),
 ADD COLUMN IF NOT EXISTS ocr_data JSONB,
-ADD COLUMN IF NOT EXISTS certificate_selections JSONB,
-ADD COLUMN IF NOT EXISTS is_current_candidate BOOLEAN DEFAULT FALSE,
-ADD COLUMN IF NOT EXISTS is_certificate_selection BOOLEAN DEFAULT FALSE,
 ADD COLUMN IF NOT EXISTS last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
 
 -- Add image metadata arrays for better organization (optional alternative to individual columns)
@@ -18,17 +15,11 @@ ADD COLUMN IF NOT EXISTS images_data JSONB; -- Alternative: store all images as 
 
 -- Create indexes for efficient querying
 CREATE INDEX IF NOT EXISTS idx_candidates_session_id ON candidates(session_id);
-CREATE INDEX IF NOT EXISTS idx_candidates_is_current ON candidates(is_current_candidate);
-CREATE INDEX IF NOT EXISTS idx_candidates_is_certificate ON candidates(is_certificate_selection);
 CREATE INDEX IF NOT EXISTS idx_candidates_last_updated ON candidates(last_updated);
-CREATE INDEX IF NOT EXISTS idx_candidates_session_current ON candidates(session_id, is_current_candidate);
 
 -- Add comments for documentation
 COMMENT ON COLUMN candidates.session_id IS 'Session ID from upload process';
 COMMENT ON COLUMN candidates.ocr_data IS 'OCR extracted data from images';
-COMMENT ON COLUMN candidates.certificate_selections IS 'Certificate selection data for receipts';
-COMMENT ON COLUMN candidates.is_current_candidate IS 'Flag for current candidate selection';
-COMMENT ON COLUMN candidates.is_certificate_selection IS 'Flag for certificate selection records';
 COMMENT ON COLUMN candidates.last_updated IS 'Last update timestamp';
 COMMENT ON COLUMN candidates.images_metadata IS 'Metadata for all images as JSON array';
 COMMENT ON COLUMN candidates.images_data IS 'Alternative: all images as base64 strings in JSON';
@@ -43,9 +34,6 @@ SELECT
     session_id,
     json_data,
     ocr_data,
-    certificate_selections,
-    is_current_candidate,
-    is_certificate_selection,
     created_at,
     last_updated,
     -- Individual image columns
@@ -67,14 +55,14 @@ FROM candidates;
 DO $$
 BEGIN
     RAISE NOTICE '✅ Candidates table schema consolidation completed';
-    RAISE NOTICE 'Added fields: session_id, ocr_data, certificate_selections, is_current_candidate, is_certificate_selection, last_updated';
+    RAISE NOTICE 'Added fields: session_id, ocr_data, last_updated';
     RAISE NOTICE 'Added optional fields: images_metadata, images_data';
     RAISE NOTICE 'Created indexes and view for efficient querying';
     RAISE NOTICE '';
     RAISE NOTICE 'Table now supports complete consolidated storage of:';
     RAISE NOTICE '- Candidate personal data (json_data)';
     RAISE NOTICE '- OCR extracted data (ocr_data)';
-    RAISE NOTICE '- Certificate selections (certificate_selections)';
+    RAISE NOTICE '- OCR extracted data (ocr_data)';
     RAISE NOTICE '- Multiple images as BLOBs (image1-image6)';
     RAISE NOTICE '- Session and metadata tracking';
 END $$;

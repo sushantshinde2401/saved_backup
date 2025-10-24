@@ -187,9 +187,22 @@ function AdjustmentEntry() {
 
       if (result.status === 'success') {
         toast.success('Client adjustment entry created successfully!');
-        clientForm.reset();
-        setClientSelectedCompany('');
-        setClientSelectedCustomer('');
+        // Navigate to invoice preview with adjustment data
+        navigate('/bookkeeping/client-adjustment-invoice-preview', {
+          state: {
+            adjustmentData: {
+              id: result.data.adjustment_id,
+              adjustment_type: 'client',
+              company_id: clientSelectedCompany,
+              customer_id: clientSelectedCustomer,
+              date_of_service: data.dateOfService,
+              particular_of_service: data.particularOfService,
+              adjustment_amount: parseFloat(data.adjustmentAmount),
+              on_account_of: data.onAccountOf,
+              remark: data.remark
+            }
+          }
+        });
       } else {
         toast.error(result.message || 'Failed to create adjustment entry');
       }
@@ -233,9 +246,22 @@ function AdjustmentEntry() {
 
       if (result.status === 'success') {
         toast.success('Vendor adjustment entry created successfully!');
-        vendorForm.reset();
-        setVendorSelectedCompany('');
-        setVendorSelectedVendor('');
+        // Navigate to invoice preview with adjustment data
+        navigate('/bookkeeping/vendor-adjustment-invoice-preview', {
+          state: {
+            adjustmentData: {
+              id: result.data.adjustment_id,
+              adjustment_type: 'vendor',
+              company_id: vendorSelectedCompany,
+              vendor_id: vendorSelectedVendor,
+              date_of_service: data.dateOfService,
+              particular_of_service: data.particularOfService,
+              adjustment_amount: parseFloat(data.adjustmentAmount),
+              on_account_of: data.onAccountOf,
+              remark: data.remark
+            }
+          }
+        });
       } else {
         toast.error(result.message || 'Failed to create adjustment entry');
       }

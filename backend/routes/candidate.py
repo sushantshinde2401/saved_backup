@@ -28,7 +28,6 @@ def save_candidate_data():
 
         # Extract additional data
         ocr_data = data.get('ocr_data')
-        certificate_selections = data.get('certificate_selections')
 
         # Validate required fields
         if not all([first_name, last_name, passport_no]):
@@ -124,17 +123,13 @@ def save_candidate_data():
             # Step 2: Insert candidate data
             candidate_query = """
                 INSERT INTO candidates (
-                    candidate_name, session_id, json_data, ocr_data, certificate_selections,
-                    is_current_candidate, is_certificate_selection, last_updated
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+                    candidate_name, session_id, json_data, ocr_data, last_updated
+                ) VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP)
                 ON CONFLICT (candidate_name)
                 DO UPDATE SET
                     session_id = EXCLUDED.session_id,
                     json_data = EXCLUDED.json_data,
                     ocr_data = EXCLUDED.ocr_data,
-                    certificate_selections = EXCLUDED.certificate_selections,
-                    is_current_candidate = EXCLUDED.is_current_candidate,
-                    is_certificate_selection = EXCLUDED.is_certificate_selection,
                     last_updated = CURRENT_TIMESTAMP
                 RETURNING id
             """
@@ -142,9 +137,7 @@ def save_candidate_data():
             import json
             candidate_result = execute_query(candidate_query, (
                 candidate_name, session_id, json.dumps(data),
-                json.dumps(ocr_data) if ocr_data else None,
-                json.dumps(certificate_selections) if certificate_selections else None,
-                False, False
+                json.dumps(ocr_data) if ocr_data else None
             ), fetch=True)
 
             if not candidate_result:
@@ -216,7 +209,7 @@ def get_all_candidates():
         query = """
             SELECT
                 c.id, c.candidate_name, c.session_id, c.json_data, c.created_at,
-                c.ocr_data, c.certificate_selections
+                c.ocr_data
             FROM candidates c
             ORDER BY c.created_at DESC
             LIMIT 1000
@@ -263,7 +256,6 @@ def get_all_candidates():
                 'session_id': record['session_id'],
                 'candidate_data': record['json_data'] if record['json_data'] else {},
                 'ocr_data': record['ocr_data'] if record['ocr_data'] else {},
-                'certificate_selections': record['certificate_selections'] if record['certificate_selections'] else {},
                 'files': files,
                 'created_at': record['created_at'].isoformat() if record['created_at'] else None
             })
@@ -302,7 +294,7 @@ def search_candidates():
         if search_field == 'candidate_name':
             query = """
                 SELECT id, candidate_name, session_id, json_data, created_at,
-                       ocr_data, certificate_selections
+                       ocr_data
                 FROM candidates
                 WHERE candidate_name ILIKE %s
                 ORDER BY created_at DESC
@@ -312,7 +304,7 @@ def search_candidates():
         else:
             query = f"""
                 SELECT id, candidate_name, session_id, json_data, created_at,
-                       ocr_data, certificate_selections
+                       ocr_data
                 FROM candidates
                 WHERE json_data->>'{search_field}' ILIKE %s
                 ORDER BY created_at DESC
@@ -352,7 +344,6 @@ def search_candidates():
                 'session_id': record['session_id'],
                 'candidate_data': record['json_data'] if record['json_data'] else {},
                 'ocr_data': record['ocr_data'] if record['ocr_data'] else {},
-                'certificate_selections': record['certificate_selections'] if record['certificate_selections'] else {},
                 'files': files,
                 'created_at': record['created_at'].isoformat() if record['created_at'] else None
             })

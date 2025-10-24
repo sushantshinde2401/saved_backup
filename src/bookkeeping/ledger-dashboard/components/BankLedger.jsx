@@ -112,7 +112,7 @@ const BankLedger = () => {
           opening_balance: 0,
           total_debit: totalDebit,
           total_credit: totalCredit,
-          closing_balance: Math.abs(closingBalance),
+          closing_balance: closingBalance,
           balance_type: balanceType
         });
       } else {
@@ -331,9 +331,9 @@ const BankLedger = () => {
 
   // Get balance color
   const getBalanceColor = (balance) => {
-    if (balance > 0) return 'text-red-600'; // Outstanding (debit)
-    if (balance < 0) return 'text-green-600'; // Advance (credit)
-    return 'text-gray-600'; // Settled
+    if (balance > 0) return 'text-green-600'; // Positive balance (debit entries)
+    if (balance < 0) return 'text-red-600'; // Negative balance (credit entries)
+    return 'text-gray-600'; // Zero balance
   };
 
   return (
@@ -397,12 +397,12 @@ const BankLedger = () => {
               <div className="text-sm text-orange-600 font-medium">Total Credit</div>
               <div className="text-2xl font-bold text-orange-800">{formatCurrency(summary.total_credit)}</div>
             </div>
-            <div className={`p-4 rounded-lg ${summary.closing_balance >= 0 ? 'bg-red-50' : 'bg-green-50'}`}>
+            <div className={`p-4 rounded-lg ${summary.closing_balance >= 0 ? 'bg-green-50' : 'bg-red-50'}`}>
               <div className={`text-sm font-medium ${getBalanceColor(summary.closing_balance)}`}>
                 Closing Balance ({summary.balance_type})
               </div>
               <div className={`text-2xl font-bold ${getBalanceColor(summary.closing_balance)}`}>
-                {formatCurrency(Math.abs(summary.closing_balance))}
+                {formatCurrency(summary.closing_balance)}
               </div>
             </div>
           </div>
@@ -571,8 +571,8 @@ const BankLedger = () => {
                         {entry.cr > 0 ? formatCurrency(entry.cr) : '-'}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                        <span className={entry.balance >= 0 ? 'text-red-600' : 'text-green-600'}>
-                          {formatCurrency(Math.abs(entry.balance))}
+                        <span className={entry.cr > 0 ? 'text-red-600' : entry.dr > 0 ? 'text-green-600' : 'text-gray-900'}>
+                          {formatCurrency(entry.balance)}
                         </span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">

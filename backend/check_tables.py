@@ -30,7 +30,7 @@ def main():
         'ReceiptInvoiceData',
         'ReceiptAmountReceived',
         'PaymentEntry',
-        'CompanyLedger'
+        'ClientLedger'
     ]
 
     print("🔍 Checking database tables...\n")

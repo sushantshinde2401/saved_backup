@@ -75,11 +75,8 @@ def migrate_all_candidate_data():
             json_data = main_record['json_data'] or {}
             session_id = main_record['session_id']
             ocr_data = main_record['ocr_data']
-            certificate_selections = main_record['certificate_selections']
             candidate_folder = main_record['candidate_folder']
             candidate_folder_path = main_record['candidate_folder_path']
-            is_current_candidate = main_record['is_current_candidate'] or False
-            is_certificate_selection = main_record['is_certificate_selection'] or False
 
             # Prepare image data (up to 6 images)
             image_data = {}
@@ -107,9 +104,6 @@ def migrate_all_candidate_data():
                         json_data = %s,
                         session_id = %s,
                         ocr_data = %s,
-                        certificate_selections = %s,
-                        is_current_candidate = %s,
-                        is_certificate_selection = %s,
                         image1 = %s, image1_name = %s, image1_type = %s,
                         image2 = %s, image2_name = %s, image2_type = %s,
                         image3 = %s, image3_name = %s, image3_type = %s,
@@ -123,8 +117,6 @@ def migrate_all_candidate_data():
                 params = (
                     candidate_folder, candidate_folder_path, json.dumps(json_data),
                     session_id, json.dumps(ocr_data) if ocr_data else None,
-                    json.dumps(certificate_selections) if certificate_selections else None,
-                    is_current_candidate, is_certificate_selection,
                     image_data.get('image1'), image_names.get('image1_name'), image_types.get('image1_type'),
                     image_data.get('image2'), image_names.get('image2_name'), image_types.get('image2_type'),
                     image_data.get('image3'), image_names.get('image3_name'), image_types.get('image3_type'),
@@ -142,8 +134,7 @@ def migrate_all_candidate_data():
                 insert_query = """
                     INSERT INTO candidates (
                         candidate_name, candidate_folder, candidate_folder_path, json_data,
-                        session_id, ocr_data, certificate_selections,
-                        is_current_candidate, is_certificate_selection,
+                        session_id, ocr_data,
                         image1, image1_name, image1_type,
                         image2, image2_name, image2_type,
                         image3, image3_name, image3_type,
@@ -151,14 +142,12 @@ def migrate_all_candidate_data():
                         image5, image5_name, image5_type,
                         image6, image6_name, image6_type,
                         created_at, last_updated
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
                 """
 
                 params = (
                     candidate_name, candidate_folder, candidate_folder_path, json.dumps(json_data),
                     session_id, json.dumps(ocr_data) if ocr_data else None,
-                    json.dumps(certificate_selections) if certificate_selections else None,
-                    is_current_candidate, is_certificate_selection,
                     image_data.get('image1'), image_names.get('image1_name'), image_types.get('image1_type'),
                     image_data.get('image2'), image_names.get('image2_name'), image_types.get('image2_type'),
                     image_data.get('image3'), image_names.get('image3_name'), image_types.get('image3_type'),

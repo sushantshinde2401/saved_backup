@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
@@ -30,16 +30,61 @@ function AdminPanel() {
   const [isEditing, setIsEditing] = useState(false);
   const [editedData, setEditedData] = useState({});
 
+  // Candidates dropdown state
+  const [candidates, setCandidates] = useState([]);
+  const [selectedCandidateId, setSelectedCandidateId] = useState('');
+  const [isLoadingCandidates, setIsLoadingCandidates] = useState(false);
+
   // Authentication
   const handleAuth = () => {
     // Simple password check - in production, use proper authentication
     if (password === 'admin123') {
       setIsAuthenticated(true);
       setAuthError('');
+      // Load candidates after authentication
+      loadCandidates();
     } else {
       setAuthError('Invalid password');
     }
   };
+
+  // Load all candidates for dropdown
+  const loadCandidates = useCallback(async () => {
+    setIsLoadingCandidates(true);
+    try {
+      const response = await fetch('http://127.0.0.1:5000/candidate/get-all-candidates');
+      const result = await response.json();
+
+      if (result.status === 'success') {
+        setCandidates(result.data);
+        if (result.data.length === 0) {
+          setError('No candidates found in the database');
+        } else {
+          setError(''); // Clear any previous error if candidates are found
+        }
+      } else {
+        setError('Failed to load candidates');
+      }
+    } catch (err) {
+      console.error('Failed to load candidates:', err);
+      setError('Failed to load candidates from database');
+    } finally {
+      setIsLoadingCandidates(false);
+    }
+  }, []);
+
+  // Auto-refresh candidates every 30 seconds when authenticated
+  useEffect(() => {
+    if (isAuthenticated) {
+      loadCandidates();
+
+      const interval = setInterval(() => {
+        loadCandidates();
+      }, 30000); // Refresh every 30 seconds
+
+      return () => clearInterval(interval);
+    }
+  }, [isAuthenticated, loadCandidates]);
 
   // Search candidate
   const handleSearch = async () => {
@@ -174,6 +219,42 @@ function AdminPanel() {
     }));
   };
 
+  // Handle candidate selection from dropdown
+  const handleCandidateSelect = async (candidateId) => {
+    if (!candidateId) {
+      setSelectedCandidateId('');
+      setCandidateData(null);
+      setImages([]);
+      setError('');
+      return;
+    }
+
+    setSelectedCandidateId(candidateId);
+    setIsLoading(true);
+    setError('');
+    setCandidateData(null);
+    setImages([]);
+
+    try {
+      const candidate = candidates.find(c => c.id.toString() === candidateId);
+      if (candidate) {
+        setCandidateData({
+          id: candidate.id,
+          ...candidate.candidate_data
+        });
+        setEditedData(candidate.candidate_data || {});
+        await loadCandidateImages(candidate.candidate_name);
+      } else {
+        setError('Selected candidate not found');
+      }
+    } catch (err) {
+      console.error('Failed to load candidate data:', err);
+      setError('Failed to load candidate data');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   if (!isAuthenticated) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 flex items-center justify-center p-4">
@@ -265,7 +346,7 @@ function AdminPanel() {
           </p>
         </motion.div>
 
-        {/* Search Form */}
+        {/* Candidate Selection Form */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -273,33 +354,46 @@ function AdminPanel() {
           className="max-w-2xl mx-auto mb-8"
         >
           <div className="bg-white/95 backdrop-blur-sm rounded-2xl shadow-xl p-6 border border-white/20">
-            <div className="flex gap-4">
-              <input
-                type="text"
-                value={candidateName}
-                onChange={(e) => setCandidateName(e.target.value)}
-                placeholder="Enter candidate first or last name"
-                className="flex-1 px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:border-red-500 transition-colors"
-                onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
-              />
-              <motion.button
-                onClick={handleSearch}
-                disabled={isLoading}
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                className="bg-gradient-to-r from-red-500 to-orange-500 hover:from-red-600 hover:to-orange-600 text-white px-6 py-3 rounded-xl font-semibold transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-              >
-                {isLoading ? <Loader2 className="animate-spin" size={20} /> : <Search size={20} />}
-                Search
-              </motion.button>
-            </div>
-
-            {error && (
-              <div className="mt-4 flex items-center gap-2 text-red-600">
-                <AlertCircle size={16} />
-                {error}
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Select Candidate
+                </label>
+                <select
+                  value={selectedCandidateId}
+                  onChange={(e) => handleCandidateSelect(e.target.value)}
+                  disabled={isLoadingCandidates}
+                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:border-red-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <option value="">
+                    {isLoadingCandidates ? 'Loading candidates...' : 'Select a candidate'}
+                  </option>
+                  {candidates.map((candidate) => (
+                    <option key={candidate.id} value={candidate.id}>
+                      {candidate.candidate_name}
+                    </option>
+                  ))}
+                </select>
               </div>
-            )}
+
+              <div className="text-sm text-gray-600 flex items-center gap-2">
+                <span>Total candidates: {candidates.length}</span>
+                <button
+                  onClick={loadCandidates}
+                  disabled={isLoadingCandidates}
+                  className="text-blue-600 hover:text-blue-800 disabled:opacity-50 disabled:cursor-not-allowed text-xs underline"
+                >
+                  {isLoadingCandidates ? 'Refreshing...' : 'Refresh'}
+                </button>
+              </div>
+
+              {error && (
+                <div className="flex items-center gap-2 text-red-600">
+                  <AlertCircle size={16} />
+                  {error}
+                </div>
+              )}
+            </div>
           </div>
         </motion.div>
 

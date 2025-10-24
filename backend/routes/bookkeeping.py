@@ -707,9 +707,9 @@ def upload_to_ledger():
                     "status": "validation_error"
                 }), 400
 
-        # Ensure CompanyLedger table exists
+        # Ensure ClientLedger table exists
         create_table_query = """
-            CREATE TABLE IF NOT EXISTS CompanyLedger (
+            CREATE TABLE IF NOT EXISTS ClientLedger (
                 id SERIAL PRIMARY KEY,
                 company_name VARCHAR(255) NOT NULL,
                 date DATE NOT NULL,
@@ -729,9 +729,9 @@ def upload_to_ledger():
 
         # Create indexes if they don't exist
         index_queries = [
-            "CREATE INDEX IF NOT EXISTS idx_company_ledger_company_name ON CompanyLedger(company_name)",
-            "CREATE INDEX IF NOT EXISTS idx_company_ledger_date ON CompanyLedger(date)",
-            "CREATE INDEX IF NOT EXISTS idx_company_ledger_voucher_no ON CompanyLedger(voucher_no)"
+            "CREATE INDEX IF NOT EXISTS idx_company_ledger_company_name ON ClientLedger(company_name)",
+            "CREATE INDEX IF NOT EXISTS idx_company_ledger_date ON ClientLedger(date)",
+            "CREATE INDEX IF NOT EXISTS idx_company_ledger_voucher_no ON ClientLedger(voucher_no)"
         ]
         for index_query in index_queries:
             try:
@@ -739,9 +739,9 @@ def upload_to_ledger():
             except Exception as idx_e:
                 logger.warning(f"[LEDGER] Could not create index: {idx_e}")
 
-        # Insert into CompanyLedger table
+        # Insert into ClientLedger table
         query = """
-            INSERT INTO CompanyLedger (
+            INSERT INTO ClientLedger (
                 company_name, date, particulars, voucher_no, voucher_type,
                 debit, credit, entry_type
             ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
@@ -935,7 +935,7 @@ def create_receipt_amount_received():
             receipt_id = result[0]['receipt_amount_id']
             logger.info(f"[RECEIPT] Created receipt amount received record ID: {receipt_id}")
 
-            # After creating receipt, insert into CompanyLedger and Bank Ledger
+            # After creating receipt, insert into ClientLedger and Bank Ledger
             try:
                 # Retrieve the receipt data we just inserted
                 receipt_query = """
@@ -963,9 +963,9 @@ def create_receipt_amount_received():
                             company_id = company_result[0]['id']
 
                     if customer_name:
-                        # Insert into CompanyLedger (Client Ledger)
+                        # Insert into ClientLedger (Client Ledger)
                         ledger_query = """
-                            INSERT INTO CompanyLedger (
+                            INSERT INTO ClientLedger (
                                 company_name, date, particulars, voucher_no, voucher_type,
                                 debit, credit, entry_type
                             ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
@@ -1226,7 +1226,7 @@ def delete_receipt_amount_received(receipt_id):
 
         # Delete the corresponding client ledger entry
         voucher_no = f"RCPT-{receipt_id}"
-        ledger_delete_query = "DELETE FROM CompanyLedger WHERE voucher_no = %s"
+        ledger_delete_query = "DELETE FROM ClientLedger WHERE voucher_no = %s"
         execute_query(ledger_delete_query, (voucher_no,), fetch=False)
         logger.info(f"[LEDGER] Deleted associated client ledger entry for receipt ID: {receipt_id}")
 
@@ -1250,7 +1250,7 @@ def delete_receipt_amount_received(receipt_id):
 
 @bookkeeping_bp.route('/company-ledger', methods=['GET'])
 def get_company_ledger():
-    """Get company ledger data from CompanyLedger table with filtering and pagination"""
+    """Get company ledger data from ClientLedger table with filtering and pagination"""
     try:
         # Get query parameters
         company_name = request.args.get('company_name', '').strip()
@@ -1272,7 +1272,7 @@ def get_company_ledger():
 
         # Ensure all required tables exist
         create_company_ledger_query = """
-            CREATE TABLE IF NOT EXISTS CompanyLedger (
+            CREATE TABLE IF NOT EXISTS ClientLedger (
                 id SERIAL PRIMARY KEY,
                 company_name VARCHAR(255) NOT NULL,
                 date DATE NOT NULL,
@@ -1330,9 +1330,9 @@ def get_company_ledger():
 
         # Create indexes if they don't exist
         index_queries = [
-            "CREATE INDEX IF NOT EXISTS idx_company_ledger_company_name ON CompanyLedger(company_name)",
-            "CREATE INDEX IF NOT EXISTS idx_company_ledger_date ON CompanyLedger(date)",
-            "CREATE INDEX IF NOT EXISTS idx_company_ledger_voucher_no ON CompanyLedger(voucher_no)"
+            "CREATE INDEX IF NOT EXISTS idx_company_ledger_company_name ON ClientLedger(company_name)",
+            "CREATE INDEX IF NOT EXISTS idx_company_ledger_date ON ClientLedger(date)",
+            "CREATE INDEX IF NOT EXISTS idx_company_ledger_voucher_no ON ClientLedger(voucher_no)"
         ]
         for index_query in index_queries:
             try:
@@ -1340,10 +1340,10 @@ def get_company_ledger():
             except Exception as idx_e:
                 logger.warning(f"[LEDGER] Could not create index: {idx_e}")
 
-        # Build UNION query for CompanyLedger and adjustment entries
+        # Build UNION query for ClientLedger and adjustment entries
         union_queries = []
 
-        # CompanyLedger entries
+        # ClientLedger entries
         ledger_query = """
             SELECT
                 id,
@@ -1357,7 +1357,7 @@ def get_company_ledger():
                 entry_type,
                 created_at,
                 'ledger' as source_table
-            FROM CompanyLedger
+            FROM ClientLedger
             WHERE company_name ILIKE %s
         """
         ledger_params = [f"%{company_name}%"]
@@ -1450,7 +1450,7 @@ def get_company_ledger():
         total_credit = 0
 
         if ledger_results:
-            logger.info(f"[LEDGER] Found {len(ledger_results)} entries in CompanyLedger")
+            logger.info(f"[LEDGER] Found {len(ledger_results)} entries in ClientLedger")
             for row in ledger_results:
                 debit_amount = float(row['debit']) if row['debit'] else 0
                 credit_amount = float(row['credit']) if row['credit'] else 0
@@ -1468,7 +1468,7 @@ def get_company_ledger():
                 total_debit += debit_amount
                 total_credit += credit_amount
         else:
-            logger.info(f"[LEDGER] No entries found in CompanyLedger for company: {company_name}")
+            logger.info(f"[LEDGER] No entries found in ClientLedger for company: {company_name}")
 
         # Sort entries by date descending
         entries.sort(key=lambda x: x['date'] or '1900-01-01', reverse=True)
@@ -1519,16 +1519,16 @@ def get_company_ledger():
 def delete_company_ledger_entry(ledger_id):
     """Delete a company ledger entry or adjustment entry based on the source table"""
     try:
-        # First, check if this is a regular CompanyLedger entry
+        # First, check if this is a regular ClientLedger entry
         select_query = """
             SELECT id, voucher_no, company_name, entry_type
-            FROM CompanyLedger
+            FROM ClientLedger
             WHERE id = %s
         """
         ledger_results = execute_query(select_query, (ledger_id,))
 
         if ledger_results and len(ledger_results) > 0:
-            # This is a regular CompanyLedger entry
+            # This is a regular ClientLedger entry
             ledger_entry = ledger_results[0]
             voucher_no = ledger_entry['voucher_no']
             entry_type = ledger_entry['entry_type']
@@ -1567,17 +1567,17 @@ def delete_company_ledger_entry(ledger_id):
                         "status": "error"
                     }), 500
 
-            # Delete from CompanyLedger
-            ledger_delete_query = "DELETE FROM CompanyLedger WHERE id = %s"
+            # Delete from ClientLedger
+            ledger_delete_query = "DELETE FROM ClientLedger WHERE id = %s"
             execute_query(ledger_delete_query, (ledger_id,), fetch=False)
 
-            logger.info(f"[LEDGER] Successfully deleted CompanyLedger entry ID: {ledger_id} and all associated records")
+            logger.info(f"[LEDGER] Successfully deleted ClientLedger entry ID: {ledger_id} and all associated records")
             return jsonify({
                 "status": "success",
                 "message": f"Ledger entry {ledger_id} and associated records deleted successfully"
             }), 200
 
-        # If not found in CompanyLedger, check if it's an adjustment entry
+        # If not found in ClientLedger, check if it's an adjustment entry
         # Check client_adjustments table
         client_adjustment_query = """
             SELECT id, company_id, customer_id, particular_of_service, adjustment_amount
@@ -2957,5 +2957,245 @@ def create_adjustment():
         return jsonify({
             "error": str(e),
             "message": "Failed to create adjustment entry",
+            "status": "error"
+        }), 500
+
+@bookkeeping_bp.route('/get-client-adjustment/<int:adjustment_id>', methods=['GET'])
+def get_client_adjustment(adjustment_id):
+    """Get a specific client adjustment by ID for invoice generation"""
+    try:
+        # Ensure client_adjustments table exists
+        create_client_adjustments_query = """
+            CREATE TABLE IF NOT EXISTS client_adjustments (
+                id SERIAL PRIMARY KEY,
+                company_id INTEGER NOT NULL,
+                customer_id INTEGER NOT NULL,
+                date_of_service DATE NOT NULL,
+                particular_of_service TEXT NOT NULL,
+                adjustment_amount DECIMAL(15,2) NOT NULL CHECK (adjustment_amount != 0),
+                on_account_of TEXT,
+                remark TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (company_id) REFERENCES company_details(id),
+                FOREIGN KEY (customer_id) REFERENCES b2bcustomersdetails(id)
+            )
+        """
+        execute_query(create_client_adjustments_query, fetch=False)
+
+        query = """
+            SELECT
+                ca.id,
+                ca.company_id,
+                ca.customer_id,
+                ca.date_of_service,
+                ca.particular_of_service,
+                ca.adjustment_amount,
+                ca.on_account_of,
+                ca.remark,
+                ca.created_at,
+                cd.company_name,
+                cd.company_gst_number as company_gst,
+                cd.company_address,
+                NULL as company_state_code,
+                b2b.company_name as customer_company_name,
+                b2b.gst_number as customer_gst,
+                b2b.address as customer_address,
+                b2b.state_code as customer_state_code
+            FROM client_adjustments ca
+            JOIN company_details cd ON ca.company_id = cd.id
+            JOIN b2bcustomersdetails b2b ON ca.customer_id = b2b.id
+            WHERE ca.id = %s
+        """
+
+        results = execute_query(query, (adjustment_id,))
+
+        if results and len(results) > 0:
+            adjustment = results[0]
+            adjustment_data = {
+                'id': adjustment['id'],
+                'company_id': adjustment['company_id'],
+                'customer_id': adjustment['customer_id'],
+                'date_of_service': str(adjustment['date_of_service']) if adjustment['date_of_service'] else None,
+                'particular_of_service': adjustment['particular_of_service'],
+                'adjustment_amount': float(adjustment['adjustment_amount']) if adjustment['adjustment_amount'] else 0,
+                'on_account_of': adjustment['on_account_of'],
+                'remark': adjustment['remark'],
+                'created_at': str(adjustment['created_at']),
+                'company_name': adjustment['company_name'],
+                'company_gst': adjustment['company_gst'],
+                'company_address': adjustment['company_address'],
+                'company_state_code': adjustment['company_state_code'],
+                'customer_name': adjustment['customer_company_name'],
+                'customer_gst': adjustment['customer_gst'],
+                'customer_address': adjustment['customer_address'],
+                'customer_state_code': adjustment['customer_state_code']
+            }
+
+            logger.info(f"[CLIENT_ADJUSTMENT] Retrieved client adjustment ID: {adjustment_id}")
+            return jsonify({
+                "status": "success",
+                "data": adjustment_data,
+                "message": f"Retrieved client adjustment ID: {adjustment_id}"
+            }), 200
+        else:
+            return jsonify({
+                "error": "Client adjustment not found",
+                "message": f"No client adjustment found with ID: {adjustment_id}",
+                "status": "not_found"
+            }), 404
+
+    except Exception as e:
+        logger.error(f"[CLIENT_ADJUSTMENT] Failed to retrieve client adjustment ID {adjustment_id}: {e}")
+        return jsonify({
+            "error": str(e),
+            "message": "Failed to retrieve client adjustment",
+            "status": "error"
+        }), 500
+
+@bookkeeping_bp.route('/get-vendor-adjustment/<int:adjustment_id>', methods=['GET'])
+def get_vendor_adjustment(adjustment_id):
+    """Get a specific vendor adjustment by ID for invoice generation"""
+    try:
+        # Ensure vendor_adjustments table exists
+        create_vendor_adjustments_query = """
+            CREATE TABLE IF NOT EXISTS vendor_adjustments (
+                id SERIAL PRIMARY KEY,
+                company_id INTEGER NOT NULL,
+                vendor_id INTEGER NOT NULL,
+                date_of_service DATE NOT NULL,
+                particular_of_service TEXT NOT NULL,
+                adjustment_amount DECIMAL(15,2) NOT NULL CHECK (adjustment_amount != 0),
+                on_account_of TEXT,
+                remark TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (company_id) REFERENCES company_details(id),
+                FOREIGN KEY (vendor_id) REFERENCES vendors(id)
+            )
+        """
+        execute_query(create_vendor_adjustments_query, fetch=False)
+
+        query = """
+            SELECT
+                va.id,
+                va.company_id,
+                va.vendor_id,
+                va.date_of_service,
+                va.particular_of_service,
+                va.adjustment_amount,
+                va.on_account_of,
+                va.remark,
+                va.created_at,
+                cd.company_name,
+                cd.company_gst_number as company_gst,
+                cd.company_address,
+                NULL as company_state_code,
+                v.vendor_name,
+                v.gst_number as vendor_gst,
+                v.address as vendor_address,
+                v.state as vendor_state_code
+            FROM vendor_adjustments va
+            JOIN company_details cd ON va.company_id = cd.id
+            JOIN vendors v ON va.vendor_id = v.id
+            WHERE va.id = %s
+        """
+
+        results = execute_query(query, (adjustment_id,))
+
+        if results and len(results) > 0:
+            adjustment = results[0]
+            adjustment_data = {
+                'id': adjustment['id'],
+                'company_id': adjustment['company_id'],
+                'vendor_id': adjustment['vendor_id'],
+                'date_of_service': str(adjustment['date_of_service']) if adjustment['date_of_service'] else None,
+                'particular_of_service': adjustment['particular_of_service'],
+                'adjustment_amount': float(adjustment['adjustment_amount']) if adjustment['adjustment_amount'] else 0,
+                'on_account_of': adjustment['on_account_of'],
+                'remark': adjustment['remark'],
+                'created_at': str(adjustment['created_at']),
+                'company_name': adjustment['company_name'],
+                'company_gst': adjustment['company_gst'],
+                'company_address': adjustment['company_address'],
+                'company_state_code': adjustment['company_state_code'],
+                'vendor_name': adjustment['vendor_name'],
+                'vendor_gst': adjustment['vendor_gst'],
+                'vendor_address': adjustment['vendor_address'],
+                'vendor_state_code': adjustment['vendor_state_code']
+            }
+
+            logger.info(f"[VENDOR_ADJUSTMENT] Retrieved vendor adjustment ID: {adjustment_id}")
+            return jsonify({
+                "status": "success",
+                "data": adjustment_data,
+                "message": f"Retrieved vendor adjustment ID: {adjustment_id}"
+            }), 200
+        else:
+            return jsonify({
+                "error": "Vendor adjustment not found",
+                "message": f"No vendor adjustment found with ID: {adjustment_id}",
+                "status": "not_found"
+            }), 404
+
+    except Exception as e:
+        logger.error(f"[VENDOR_ADJUSTMENT] Failed to retrieve vendor adjustment ID {adjustment_id}: {e}")
+        return jsonify({
+            "error": str(e),
+            "message": "Failed to retrieve vendor adjustment",
+            "status": "error"
+        }), 500
+
+@bookkeeping_bp.route('/get-vendor-details/<int:vendor_id>', methods=['GET'])
+def get_vendor_details(vendor_id):
+    """Get vendor details by ID for adjustment invoices"""
+    try:
+        query = """
+            SELECT
+                id,
+                vendor_name,
+                gst_number,
+                vendor_address,
+                state_code,
+                contact_person,
+                phone_number,
+                email
+            FROM vendors
+            WHERE id = %s
+        """
+
+        results = execute_query(query, (vendor_id,))
+
+        if results and len(results) > 0:
+            vendor = results[0]
+            vendor_data = {
+                'id': vendor['id'],
+                'vendor_name': vendor['vendor_name'],
+                'gst_number': vendor['gst_number'],
+                'vendor_address': vendor['vendor_address'] or '',
+                'state_code': vendor['state_code'],
+                'contact_person': vendor['contact_person'],
+                'phone_number': vendor['phone_number'],
+                'email': vendor['email']
+            }
+
+            logger.info(f"[VENDOR] Retrieved vendor details for ID: {vendor_id}")
+            return jsonify({
+                "status": "success",
+                "data": vendor_data,
+                "message": f"Retrieved vendor details for ID: {vendor_id}"
+            }), 200
+        else:
+            return jsonify({
+                "error": "Vendor not found",
+                "message": f"No vendor found with ID: {vendor_id}",
+                "status": "not_found"
+            }), 404
+
+    except Exception as e:
+        logger.error(f"[VENDOR] Failed to retrieve vendor details ID {vendor_id}: {e}")
+        return jsonify({
+            "error": str(e),
+            "message": "Failed to retrieve vendor details",
             "status": "error"
         }), 500

@@ -28,9 +28,6 @@ CREATE TABLE IF NOT EXISTS candidates (
     session_id VARCHAR(255), -- Links to images in candidate_uploads
     json_data JSONB, -- Candidate form data
     ocr_data JSONB, -- OCR extracted data
-    certificate_selections JSONB, -- Certificate selection data
-    is_current_candidate BOOLEAN DEFAULT FALSE,
-    is_certificate_selection BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     -- Image columns remain NULL as per requirements
@@ -59,10 +56,7 @@ CREATE TABLE IF NOT EXISTS candidates (
 
 -- Create indexes for candidates table
 CREATE INDEX IF NOT EXISTS idx_candidates_session_id ON candidates(session_id);
-CREATE INDEX IF NOT EXISTS idx_candidates_is_current ON candidates(is_current_candidate);
-CREATE INDEX IF NOT EXISTS idx_candidates_is_certificate ON candidates(is_certificate_selection);
 CREATE INDEX IF NOT EXISTS idx_candidates_last_updated ON candidates(last_updated);
-CREATE INDEX IF NOT EXISTS idx_candidates_session_current ON candidates(session_id, is_current_candidate);
 
 -- Add comments for documentation
 COMMENT ON TABLE candidate_uploads IS 'Stores uploaded images separately to avoid bloating candidates table';
@@ -80,9 +74,6 @@ SELECT
     c.session_id,
     c.json_data,
     c.ocr_data,
-    c.certificate_selections,
-    c.is_current_candidate,
-    c.is_certificate_selection,
     c.created_at,
     c.last_updated,
     -- Get image info from candidate_uploads

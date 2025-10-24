@@ -73,7 +73,7 @@ function CustomerDetailsStep({ formData, onInputChange, customers }) {
                 value={formData.b2bCustomerGstNumber}
                 onChange={(e) => onInputChange('b2bCustomerGstNumber', e.target.value)}
                 className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
-                placeholder="Enter GST number"
+                placeholder="Enter GST number (optional)"
               />
             </div>
 
@@ -87,7 +87,7 @@ function CustomerDetailsStep({ formData, onInputChange, customers }) {
                 value={formData.b2bPhoneNumber}
                 onChange={(e) => onInputChange('b2bPhoneNumber', e.target.value)}
                 className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
-                placeholder="Enter phone number"
+                placeholder="Enter phone number (optional)"
               />
             </div>
 
@@ -100,7 +100,7 @@ function CustomerDetailsStep({ formData, onInputChange, customers }) {
                 value={formData.b2bCustomerAddress}
                 onChange={(e) => onInputChange('b2bCustomerAddress', e.target.value)}
                 className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
-                placeholder="Enter address"
+                placeholder="Enter address (optional)"
                 rows="4"
               />
             </div>
@@ -115,7 +115,7 @@ function CustomerDetailsStep({ formData, onInputChange, customers }) {
                 value={formData.b2bCustomerStateCode}
                 onChange={(e) => onInputChange('b2bCustomerStateCode', e.target.value)}
                 className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
-                placeholder="Enter state code"
+                placeholder="Enter state code (optional)"
               />
             </div>
 
@@ -129,7 +129,7 @@ function CustomerDetailsStep({ formData, onInputChange, customers }) {
                 value={formData.b2bEmail}
                 onChange={(e) => onInputChange('b2bEmail', e.target.value)}
                 className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
-                placeholder="Enter email"
+                placeholder="Enter email (optional)"
               />
             </div>
           </>
@@ -155,14 +155,14 @@ function CustomerDetailsStep({ formData, onInputChange, customers }) {
             {/* B2C Phone Number */}
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-3">
-                Phone Number *
+                Phone Number
               </label>
               <input
                 type="tel"
                 value={formData.b2cPhoneNumber}
                 onChange={(e) => onInputChange('b2cPhoneNumber', e.target.value)}
                 className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
-                placeholder="Enter phone number"
+                placeholder="Enter phone number (optional)"
               />
             </div>
 
@@ -176,20 +176,20 @@ function CustomerDetailsStep({ formData, onInputChange, customers }) {
                 value={formData.b2cEmail}
                 onChange={(e) => onInputChange('b2cEmail', e.target.value)}
                 className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
-                placeholder="Enter email"
+                placeholder="Enter email (optional)"
               />
             </div>
 
             {/* B2C Address */}
             <div className="lg:col-span-2">
               <label className="block text-sm font-semibold text-gray-700 mb-3">
-                Address *
+                Address
               </label>
               <textarea
                 value={formData.b2cAddress}
                 onChange={(e) => onInputChange('b2cAddress', e.target.value)}
                 className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
-                placeholder="Enter address"
+                placeholder="Enter address (optional)"
                 rows="4"
               />
             </div>
@@ -197,42 +197,42 @@ function CustomerDetailsStep({ formData, onInputChange, customers }) {
             {/* B2C City */}
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-3">
-                City *
+                City
               </label>
               <input
                 type="text"
                 value={formData.b2cCity}
                 onChange={(e) => onInputChange('b2cCity', e.target.value)}
                 className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
-                placeholder="Enter city"
+                placeholder="Enter city (optional)"
               />
             </div>
 
             {/* B2C State */}
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-3">
-                State *
+                State
               </label>
               <input
                 type="text"
                 value={formData.b2cState}
                 onChange={(e) => onInputChange('b2cState', e.target.value)}
                 className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
-                placeholder="Enter state"
+                placeholder="Enter state (optional)"
               />
             </div>
 
             {/* B2C Pincode */}
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-3">
-                Pincode *
+                Pincode
               </label>
               <input
                 type="text"
                 value={formData.b2cPincode}
                 onChange={(e) => onInputChange('b2cPincode', e.target.value)}
                 className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
-                placeholder="Enter pincode"
+                placeholder="Enter pincode (optional)"
               />
             </div>
 

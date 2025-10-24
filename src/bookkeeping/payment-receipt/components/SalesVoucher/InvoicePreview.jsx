@@ -13,6 +13,7 @@ import {
   Edit3,
   X
 } from 'lucide-react';
+import html2pdf from 'html2pdf.js';
 
 function InvoicePreview() {
   const navigate = useNavigate();
@@ -179,95 +180,34 @@ function InvoicePreview() {
   };
 
   const handleDownload = () => {
-    const printContent = document.querySelector('.invoice-content');
-    if (printContent) {
-      const printWindow = window.open('', '_blank');
-      if (printWindow) {
-        printWindow.document.write(`
-          <!DOCTYPE html>
-          <html>
-            <head>
-              <title>Tax Invoice</title>
-              <style>
-                @page {
-                  size: A4;
-                  margin: 15mm;
-                }
-                body {
-                  font-family: Arial, sans-serif;
-                  font-size: 12px;
-                  line-height: 1.4;
-                  margin: 0;
-                  padding: 0;
-                  -webkit-print-color-adjust: exact;
-                  color-adjust: exact;
-                }
-                .invoice-container {
-                  max-width: none;
-                  width: 100%;
-                }
-                table {
-                  width: 100%;
-                  border-collapse: collapse;
-                }
-                th, td {
-                  border: 1px solid #333;
-                  padding: 4px;
-                  text-align: left;
-                }
-                th {
-                  background-color: #f5f5f5;
-                }
-                .text-center {
-                  text-align: center;
-                }
-                .text-right {
-                  text-align: right;
-                }
-                .font-bold {
-                  font-weight: bold;
-                }
-                .mb-3 {
-                  margin-bottom: 12px;
-                }
-                .mb-4 {
-                  margin-bottom: 16px;
-                }
-                .mt-6 {
-                  margin-top: 24px;
-                }
-                .grid {
-                  display: grid;
-                  gap: 24px;
-                }
-                .grid-cols-2 {
-                  grid-template-columns: 1fr 1fr;
-                }
-                .space-y-2 > * + * {
-                  margin-top: 8px;
-                }
-                .border-b {
-                  border-bottom: 1px solid #333;
-                  padding-bottom: 32px;
-                  margin-bottom: 4px;
-                }
-              </style>
-            </head>
-            <body>
-              <div class="invoice-container">
-                ${printContent.innerHTML}
-              </div>
-            </body>
-          </html>
-        `);
+    const element = document.querySelector('.invoice-content');
+    if (element) {
+      // Clone the element to apply print styles
+      const clonedElement = element.cloneNode(true);
 
-        printWindow.document.close();
+      // Apply print styles to the cloned element
+      clonedElement.style.boxShadow = 'none';
+      clonedElement.style.width = '100%';
+      clonedElement.style.maxWidth = 'none';
 
-        setTimeout(() => {
-          printWindow.print();
-          printWindow.close();
-        }, 500);
-      }
+      const opt = {
+        margin: 0.5,
+        filename: `Tax_Invoice_${data?.invoiceNo || 'N/A'}.pdf`,
+        image: { type: 'jpeg', quality: 1.0 },
+        html2canvas: {
+          scale: 3,
+          useCORS: true,
+          letterRendering: true,
+          allowTaint: false
+        },
+        jsPDF: {
+          unit: 'in',
+          format: 'a4',
+          orientation: 'portrait',
+          compress: true
+        }
+      };
+      html2pdf().set(opt).from(clonedElement).save();
     }
   };
 
@@ -297,9 +237,23 @@ function InvoicePreview() {
 
   return (
     <>
+      <style>{`
+        @media print {
+          .no-print {
+            display: none !important;
+          }
+          .print-layout {
+            flex-direction: column;
+            gap: 0;
+          }
+          .print-layout > .flex-1 {
+            max-width: none;
+          }
+        }
+      `}</style>
       <div className="min-h-screen bg-gray-100">
         {/* Header */}
-        <div className="bg-white shadow-sm border-b">
+        <div className="bg-white shadow-sm border-b no-print">
           <div className="max-w-7xl mx-auto px-4 py-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-4">
@@ -346,7 +300,7 @@ function InvoicePreview() {
         </div>
 
         {/* Main Content Layout */}
-        <div className="flex gap-6 max-w-7xl mx-auto p-4">
+        <div className="flex gap-6 max-w-7xl mx-auto p-4 print-layout">
           {/* Invoice Content - Left Side */}
           <div className="flex-1 max-w-2xl">
             <div className="invoice-content p-4 bg-white shadow-lg">
@@ -553,7 +507,7 @@ function InvoicePreview() {
           </div>
 
           {/* Invoice Controls Sidebar - Right Side */}
-          <div className="input-controls w-96 bg-gray-50 border border-gray-200 rounded-lg p-4 h-fit sticky top-4 max-h-screen overflow-y-auto">
+          <div className="input-controls w-96 bg-gray-50 border border-gray-200 rounded-lg p-4 h-fit sticky top-4 max-h-screen overflow-y-auto no-print">
             <h2 className="text-xl font-bold text-gray-800 mb-4 text-center">TAX INVOICE</h2>
             <h3 className="text-lg font-semibold text-gray-800 mb-4">Invoice Controls</h3>
 

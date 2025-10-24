@@ -76,7 +76,7 @@ from(Step 6)  	ReceiptAmountReceived {
 		receipt_reference string  ""  
 		created_at timestamp  ""  
 	}
-	CompanyLedger {
+	ClientLedger {
 		ledger_id int PK ""  
 		candidate_id int FK ""  
 		debit float  ""  
@@ -172,7 +172,7 @@ This ensures all payments are traceable against candidates and receipts.
 
 Step 5 – Company Ledger
 
-Financial transactions are maintained in the CompanyLedger table.
+Financial transactions are maintained in the ClientLedger table.
 
 Stores:
 
@@ -186,13 +186,13 @@ This table ensures the accounting side stays balanced (tracking money in/out).
 
 Step 6 – Relationships
 
-candidates → owns → ReceiptInvoiceData, ReceiptAmountReceived, PaymentEntry, CompanyLedger.
+candidates → owns → ReceiptInvoiceData, ReceiptAmountReceived, PaymentEntry, ClientLedger.
 
-ReceiptInvoiceData → relates to → ReceiptAmountReceived and CompanyLedger.
+ReceiptInvoiceData → relates to → ReceiptAmountReceived and ClientLedger.
 
-ReceiptAmountReceived → relates to → ReceiptInvoiceData and CompanyLedger.
+ReceiptAmountReceived → relates to → ReceiptInvoiceData and ClientLedger.
 
-PaymentEntry → relates to → CompanyLedger.
+PaymentEntry → relates to → ClientLedger.
 
 
 
@@ -206,4 +206,4 @@ Receipts (ReceiptAmountReceived) record payments received against invoices.
 
 Payments (PaymentEntry) record how money is paid.
 
-Ledger (CompanyLedger) keeps the financial balance updated across invoices, receipts, and payments.
+Ledger (ClientLedger) keeps the financial balance updated across invoices, receipts, and payments.

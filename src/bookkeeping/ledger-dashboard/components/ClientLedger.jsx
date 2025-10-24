@@ -607,8 +607,8 @@ const ClientLedger = () => {
                         {entry.credit > 0 ? formatCurrency(entry.credit) : '-'}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                        <span className={entry.runningBalance >= 0 ? 'text-red-600' : 'text-green-600'}>
-                          {formatCurrency(Math.abs(entry.runningBalance))}
+                        <span className={entry.credit > 0 ? 'text-green-600' : entry.debit > 0 ? 'text-red-600' : 'text-gray-900'}>
+                          {formatCurrency(entry.runningBalance)}
                         </span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">

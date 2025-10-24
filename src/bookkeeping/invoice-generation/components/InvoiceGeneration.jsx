@@ -683,17 +683,8 @@ function InvoiceGeneration() {
       case 2:
         if (state.formData.customerType === CUSTOMER_TYPES.B2B) {
           if (!state.formData.selectedB2BCustomer) errors.push('B2B Customer selection is required');
-          if (!state.formData.b2bCustomerGstNumber) errors.push('GST Number is required for B2B');
-          if (!state.formData.b2bPhoneNumber) errors.push('Phone Number is required for B2B');
-          if (!state.formData.b2bCustomerAddress) errors.push('Address is required for B2B');
-          if (!state.formData.b2bEmail) errors.push('Email is required for B2B');
         } else if (state.formData.customerType === CUSTOMER_TYPES.B2C) {
           if (!state.formData.b2cFullName) errors.push('Full Name is required for B2C');
-          if (!state.formData.b2cPhoneNumber) errors.push('Phone Number is required for B2C');
-          if (!state.formData.b2cAddress) errors.push('Address is required for B2C');
-          if (!state.formData.b2cCity) errors.push('City is required for B2C');
-          if (!state.formData.b2cState) errors.push('State is required for B2C');
-          if (!state.formData.b2cPincode) errors.push('Pincode is required for B2C');
         }
         break;
       case 3:
@@ -726,17 +717,8 @@ function InvoiceGeneration() {
     // Customer type specific validation
     if (state.formData.customerType === CUSTOMER_TYPES.B2B) {
       if (!state.formData.selectedB2BCustomer) errors.push('B2B Customer selection is required');
-      if (!state.formData.b2bCustomerGstNumber) errors.push('GST Number is required for B2B');
-      if (!state.formData.b2bPhoneNumber) errors.push('Phone Number is required for B2B');
-      if (!state.formData.b2bCustomerAddress) errors.push('Address is required for B2B');
-      if (!state.formData.b2bEmail) errors.push('Email is required for B2B');
     } else if (state.formData.customerType === CUSTOMER_TYPES.B2C) {
       if (!state.formData.b2cFullName) errors.push('Full Name is required for B2C');
-      if (!state.formData.b2cPhoneNumber) errors.push('Phone Number is required for B2C');
-      if (!state.formData.b2cAddress) errors.push('Address is required for B2C');
-      if (!state.formData.b2cCity) errors.push('City is required for B2C');
-      if (!state.formData.b2cState) errors.push('State is required for B2C');
-      if (!state.formData.b2cPincode) errors.push('Pincode is required for B2C');
     }
 
     return errors;

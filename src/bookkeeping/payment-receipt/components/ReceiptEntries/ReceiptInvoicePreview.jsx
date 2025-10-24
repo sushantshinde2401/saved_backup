@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Download, Printer, FileText, ArrowLeft } from 'lucide-react';
+import html2pdf from 'html2pdf.js';
 
 function ReceiptInvoicePreview() {
   const location = useLocation();
@@ -75,39 +76,34 @@ function ReceiptInvoicePreview() {
   const handlePrint = () => window.print();
 
   const handleDownload = () => {
-    const printContent = document.querySelector('.receipt-content');
-    if (printContent) {
-      // Use html2canvas and jsPDF for PDF generation
-      import('html2canvas').then(html2canvas => {
-        import('jspdf').then(({ jsPDF }) => {
-          html2canvas.default(printContent, {
-            scale: 2,
-            useCORS: true,
-            allowTaint: true
-          }).then(canvas => {
-            const imgData = canvas.toDataURL('image/png');
-            const pdf = new jsPDF('p', 'mm', 'a4');
-            const imgWidth = 210;
-            const pageHeight = 295;
-            const imgHeight = canvas.height * imgWidth / canvas.width;
-            let heightLeft = imgHeight;
+    const element = document.querySelector('.receipt-content');
+    if (element) {
+      // Clone the element to apply print styles
+      const clonedElement = element.cloneNode(true);
 
-            let position = 0;
+      // Apply print styles to the cloned element
+      clonedElement.style.boxShadow = 'none';
+      clonedElement.style.width = '100%';
+      clonedElement.style.maxWidth = 'none';
 
-            pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
-            heightLeft -= pageHeight;
-
-            while (heightLeft >= 0) {
-              position = heightLeft - imgHeight;
-              pdf.addPage();
-              pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
-              heightLeft -= pageHeight;
-            }
-
-            pdf.save(`Payment_Receipt_${receiptData.savedReceiptData?.receipt_amount_id || 'N/A'}.pdf`);
-          });
-        });
-      });
+      const opt = {
+        margin: 0.5,
+        filename: `Payment_Receipt_${receiptData.savedReceiptData?.receipt_amount_id || 'N/A'}.pdf`,
+        image: { type: 'jpeg', quality: 1.0 },
+        html2canvas: {
+          scale: 3,
+          useCORS: true,
+          letterRendering: true,
+          allowTaint: false
+        },
+        jsPDF: {
+          unit: 'in',
+          format: 'a4',
+          orientation: 'portrait',
+          compress: true
+        }
+      };
+      html2pdf().set(opt).from(clonedElement).save();
     }
   };
 
@@ -130,9 +126,20 @@ function ReceiptInvoicePreview() {
   }
 
   return (
-    <div className="bg-white rounded-lg shadow-lg overflow-hidden">
-      {/* Header */}
-      <div className="bg-gradient-to-r from-blue-600 to-blue-700 p-4">
+    <>
+      <style>{`
+        @media print {
+          .no-print {
+            display: none !important;
+          }
+          .shadow-lg {
+            box-shadow: none !important;
+          }
+        }
+      `}</style>
+      <div className="bg-white rounded-lg shadow-lg overflow-hidden">
+        {/* Header */}
+        <div className="bg-gradient-to-r from-blue-600 to-blue-700 p-4 no-print">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <button
@@ -303,7 +310,7 @@ function ReceiptInvoicePreview() {
             </div>
           </div>
 
-          <div className="input-controls w-96 bg-gray-50 border border-gray-200 rounded-lg p-4">
+          <div className="input-controls w-96 bg-gray-50 border border-gray-200 rounded-lg p-4 no-print">
             <h2 className="text-xl font-bold text-gray-800 mb-4 text-center">RECEIPT CONTROLS</h2>
             <div className="mb-6">
               <label className="block text-sm font-medium text-gray-700 mb-1">Receipt Date</label>
@@ -342,6 +349,7 @@ function ReceiptInvoicePreview() {
           </div>
         </div>
     </div>
+   </>
   );
 }
 

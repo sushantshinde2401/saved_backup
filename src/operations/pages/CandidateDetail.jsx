@@ -45,7 +45,7 @@ function CandidateDetails() {
     email: "",
     phone: "",
     companyName: "",
-    vendorName: "",
+    clientName: "",
     paymentStatus: "",
     rollNo: "",
     paymentProof: null,
@@ -54,12 +54,40 @@ function CandidateDetails() {
 
   const [isAutoFilled, setIsAutoFilled] = useState(false);
   const [fillStatus, setFillStatus] = useState("");
+  const [companies, setCompanies] = useState([]);
+  const [loadingCompanies, setLoadingCompanies] = useState(false);
 
   // Save initial form data to localStorage on component mount
   useEffect(() => {
     localStorage.setItem('candidateData', JSON.stringify(formData));
     window.dispatchEvent(new CustomEvent('candidateDataUpdated', { detail: formData }));
   }, []); // Empty dependency array means this runs once on mount
+
+  // Fetch companies from database on component mount
+  useEffect(() => {
+    const fetchCompanies = async () => {
+      setLoadingCompanies(true);
+      try {
+        const response = await fetch('http://127.0.0.1:5000/api/bookkeeping/get-b2b-customers');
+        if (response.ok) {
+          const result = await response.json();
+          if (result.status === 'success') {
+            setCompanies(result.data);
+          } else {
+            console.error('Failed to fetch companies:', result.message);
+          }
+        } else {
+          console.error('Failed to fetch companies');
+        }
+      } catch (error) {
+        console.error('Error fetching companies:', error);
+      } finally {
+        setLoadingCompanies(false);
+      }
+    };
+
+    fetchCompanies();
+  }, []);
 
   const handleFill = async () => {
     try {
@@ -142,7 +170,7 @@ function CandidateDetails() {
         email: formData.email,
         phone: formData.phone,
         companyName: formData.companyName,
-        vendorName: formData.vendorName,
+        clientName: formData.clientName,
         paymentStatus: formData.paymentStatus,
         rollNo: formData.rollNo,
         paymentProof: formData.paymentProof,
@@ -172,7 +200,7 @@ function CandidateDetails() {
 const handleChange = (e) => {
   const { id, value } = e.target;
 
-  const isDropdown = ["vendorName", "paymentStatus"].includes(id);
+  const isDropdown = ["clientName", "paymentStatus"].includes(id);
 
   // force uppercase here before saving to state
   const updatedFormData = {
@@ -291,7 +319,7 @@ const handleChange = (e) => {
     email: <Mail size={16} />,
     phone: <Phone size={16} />,
     companyName: <Building2 size={16} />,
-    vendorName: <Building2 size={16} />,
+    clientName: <Building2 size={16} />,
     paymentStatus: <CreditCard size={16} />,
     rollNo: <Wallet size={16} />,
   };
@@ -541,7 +569,7 @@ const handleChange = (e) => {
                 </motion.div>
               ))}
 
-              {/* Enhanced Vendor Name dropdown */}
+              {/* Enhanced Client Name dropdown */}
               <motion.div
                 initial={{ x: -20, opacity: 0 }}
                 animate={{ x: 0, opacity: 1 }}
@@ -549,29 +577,39 @@ const handleChange = (e) => {
                 className="group"
               >
                 <label
-                  htmlFor="vendorName"
+                  htmlFor="clientName"
                   className="block font-semibold mb-3 flex items-center gap-3 text-gray-700"
                 >
                   <div className="w-8 h-8 bg-gradient-to-r from-emerald-500 to-teal-500 rounded-full flex items-center justify-center">
                     <Building2 size={16} className="text-white" />
                   </div>
-                  Vendor Name:
+                  Client Name:
                 </label>
                 <div className="relative">
                   <select
-                    id="vendorName"
-                    name="vendorName"
-                    value={formData.vendorName}
+                    id="clientName"
+                    name="clientName"
+                    value={formData.clientName}
                     onChange={handleChange}
                     autoComplete="organization"
                     required
-                    className="w-full text-sm bg-white border-2 border-gray-200 rounded-xl px-4 py-3 focus:outline-none focus:border-emerald-500 transition-colors duration-200 hover:border-emerald-300 shadow-sm appearance-none"
+                    disabled={loadingCompanies}
+                    className="w-full text-sm bg-white border-2 border-gray-200 rounded-xl px-4 py-3 focus:outline-none focus:border-emerald-500 transition-colors duration-200 hover:border-emerald-300 shadow-sm appearance-none disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    <option value="">Select Vendor</option>
-                    <option value="Vendor A">Vendor A</option>
-                    <option value="Vendor B">Vendor B</option>
-                    <option value="Vendor C">Vendor C</option>
+                    <option value="">
+                      {loadingCompanies ? "Loading companies..." : "Select Client"}
+                    </option>
+                    {companies.map((company, index) => (
+                      <option key={company.id || index} value={company.company_name}>
+                        {company.company_name}
+                      </option>
+                    ))}
                   </select>
+                  {loadingCompanies && (
+                    <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-emerald-500"></div>
+                    </div>
+                  )}
                 </div>
               </motion.div>
 
