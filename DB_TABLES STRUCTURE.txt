@@ -17,8 +17,8 @@ erDiagram
 
 
 	ReceiptInvoiceData {
-		
-	      	candidate_id int FK ""  
+
+	      	candidate_id int FK ""  -- References certificate_selections(candidate_id)
 from(Step 1)  | company_details string  ""  (company name and account no will save )
 
 
@@ -84,7 +84,7 @@ from(Step 6)  	ReceiptAmountReceived {
 		balance float  ""  
 		created_at timestamp  ""  
 	}
-	candidate_table||--o{receiptinvoicedata_table:"has"
+	certificate_selections_table||--o{receiptinvoicedata_table:"has"
 	candidate_table||--o{receiptamountreceived_table:"has"
 	candidate_table||--o{paymententry_table:"has"
 	candidate_table||--o{companyLedger_table:"has"
@@ -198,9 +198,9 @@ PaymentEntry → relates to → ClientLedger.
 
 👉 In simple terms:
 
-Candidate is the root entity.
+Certificate Selection is the root entity for invoices.
 
-Candidate creates invoices (ReceiptInvoiceData).
+Certificate Selection creates invoices (ReceiptInvoiceData).
 
 Receipts (ReceiptAmountReceived) record payments received against invoices.
 

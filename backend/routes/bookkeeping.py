@@ -879,6 +879,15 @@ def create_receipt_invoice_data():
         from database.db_connection import insert_receipt_invoice_data
         result = insert_receipt_invoice_data(data)
 
+        # After successful insertion, update the master table
+        try:
+            from hooks.post_data_insert import update_master_table_after_receipt_insert
+            update_master_table_after_receipt_insert(data['candidate_id'], result)
+            logger.info(f"[RECEIPT_INVOICE] Master table updated for candidate_id: {data['candidate_id']}")
+        except Exception as update_e:
+            logger.warning(f"[RECEIPT_INVOICE] Failed to update master table: {update_e}")
+            # Don't fail the receipt creation if master table update fails
+
         return jsonify({
             "status": "success",
             "data": {"invoice_no": result},
@@ -971,7 +980,7 @@ def create_receipt_amount_received():
                             ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                         """
 
-                        particulars = f"Account No: {account_no}" if account_no else "Account No: N/A"
+                        particulars = f"Receipt from {customer_name}"
                         voucher_no = f"RCPT-{receipt_id}"  # Generate voucher number
 
                         execute_query(ledger_query, (
@@ -3146,6 +3155,54 @@ def get_vendor_adjustment(adjustment_id):
             "status": "error"
         }), 500
 
+@bookkeeping_bp.route('/generate-invoice-number', methods=['GET'])
+def generate_invoice_number():
+    """Generate the next sequential invoice number in format AMA/FY-25-26/XXXX"""
+    try:
+        # Get the highest existing invoice number for the current fiscal year
+        fiscal_year_prefix = "AMA/FY-25-26/"
+
+        query = """
+            SELECT invoice_no
+            FROM ReceiptInvoiceData
+            WHERE invoice_no LIKE %s
+            ORDER BY invoice_no DESC
+            LIMIT 1
+        """
+
+        results = execute_query(query, (f"{fiscal_year_prefix}%",))
+
+        next_number = 1  # Default starting number
+
+        if results and len(results) > 0:
+            last_invoice = results[0]['invoice_no']
+            # Extract the sequential number from the end
+            try:
+                sequential_part = last_invoice.split('/')[-1]  # Get the last part after /
+                current_number = int(sequential_part)
+                next_number = current_number + 1
+            except (ValueError, IndexError):
+                # If parsing fails, start from 1
+                next_number = 1
+
+        # Format the invoice number with zero-padded 4-digit number
+        invoice_number = f"{fiscal_year_prefix}{next_number:04d}"
+
+        logger.info(f"[INVOICE_NUMBER] Generated next invoice number: {invoice_number}")
+        return jsonify({
+            "status": "success",
+            "data": {"invoice_number": invoice_number},
+            "message": f"Generated invoice number: {invoice_number}"
+        }), 200
+
+    except Exception as e:
+        logger.error(f"[INVOICE_NUMBER] Failed to generate invoice number: {e}")
+        return jsonify({
+            "error": str(e),
+            "message": "Failed to generate invoice number",
+            "status": "error"
+        }), 500
+
 @bookkeeping_bp.route('/get-vendor-details/<int:vendor_id>', methods=['GET'])
 def get_vendor_details(vendor_id):
     """Get vendor details by ID for adjustment invoices"""
@@ -3197,5 +3254,130 @@ def get_vendor_details(vendor_id):
         return jsonify({
             "error": str(e),
             "message": "Failed to retrieve vendor details",
+            "status": "error"
+        }), 500
+
+@bookkeeping_bp.route('/save-invoice-image', methods=['POST'])
+def save_invoice_image():
+    """Save invoice PDF image to database"""
+    try:
+        data = request.get_json()
+
+        required_fields = ['invoice_no', 'image_data', 'image_type']
+        for field in required_fields:
+            if field not in data:
+                return jsonify({
+                    "error": f"Missing required field: {field}",
+                    "message": f"Field '{field}' is required",
+                    "status": "validation_error"
+                }), 400
+
+        # Decode base64 image data
+        import base64
+        try:
+            image_binary = base64.b64decode(data['image_data'])
+        except Exception as decode_error:
+            return jsonify({
+                "error": "Invalid image data",
+                "message": f"Failed to decode base64 image data: {str(decode_error)}",
+                "status": "validation_error"
+            }), 400
+
+        # Insert into invoice_images table
+        query = """
+            INSERT INTO invoice_images (
+                invoice_no, image_data, image_type, file_name, file_size
+            ) VALUES (%s, %s, %s, %s, %s)
+            ON CONFLICT (invoice_no)
+            DO UPDATE SET
+                image_data = EXCLUDED.image_data,
+                image_type = EXCLUDED.image_type,
+                file_name = EXCLUDED.file_name,
+                file_size = EXCLUDED.file_size,
+                generated_at = CURRENT_TIMESTAMP
+            RETURNING id
+        """
+
+        file_name = data.get('file_name', f"Tax_Invoice_{data['invoice_no']}.pdf")
+        file_size = len(image_binary)
+
+        result = execute_query(query, (
+            data['invoice_no'],
+            image_binary,
+            data.get('image_type', 'pdf'),
+            file_name,
+            file_size
+        ))
+
+        if result:
+            image_id = result[0]['id']
+            logger.info(f"[INVOICE_IMAGE] Saved invoice image for invoice: {data['invoice_no']}, size: {file_size} bytes")
+            return jsonify({
+                "status": "success",
+                "data": {"image_id": image_id, "file_size": file_size},
+                "message": f"Invoice image saved successfully for invoice: {data['invoice_no']}"
+            }), 201
+        else:
+            return jsonify({
+                "error": "Failed to save image",
+                "message": "No ID returned from insert operation",
+                "status": "error"
+            }), 500
+
+    except Exception as e:
+        logger.error(f"[INVOICE_IMAGE] Failed to save invoice image: {e}")
+        return jsonify({
+            "error": str(e),
+            "message": "Failed to save invoice image",
+            "status": "error"
+        }), 500
+
+@bookkeeping_bp.route('/get-invoice-image/<path:invoice_no>', methods=['GET'])
+def get_invoice_image(invoice_no):
+    """Retrieve invoice image by invoice number"""
+    try:
+        query = """
+            SELECT id, invoice_no, image_data, image_type, file_name, file_size, generated_at
+            FROM invoice_images
+            WHERE invoice_no = %s
+        """
+
+        results = execute_query(query, (invoice_no,))
+
+        if results and len(results) > 0:
+            image_record = results[0]
+
+            # Convert binary data to base64 for JSON response
+            import base64
+            image_base64 = base64.b64encode(image_record['image_data']).decode('utf-8')
+
+            image_data = {
+                'id': image_record['id'],
+                'invoice_no': image_record['invoice_no'],
+                'image_data': image_base64,
+                'image_type': image_record['image_type'],
+                'file_name': image_record['file_name'],
+                'file_size': image_record['file_size'],
+                'generated_at': str(image_record['generated_at']) if image_record['generated_at'] else None
+            }
+
+            logger.info(f"[INVOICE_IMAGE] Retrieved invoice image for invoice: {invoice_no}")
+            return jsonify({
+                "status": "success",
+                "data": image_data,
+                "message": f"Retrieved invoice image for invoice: {invoice_no}"
+            }), 200
+        else:
+            return jsonify({
+                "error": "Invoice image not found",
+                "message": f"No invoice image found for invoice number: {invoice_no}",
+                "status": "not_found"
+            }), 404
+
+    except Exception as e:
+        logger.error(f"[INVOICE_IMAGE] Failed to retrieve invoice image for {invoice_no}: {e}")
+        return jsonify({
+            "error": str(e),
+            "message": "Failed to retrieve invoice image",
             "status": "error"
         }), 500

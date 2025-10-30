@@ -3,386 +3,465 @@ from datetime import datetime
 import json
 import os
 import sys
+import base64
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from config import Config
+from database.db_connection import execute_query
+from hooks.post_data_insert import update_master_table_after_certificate_insert
 
 certificate_bp = Blueprint('certificate', __name__)
 
-@certificate_bp.route('/save-certificate-data', methods=['POST'])
-def save_certificate_data():
-    """Save certificate data to certificate_selections_for_receipt.json for receipt processing"""
-    try:
-        data = request.get_json()
 
-        # Extract required fields
-        firstName = data.get('firstName', '')
-        lastName = data.get('lastName', '')
-        certificateName = data.get('certificateName', '')
-        companyName = data.get('companyName', '')
-        rateData = data.get('rateData', {})
-
-        if not firstName or not lastName or not certificateName:
-            return jsonify({"error": "firstName, lastName, and certificateName are required"}), 400
-
-        # Path to certificate selections file
-        certificate_selections_path = f"{Config.JSON_FOLDER}/certificate_selections_for_receipt.json"
-
-        # Load existing certificate selections or create empty array
-        certificate_selections = []
-        if os.path.exists(certificate_selections_path):
-            try:
-                with open(certificate_selections_path, 'r') as json_file:
-                    certificate_selections = json.load(json_file)
-                    if not isinstance(certificate_selections, list):
-                        certificate_selections = []
-            except (json.JSONDecodeError, Exception) as e:
-                print(f"[WARNING] Error reading existing certificate selections, starting fresh: {e}")
-                certificate_selections = []
-
-        # Check for duplicates (same firstName + lastName + certificateName)
-        duplicate_found = False
-        for existing_cert in certificate_selections:
-            if (existing_cert.get('firstName') == firstName and
-                existing_cert.get('lastName') == lastName and
-                existing_cert.get('certificateName') == certificateName):
-                duplicate_found = True
-                break
-
-        if duplicate_found:
-            return jsonify({
-                "status": "warning",
-                "message": f"Certificate already exists for {firstName} {lastName} - {certificateName}",
-                "duplicate": True
-            }), 200
-
-        # Generate course-specific ID based on certificate name
-        def generate_course_id(certificate_name, existing_certificates):
-            # Map certificate names to prefixes
-            course_prefixes = {
-                'Basic Safety Training (STCW)': 'stcw',
-                'H2S Training': 'h2s',
-                'BOSIET Training': 'bosiet',
-                'MODU Survival Training': 'modu',
-                'Advanced Fire Fighting': 'aff',
-                'Medical First Aid': 'mfa',
-                'Personal Survival Techniques': 'pst',
-                'Personal Safety and Social Responsibilities': 'pssr'
-            }
-
-            # Get prefix for the course
-            prefix = course_prefixes.get(certificate_name, 'cert')
-
-            # Count existing certificates with same prefix
-            count = 1
-            for cert in existing_certificates:
-                if cert.get('id', '').startswith(f"{prefix}_"):
-                    try:
-                        existing_num = int(cert.get('id', '').split('_')[1])
-                        if existing_num >= count:
-                            count = existing_num + 1
-                    except (ValueError, IndexError):
-                        continue
-
-            return f"{prefix}_{count:03d}"
-
-        # Calculate amount from rate data if company is provided
-        amount = 0
-        if companyName and rateData and companyName in rateData:
-            company_rates = rateData.get(companyName, {})
-            amount = company_rates.get(certificateName, 0)
-
-        # Check if this is a new candidate (different from existing certificates)
-        current_candidate = f"{firstName.upper()} {lastName.upper()}"
-        existing_candidates = set()
-
-        for existing_cert in certificate_selections:
-            existing_candidate = f"{existing_cert.get('firstName', '').upper()} {existing_cert.get('lastName', '').upper()}"
-            existing_candidates.add(existing_candidate)
-
-        # If this is a new candidate, clear all existing certificates
-        is_new_candidate = len(existing_candidates) > 0 and current_candidate not in existing_candidates
-        if is_new_candidate:
-            print(f"[JSON] New candidate detected: {current_candidate}")
-            print(f"[JSON] Clearing existing certificates for previous candidates: {existing_candidates}")
-            certificate_selections = []  # Clear all existing certificates
-
-        # Check for duplicates within current candidate's certificates
-        duplicate_found = False
-        for existing_cert in certificate_selections:
-            if (existing_cert.get('firstName', '').upper() == firstName.upper() and
-                existing_cert.get('lastName', '').upper() == lastName.upper() and
-                existing_cert.get('certificateName', '') == certificateName):
-                duplicate_found = True
-                break
-
-        if duplicate_found:
-            print(f"[JSON] Duplicate certificate found for current candidate: {firstName} {lastName} - {certificateName}")
-            return jsonify({
-                "status": "success",
-                "message": "Certificate already exists for current candidate",
-                "duplicate": True,
-                "total_certificates": len(certificate_selections)
-            }), 200
-
-        # Generate unique course-based ID (recalculate after potential clearing)
-        unique_id = generate_course_id(certificateName, certificate_selections)
-
-        # Create new certificate entry with enhanced structure
-        certificate_entry = {
-            'id': unique_id,  # Course-specific unique ID
-            'firstName': firstName,
-            'lastName': lastName,
-            'certificateName': certificateName,
-            'companyName': companyName,  # Use provided company name
-            'amount': amount,            # Use calculated amount from rate list
-            'timestamp': datetime.now().isoformat()
-        }
-
-        # Append to existing array
-        certificate_selections.append(certificate_entry)
-
-        # Save updated array back to file
-        with open(certificate_selections_path, 'w') as json_file:
-            json.dump(certificate_selections, json_file, indent=2)
-
-        print(f"[JSON] Added certificate selection: {firstName} {lastName} - {certificateName}")
-
-        return jsonify({
-            "status": "success",
-            "message": "Certificate data saved for receipt processing",
-            "filename": "certificate_selections_for_receipt.json",
-            "data": certificate_entry,
-            "total_certificates": len(certificate_selections)
-        }), 200
-
-    except Exception as e:
-        print(f"[ERROR] Failed to save certificate data: {e}")
-        return jsonify({"error": str(e)}), 500
-
-@certificate_bp.route('/get-certificate-selections-for-receipt', methods=['GET'])
-def get_certificate_selections_for_receipt():
-    """Get certificate selections for receipt processing"""
-    try:
-        certificate_selections_path = f"{Config.JSON_FOLDER}/certificate_selections_for_receipt.json"
-
-        # Return empty array if file doesn't exist
-        if not os.path.exists(certificate_selections_path):
-            print("[JSON] Certificate selections file not found, returning empty array")
-            return jsonify({
-                "status": "success",
-                "data": [],
-                "message": "No certificate selections found"
-            }), 200
-
-        # Load and return certificate selections
-        with open(certificate_selections_path, 'r') as json_file:
-            certificate_selections = json.load(json_file)
-
-            # Ensure it's a list
-            if not isinstance(certificate_selections, list):
-                certificate_selections = []
-
-        print(f"[JSON] Retrieved {len(certificate_selections)} certificate selections for receipt processing")
-
-        return jsonify({
-            "status": "success",
-            "data": certificate_selections,
-            "total_certificates": len(certificate_selections)
-        }), 200
-
-    except Exception as e:
-        print(f"[ERROR] Failed to get certificate selections: {e}")
-        return jsonify({"error": str(e)}), 500
 
 @certificate_bp.route('/create-receipt-invoice-table', methods=['POST'])
 def create_receipt_invoice_table():
     """Check receipt invoice table status"""
     try:
         from database.db_connection import execute_query
-        
+
         # Check if tables exist
         check_query = """
-            SELECT table_name FROM information_schema.tables 
-            WHERE table_schema = 'public' 
+            SELECT table_name FROM information_schema.tables
+            WHERE table_schema = 'public'
             AND table_name IN ('receiptinvoicedata', 'receiptamountreceived')
         """
-        
+
         result = execute_query(check_query)
         existing_tables = [row['table_name'] for row in result] if result else []
-        
+
         return jsonify({
             "status": "success",
             "message": "Receipt invoice tables status checked",
             "existing_tables": existing_tables,
             "tables_exist": len(existing_tables) == 2
         }), 200
-        
+
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-@certificate_bp.route('/update-certificate-company-data', methods=['POST'])
-def update_certificate_company_data():
-    """Update certificate selections with company name and amount data"""
+
+@certificate_bp.route('/save-certificate-data', methods=['POST'])
+def save_certificate_data():
+    """Save certificate data with images to certificate_selections table"""
     try:
         data = request.get_json()
+        if not data:
+            return jsonify({"error": "No data provided"}), 400
 
         # Extract required fields
-        certificate_ids = data.get('certificateIds', [])
-        company_name = data.get('companyName', '')
-        rate_data = data.get('rateData', {})
+        first_name = data.get('firstName')
+        last_name = data.get('lastName')
+        passport = data.get('passport')
+        client_name = data.get('clientName')
+        certificate_name = data.get('certificateName')
+        verification_image_data = data.get('verificationImageData')
+        certificate_image_data = data.get('certificateImageData')
 
-        if not certificate_ids or not company_name:
-            return jsonify({"error": "certificateIds and companyName are required"}), 400
+        if not all([first_name, last_name, passport, certificate_name]):
+            return jsonify({"error": "Missing required fields: firstName, lastName, passport, certificateName"}), 400
 
-        # Path to certificate selections file
-        certificate_selections_path = f"{Config.JSON_FOLDER}/certificate_selections_for_receipt.json"
+        # Get candidate data from candidates table
+        # Database stores names with underscores, not spaces
+        candidate_name = f"{first_name}_{last_name}_{passport}"
+        get_candidate_query = """
+            SELECT id, candidate_name FROM candidates
+            WHERE candidate_name = %s
+            LIMIT 1
+        """
 
-        if not os.path.exists(certificate_selections_path):
-            return jsonify({"error": "Certificate selections file not found"}), 404
+        candidate_result = execute_query(get_candidate_query, (candidate_name,), fetch=True)
+        if not candidate_result:
+            return jsonify({"error": f"Candidate '{candidate_name}' not found in database"}), 404
 
-        # Load certificate selections
-        with open(certificate_selections_path, 'r') as json_file:
-            certificate_selections = json.load(json_file)
+        candidate_id = candidate_result[0]['id']
+        candidate_name_db = candidate_result[0]['candidate_name']
 
-        if not isinstance(certificate_selections, list):
-            return jsonify({"error": "Invalid certificate selections format"}), 400
+        # Check for duplicate certificate
+        check_duplicate_query = """
+            SELECT id FROM certificate_selections
+            WHERE candidate_id = %s AND certificate_name = %s
+        """
+        duplicate_result = execute_query(check_duplicate_query, (candidate_id, certificate_name), fetch=True)
 
-        # Update certificates with company and amount data
-        updated_count = 0
-        for cert in certificate_selections:
-            if cert.get('id') in certificate_ids:
-                cert['companyName'] = company_name
+        if duplicate_result:
+            return jsonify({
+                "duplicate": True,
+                "message": "Certificate already exists for this candidate"
+            }), 200
 
-                # Get amount from rate data
-                certificate_name = cert.get('certificateName', '')
-                company_rates = rate_data.get(company_name, {})
-                cert['amount'] = company_rates.get(certificate_name, 0)
+        # Convert base64 images to bytes
+        verification_image_bytes = None
+        certificate_image_bytes = None
 
-                updated_count += 1
+        if verification_image_data:
+            try:
+                # Remove data URL prefix if present
+                if verification_image_data.startswith('data:image/'):
+                    verification_image_data = verification_image_data.split(',')[1]
+                verification_image_bytes = base64.b64decode(verification_image_data)
+            except Exception as e:
+                # Silently handle image decoding errors
+                verification_image_bytes = None
 
-        # Save updated data
-        with open(certificate_selections_path, 'w') as json_file:
-            json.dump(certificate_selections, json_file, indent=2)
+        if certificate_image_data:
+            try:
+                # Remove data URL prefix if present
+                if certificate_image_data.startswith('data:image/'):
+                    certificate_image_data = certificate_image_data.split(',')[1]
+                certificate_image_bytes = base64.b64decode(certificate_image_data)
+            except Exception as e:
+                # Silently handle image decoding errors
+                certificate_image_bytes = None
 
-        print(f"[JSON] Updated {updated_count} certificates with company: {company_name}")
+        # Insert into certificate_selections table
+        insert_query = """
+            INSERT INTO certificate_selections
+            (candidate_id, candidate_name, client_name, certificate_name, verification_image, certificate_image)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            RETURNING id
+        """
+
+        insert_result = execute_query(insert_query, (
+            candidate_id,
+            candidate_name_db,
+            client_name,
+            certificate_name,
+            verification_image_bytes,
+            certificate_image_bytes
+        ), fetch=True)
+
+        if insert_result:
+            certificate_selection_id = insert_result[0]['id']
+
+            # Update Master_Database_Table_A automatically
+            from hooks.post_data_insert import update_master_table_after_certificate_insert
+            update_master_table_after_certificate_insert(candidate_id)
+
+            # Get total count for response
+            count_query = "SELECT COUNT(*) as total FROM certificate_selections"
+            count_result = execute_query(count_query, fetch=True)
+            total_certificates = count_result[0]['total'] if count_result else 0
+
+            return jsonify({
+                "status": "success",
+                "message": "Certificate data saved successfully",
+                "data": {
+                    "id": certificate_selection_id,
+                    "candidate_id": candidate_id,
+                    "candidate_name": candidate_name_db,
+                    "client_name": client_name,
+                    "certificate_name": certificate_name,
+                    "has_images": bool(verification_image_bytes or certificate_image_bytes)
+                },
+                "total_certificates": total_certificates
+            }), 200
+        else:
+            return jsonify({"error": "Failed to insert certificate data"}), 500
+
+    except Exception as e:
+        # Silently handle errors to prevent terminal output
+        return jsonify({"error": str(e)}), 500
+
+
+@certificate_bp.route('/get-certificate-selections-for-receipt', methods=['GET'])
+def get_certificate_selections_for_receipt():
+    """Get all certificate selections for receipt processing, aggregated by candidate"""
+    try:
+        # First, get all certificate selections
+        query = """
+            SELECT
+                cs.id,
+                cs.candidate_id,
+                cs.candidate_name,
+                cs.client_name,
+                cs.certificate_name,
+                cs.creation_date,
+                CASE WHEN cs.verification_image IS NOT NULL THEN true ELSE false END as has_verification_image,
+                CASE WHEN cs.certificate_image IS NOT NULL THEN true ELSE false END as has_certificate_image
+            FROM certificate_selections cs
+            ORDER BY cs.client_name, cs.candidate_name, cs.creation_date DESC
+        """
+
+        result = execute_query(query, fetch=True)
+
+        if not result:
+            return jsonify({
+                "status": "success",
+                "data": [],
+                "total": 0
+            }), 200
+
+        # Aggregate certificates by candidate_id
+        aggregated_data = {}
+        for row in result:
+            candidate_id = row['candidate_id']
+            if candidate_id not in aggregated_data:
+                aggregated_data[candidate_id] = {
+                    'candidate_id': candidate_id,
+                    'candidate_name': row['candidate_name'],
+                    'client_name': row['client_name'],
+                    'certificates': [],
+                    'creation_date': row['creation_date'],
+                    'has_verification_image': row['has_verification_image'],
+                    'has_certificate_image': row['has_certificate_image'],
+                    'certificate_count': 0
+                }
+
+            # Add certificate to the list
+            aggregated_data[candidate_id]['certificates'].append({
+                'id': row['id'],
+                'certificate_name': row['certificate_name'],
+                'creation_date': row['creation_date'],
+                'has_verification_image': row['has_verification_image'],
+                'has_certificate_image': row['has_certificate_image']
+            })
+
+            # Update counts
+            aggregated_data[candidate_id]['certificate_count'] += 1
+
+        # Convert to list and sort by client_name, candidate_name
+        aggregated_list = list(aggregated_data.values())
+        aggregated_list.sort(key=lambda x: (x['client_name'], x['candidate_name']))
+
+        # Debug: Log the structure of the first few results (commented out to prevent terminal output)
+        # print(f"[CERTIFICATE] Raw query results (first 3): {result[:3] if result else 'None'}")
 
         return jsonify({
             "status": "success",
-            "message": f"Updated {updated_count} certificates with company data",
-            "updated_count": updated_count,
-            "company_name": company_name
+            "data": aggregated_list,
+            "total": len(aggregated_list),
+            "total_certificates": len(result)
         }), 200
 
     except Exception as e:
-        print(f"[ERROR] Failed to update certificate company data: {e}")
+        # Silently handle errors to prevent terminal output
         return jsonify({"error": str(e)}), 500
+
 
 @certificate_bp.route('/delete-certificate-selection', methods=['DELETE'])
 def delete_certificate_selection():
     """Delete a certificate selection by ID"""
     try:
         data = request.get_json()
-        certificate_id = data.get('id', '')
+        if not data or 'id' not in data:
+            return jsonify({"error": "Certificate selection ID required"}), 400
 
-        if not certificate_id:
-            return jsonify({"error": "Certificate ID is required"}), 400
+        certificate_id = data['id']
 
-        # Path to certificate selections file
-        certificate_selections_path = f"{Config.JSON_FOLDER}/certificate_selections_for_receipt.json"
+        delete_query = "DELETE FROM certificate_selections WHERE id = %s RETURNING id"
+        result = execute_query(delete_query, (certificate_id,), fetch=True)
 
-        if not os.path.exists(certificate_selections_path):
-            return jsonify({"error": "Certificate selections file not found"}), 404
-
-        # Load certificate selections
-        with open(certificate_selections_path, 'r') as json_file:
-            certificate_selections = json.load(json_file)
-
-        if not isinstance(certificate_selections, list):
-            return jsonify({"error": "Invalid certificate selections format"}), 400
-
-        # Find and remove the certificate
-        original_count = len(certificate_selections)
-        certificate_selections = [cert for cert in certificate_selections if cert.get('id') != certificate_id]
-
-        if len(certificate_selections) == original_count:
-            return jsonify({"error": "Certificate not found"}), 404
-
-        # Save updated data
-        with open(certificate_selections_path, 'w') as json_file:
-            json.dump(certificate_selections, json_file, indent=2)
-
-        print(f"[JSON] Deleted certificate selection: {certificate_id}")
-
-        return jsonify({
-            "status": "success",
-            "message": "Certificate selection deleted successfully",
-            "deleted_id": certificate_id,
-            "remaining_count": len(certificate_selections)
-        }), 200
+        if result:
+            return jsonify({
+                "status": "success",
+                "message": "Certificate selection deleted successfully"
+            }), 200
+        else:
+            return jsonify({"error": "Certificate selection not found"}), 404
 
     except Exception as e:
-        print(f"[ERROR] Failed to delete certificate selection: {e}")
+        # Silently handle errors to prevent terminal output
         return jsonify({"error": str(e)}), 500
+
 
 @certificate_bp.route('/update-certificate-selection', methods=['PUT'])
 def update_certificate_selection():
-    """Update a specific field in a certificate selection"""
+    """Update a certificate selection"""
     try:
         data = request.get_json()
-        certificate_id = data.get('id', '')
-        field = data.get('field', '')
-        value = data.get('value', '')
+        if not data or 'id' not in data:
+            return jsonify({"error": "Certificate selection ID required"}), 400
 
-        if not certificate_id or not field:
-            return jsonify({"error": "Certificate ID and field are required"}), 400
+        certificate_id = data['id']
+        updates = []
+        values = []
 
-        # Path to certificate selections file
-        certificate_selections_path = f"{Config.JSON_FOLDER}/certificate_selections_for_receipt.json"
+        # Build dynamic update query
+        if 'certificate_name' in data:
+            updates.append("certificate_name = %s")
+            values.append(data['certificate_name'])
 
-        if not os.path.exists(certificate_selections_path):
-            return jsonify({"error": "Certificate selections file not found"}), 404
+        if not updates:
+            return jsonify({"error": "No fields to update"}), 400
 
-        # Load certificate selections
-        with open(certificate_selections_path, 'r') as json_file:
-            certificate_selections = json.load(json_file)
+        update_query = f"""
+            UPDATE certificate_selections
+            SET {', '.join(updates)}
+            WHERE id = %s
+            RETURNING id
+        """
+        values.append(certificate_id)
 
-        if not isinstance(certificate_selections, list):
-            return jsonify({"error": "Invalid certificate selections format"}), 400
+        result = execute_query(update_query, tuple(values), fetch=True)
 
-        # Find and update the certificate
-        updated = False
-        for cert in certificate_selections:
-            if cert.get('id') == certificate_id:
-                # Handle different field mappings
-                if field == 'candidateName':
-                    # Split candidate name into firstName and lastName
-                    name_parts = value.split(' ', 1)
-                    cert['firstName'] = name_parts[0] if len(name_parts) > 0 else ''
-                    cert['lastName'] = name_parts[1] if len(name_parts) > 1 else ''
-                elif field == 'sales':
-                    cert['amount'] = value
-                else:
-                    cert[field] = value
-                updated = True
-                break
+        if result:
+            return jsonify({
+                "status": "success",
+                "message": "Certificate selection updated successfully"
+            }), 200
+        else:
+            return jsonify({"error": "Certificate selection not found"}), 404
 
-        if not updated:
-            return jsonify({"error": "Certificate not found"}), 404
+    except Exception as e:
+        # Silently handle errors to prevent terminal output
+        return jsonify({"error": str(e)}), 500
 
-        # Save updated data
-        with open(certificate_selections_path, 'w') as json_file:
-            json.dump(certificate_selections, json_file, indent=2)
+@certificate_bp.route('/update-certificate-company-data', methods=['POST'])
+def update_certificate_company_data():
+    """Update certificate selections with company data"""
+    try:
+        data = request.get_json()
+        # print(f"[CERTIFICATE] Received data: {data}")  # Commented out to prevent terminal output
+        if not data or 'certificateIds' not in data or 'companyName' not in data:
+            return jsonify({"error": "certificateIds and companyName are required"}), 400
 
-        print(f"[JSON] Updated certificate selection {certificate_id}: {field} = {value}")
+        certificate_ids = data['certificateIds']
+        company_name = data['companyName']
+        rate_data = data.get('rateData', {})
+
+        # print(f"[CERTIFICATE] certificate_ids: {certificate_ids}, company_name: {company_name}")  # Commented out to prevent terminal output
+
+        if not isinstance(certificate_ids, list) or len(certificate_ids) == 0:
+            return jsonify({"error": "certificateIds must be a non-empty list"}), 400
+
+        # Update client_name for the specified certificates
+        # Use IN clause instead of ANY() for better compatibility
+        if len(certificate_ids) == 1:
+            # Single ID case
+            update_query = """
+                UPDATE certificate_selections
+                SET client_name = %s
+                WHERE id = %s
+            """
+            params = (company_name, certificate_ids[0])
+        else:
+            # Multiple IDs case - create placeholders
+            placeholders = ','.join(['%s'] * len(certificate_ids))
+            update_query = f"""
+                UPDATE certificate_selections
+                SET client_name = %s
+                WHERE id IN ({placeholders})
+            """
+            params = (company_name,) + tuple(certificate_ids)
+
+        # print(f"[CERTIFICATE] Executing query: {update_query}")  # Commented out to prevent terminal output
+        # print(f"[CERTIFICATE] Parameters: {params}")  # Commented out to prevent terminal output
+        try:
+            result = execute_query(update_query, params, fetch=False)
+            # print(f"[CERTIFICATE] Update result: {result}")  # Commented out to prevent terminal output
+        except Exception as query_error:
+            # print(f"[CERTIFICATE] Query execution error: {query_error}")  # Commented out to prevent terminal output
+            raise
 
         return jsonify({
             "status": "success",
-            "message": "Certificate selection updated successfully",
-            "updated_id": certificate_id,
-            "field": field,
-            "value": value
+            "message": f"Updated {len(certificate_ids)} certificates with company: {company_name}",
+            "updated_count": len(certificate_ids)
         }), 200
 
     except Exception as e:
-        print(f"[ERROR] Failed to update certificate selection: {e}")
+        # Silently handle errors to prevent terminal output
         return jsonify({"error": str(e)}), 500
+
+
+@certificate_bp.route('/verification-image/<int:certificate_id>', methods=['GET'])
+def get_verification_image(certificate_id):
+    """Serve verification image from certificate_selections table"""
+    try:
+        from database.db_connection import execute_query
+
+        result = execute_query("""
+            SELECT verification_image, certificate_name
+            FROM certificate_selections
+            WHERE id = %s AND verification_image IS NOT NULL
+        """, (certificate_id,))
+
+        if not result:
+            return jsonify({"error": "Verification image not found"}), 404
+
+        image_data = result[0]['verification_image']
+        certificate_name = result[0]['certificate_name'] or f'certificate_{certificate_id}'
+
+        from flask import Response
+        response = Response(image_data, mimetype='image/jpeg')
+        response.headers['Content-Disposition'] = f'inline; filename="verification_{certificate_name}.jpg"'
+        return response
+
+    except Exception as e:
+        # Silently handle errors to prevent terminal output
+        return jsonify({"error": str(e)}), 500
+
+@certificate_bp.route('/certificate-image/<int:certificate_id>', methods=['GET'])
+def get_certificate_image(certificate_id):
+    """Serve certificate image from certificate_selections table"""
+    try:
+        from database.db_connection import execute_query
+
+        result = execute_query("""
+            SELECT certificate_image, certificate_name
+            FROM certificate_selections
+            WHERE id = %s AND certificate_image IS NOT NULL
+        """, (certificate_id,))
+
+        if not result:
+            return jsonify({"error": "Certificate image not found"}), 404
+
+        image_data = result[0]['certificate_image']
+        certificate_name = result[0]['certificate_name'] or f'certificate_{certificate_id}'
+
+        from flask import Response
+        response = Response(image_data, mimetype='image/jpeg')
+        response.headers['Content-Disposition'] = f'inline; filename="certificate_{certificate_name}.jpg"'
+        return response
+
+    except Exception as e:
+        # Silently handle errors to prevent terminal output
+        return jsonify({"error": str(e)}), 500
+
+
+@certificate_bp.route('/get-candidate-names-by-ids', methods=['POST'])
+def get_candidate_names_by_ids():
+    """Get candidate names by certificate IDs"""
+    try:
+        data = request.get_json()
+        if not data or 'certificateIds' not in data:
+            return jsonify({"error": "certificateIds required"}), 400
+
+        certificate_ids = data['certificateIds']
+        if not isinstance(certificate_ids, list) or len(certificate_ids) == 0:
+            return jsonify({"error": "certificateIds must be a non-empty list"}), 400
+
+        # Query to get candidate names for the given certificate IDs
+        placeholders = ','.join(['%s'] * len(certificate_ids))
+        query = f"""
+            SELECT cs.id, cs.candidate_name, cs.certificate_name
+            FROM certificate_selections cs
+            WHERE cs.id IN ({placeholders})
+        """
+
+        result = execute_query(query, tuple(certificate_ids), fetch=True)
+
+        if not result:
+            return jsonify({
+                "status": "success",
+                "data": {},
+                "message": "No certificates found"
+            }), 200
+
+        # Build response mapping ID to candidate name
+        names_map = {}
+        for row in result:
+            names_map[row['id']] = {
+                'candidate_name': row['candidate_name'],
+                'certificate_name': row['certificate_name']
+            }
+
+        return jsonify({
+            "status": "success",
+            "data": names_map
+        }), 200
+
+    except Exception as e:
+        # Silently handle errors to prevent terminal output
+        return jsonify({"error": str(e)}), 500
+

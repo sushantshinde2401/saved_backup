@@ -484,7 +484,7 @@ def insert_receipt_invoice_data(receipt_data):
     # First, ensure table exists
     create_table_query = """
         CREATE TABLE IF NOT EXISTS ReceiptInvoiceData (
-            invoice_no VARCHAR(50) PRIMARY KEY,
+            invoice_no VARCHAR(100) PRIMARY KEY,
             candidate_id INTEGER,
             company_name VARCHAR(255),
             company_account_number VARCHAR(100),
@@ -511,11 +511,21 @@ def insert_receipt_invoice_data(receipt_data):
     """
 
     # Add gst_applied column if it doesn't exist (keep as DECIMAL for compatibility)
+    # Also alter columns to ensure they can handle longer values
     add_column_query = """
         ALTER TABLE ReceiptInvoiceData
         ADD COLUMN IF NOT EXISTS gst_applied DECIMAL(10,2) DEFAULT 0,
         ADD COLUMN IF NOT EXISTS cgst DECIMAL(10,2) DEFAULT 0,
-        ADD COLUMN IF NOT EXISTS sgst DECIMAL(10,2) DEFAULT 0
+        ADD COLUMN IF NOT EXISTS sgst DECIMAL(10,2) DEFAULT 0;
+        ALTER TABLE ReceiptInvoiceData
+        ALTER COLUMN invoice_no TYPE VARCHAR(500),
+        ALTER COLUMN company_name TYPE VARCHAR(500),
+        ALTER COLUMN company_account_number TYPE VARCHAR(500),
+        ALTER COLUMN customer_name TYPE VARCHAR(500),
+        ALTER COLUMN party_name TYPE VARCHAR(500),
+        ALTER COLUMN delivery_note TYPE VARCHAR(500),
+        ALTER COLUMN dispatch_doc_no TYPE VARCHAR(500),
+        ALTER COLUMN dispatch_through TYPE VARCHAR(500);
     """
 
     try:
@@ -610,9 +620,11 @@ def get_receipt_invoice_data(invoice_no=None, candidate_id=None, limit=50, offse
         params = (invoice_no,)
     elif candidate_id:
         query = """
-            SELECT * FROM ReceiptInvoiceData
-            WHERE candidate_id = %s
-            ORDER BY created_at DESC
+            SELECT rid.*, cs.candidate_name, cs.client_name
+            FROM ReceiptInvoiceData rid
+            LEFT JOIN certificate_selections cs ON rid.candidate_id = cs.candidate_id
+            WHERE rid.candidate_id = %s
+            ORDER BY rid.created_at DESC
             LIMIT %s OFFSET %s
         """
         params = (candidate_id, limit, offset)

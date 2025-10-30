@@ -48,15 +48,6 @@ def test_consolidated_candidate_data():
                 "valid_until": "2025-12-31"
             }
         },
-        "certificate_selections": {
-            "selected_courses": ["STCW", "H2S", "BOSIET"],
-            "training_dates": {
-                "STCW": "2024-01-15",
-                "H2S": "2024-02-20",
-                "BOSIET": "2024-03-10"
-            },
-            "certificate_types": ["Basic Safety", "Advanced Firefighting", "Medical Care"]
-        }
     }
 
     print("📤 Sending candidate data with OCR and certificate selections...")
@@ -106,11 +97,6 @@ def test_consolidated_candidate_data():
                     else:
                         print("❌ OCR data missing")
 
-                    # Check certificate selections
-                    if json_data.get('certificate_selections'):
-                        print("✅ Certificate selections stored correctly")
-                    else:
-                        print("❌ Certificate selections missing")
 
                     # Check session_id
                     if json_data.get('session_id') == "test-session-123":

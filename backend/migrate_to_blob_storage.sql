@@ -14,7 +14,6 @@ ALTER TABLE candidate_uploads ADD COLUMN IF NOT EXISTS candidate_folder VARCHAR(
 ALTER TABLE candidate_uploads ADD COLUMN IF NOT EXISTS candidate_folder_path VARCHAR(500);
 ALTER TABLE candidate_uploads ADD COLUMN IF NOT EXISTS session_id VARCHAR(100);
 ALTER TABLE candidate_uploads ADD COLUMN IF NOT EXISTS ocr_data JSONB;
-ALTER TABLE candidate_uploads ADD COLUMN IF NOT EXISTS certificate_selections JSONB;
 ALTER TABLE candidate_uploads ADD COLUMN IF NOT EXISTS is_current_candidate BOOLEAN DEFAULT FALSE;
 ALTER TABLE candidate_uploads ADD COLUMN IF NOT EXISTS is_certificate_selection BOOLEAN DEFAULT FALSE;
 ALTER TABLE candidate_uploads ADD COLUMN IF NOT EXISTS last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
@@ -43,7 +42,6 @@ COMMENT ON COLUMN candidate_uploads.file_size IS 'Size of the file in bytes';
 COMMENT ON COLUMN candidate_uploads.mime_type IS 'MIME type of the file';
 COMMENT ON COLUMN candidate_uploads.session_id IS 'Session ID for grouping related uploads';
 COMMENT ON COLUMN candidate_uploads.ocr_data IS 'OCR processing results in JSON format';
-COMMENT ON COLUMN candidate_uploads.certificate_selections IS 'Certificate selections for receipts';
 COMMENT ON COLUMN candidate_uploads.is_current_candidate IS 'Flag indicating if this is the current active candidate';
 COMMENT ON COLUMN candidate_uploads.is_certificate_selection IS 'Flag indicating if this contains certificate selections';
 
@@ -57,7 +55,6 @@ BEGIN
     RAISE NOTICE '- mime_type: VARCHAR(100) (MIME type)';
     RAISE NOTICE '- session_id: VARCHAR(100) (session grouping)';
     RAISE NOTICE '- ocr_data: JSONB (OCR results)';
-    RAISE NOTICE '- certificate_selections: JSONB (certificate data)';
     RAISE NOTICE '- is_current_candidate: BOOLEAN (current candidate flag)';
     RAISE NOTICE '- is_certificate_selection: BOOLEAN (certificate selection flag)';
     RAISE NOTICE '- last_updated: TIMESTAMP (last update timestamp)';

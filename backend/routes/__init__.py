@@ -8,6 +8,6 @@ def register_blueprints(app):
     """Register all blueprints with the Flask app"""
     app.register_blueprint(upload_bp)
     app.register_blueprint(candidate_bp, url_prefix='/candidate')
-    app.register_blueprint(certificate_bp)
+    app.register_blueprint(certificate_bp, url_prefix='/certificate')
     app.register_blueprint(misc_bp)
     app.register_blueprint(bookkeeping_bp, url_prefix='/api/bookkeeping')

@@ -109,13 +109,6 @@ def test_candidate_management_workflow():
                 "indos_no": f"IND{unique_id}"
             }
         },
-        "certificate_selections": {
-            "selected_courses": ["STCW", "H2S"],
-            "training_dates": {
-                "STCW": "2024-01-15",
-                "H2S": "2024-02-20"
-            }
-        }
     }
 
     try:
@@ -194,10 +187,6 @@ def test_candidate_management_workflow():
                 else:
                     print("❌ OCR data missing")
 
-                if json_data.get('certificate_selections'):
-                    print("✅ Certificate selections stored correctly")
-                else:
-                    print("❌ Certificate selections missing")
 
                 print("🎉 All workflow tests passed!")
                 return True

@@ -10,7 +10,6 @@
   - `mime_type` VARCHAR(100) - MIME type
   - `session_id` VARCHAR(100) - Session grouping
   - `ocr_data` JSONB - OCR results storage
-  - `certificate_selections` JSONB - Certificate data
   - `is_current_candidate` BOOLEAN - Current candidate flag
   - `is_certificate_selection` BOOLEAN - Certificate selection flag
   - `last_updated` TIMESTAMP - Last update timestamp

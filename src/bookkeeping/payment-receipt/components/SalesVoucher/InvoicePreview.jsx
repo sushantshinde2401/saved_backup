@@ -14,6 +14,7 @@ import {
   X
 } from 'lucide-react';
 import html2pdf from 'html2pdf.js';
+import axios from 'axios';
 
 function InvoicePreview() {
   const navigate = useNavigate();
@@ -51,6 +52,10 @@ function InvoicePreview() {
   const [applyGST, setApplyGST] = useState(data?.applyGST || false);
   const [gstRate, setGstRate] = useState(18); // Fixed GST rate for payment entry
 
+  // Certificate names state
+  const [certificateNames, setCertificateNames] = useState({});
+  const [loadingNames, setLoadingNames] = useState(false);
+
   // Update state when data changes
   useEffect(() => {
     if (data) {
@@ -71,6 +76,31 @@ function InvoicePreview() {
     }
   }, [data]);
 
+  // Fetch certificate names when component mounts or data changes
+  useEffect(() => {
+    const fetchCertificateNames = async () => {
+      const courseIds = data?.selectedCourses || formData?.selectedCourses || [];
+      if (courseIds.length > 0) {
+        setLoadingNames(true);
+        try {
+          const response = await axios.post('http://localhost:5000/certificate/get-candidate-names-by-ids', {
+            certificateIds: courseIds
+          });
+          if (response.data.status === 'success') {
+            setCertificateNames(response.data.data);
+          }
+        } catch (error) {
+          // Silently handle error - no console output for missing certificates
+          setCertificateNames({});
+        } finally {
+          setLoadingNames(false);
+        }
+      }
+    };
+
+    fetchCertificateNames();
+  }, [data, formData]);
+
   // Calculate totals
   const calculateTotals = () => {
     const baseAmount = amountReceived;
@@ -88,25 +118,78 @@ function InvoicePreview() {
 
   // Group selected courses by candidate name
   const formatSelectedCourses = () => {
-    const courses = data?.selectedCourses || formData?.selectedCourses || [];
-    if (!courses || courses.length === 0) {
-      return 'No courses selected';
+
+    // Priority: resolved courses from saved data, then try to resolve from availableCertificates
+    let coursesToUse = data?.selected_courses_resolved || [];
+
+    // If no resolved courses, try to resolve from IDs using availableCertificates or API data
+    if (coursesToUse.length === 0) {
+      const courseIds = data?.selectedCourses || formData?.selectedCourses || [];
+
+      if (courseIds.length > 0) {
+        const availableCerts = data?.availableCertificates || [];
+        if (availableCerts.length > 0) {
+          coursesToUse = courseIds.map(id => {
+            const cert = availableCerts.find(c => c.id === id);
+            return cert ? {
+              certificate_name: cert.certificate_name,
+              candidate_name: cert.candidate_name,
+              candidate_id: cert.candidate_id
+            } : null;
+          }).filter(Boolean);
+        } else if (Object.keys(certificateNames).length > 0) {
+          // Use API fetched data
+          coursesToUse = courseIds.map(id => {
+            const certData = certificateNames[id];
+            if (certData) {
+              return {
+                certificate_name: certData.certificate_name,
+                candidate_name: certData.candidate_name,
+                candidate_id: id
+              };
+            }
+            return null;
+          }).filter(Boolean);
+        } else {
+          // No certificates found - return empty array
+          coursesToUse = [];
+        }
+      }
     }
 
-    const grouped = courses.reduce((acc, course) => {
-      const candidateName = `${course.firstName || ''} ${course.lastName || ''}`.trim() || 'Unknown Candidate';
+    if (!coursesToUse || coursesToUse.length === 0) {
+      return loadingNames ? 'Loading certificate names...' : 'No certificates found for selected courses';
+    }
+
+    // Group by candidate and show candidate name with their certificates
+    const groupedByCandidate = coursesToUse.reduce((acc, course) => {
+      const candidateName = course.candidate_name || 'Unknown Candidate';
       if (!acc[candidateName]) {
         acc[candidateName] = [];
       }
-      const certName = course.certificateName || 'Unknown Certificate';
-      acc[candidateName].push(certName);
+      acc[candidateName].push(course.certificate_name || 'Unknown Certificate');
       return acc;
     }, {});
 
-    return Object.entries(grouped)
-      .map(([candidate, certificates]) => `${candidate} (${certificates.join(', ')})`)
+    // Format as "Candidate Name (Certificate1, Certificate2)"
+    const result = Object.entries(groupedByCandidate)
+      .map(([candidateName, certificates]) => {
+        // Clean candidate name: remove underscores and extract main name parts
+        const cleanCandidateName = candidateName
+          .replace(/_/g, ' ')
+          .split(' ')
+          .slice(0, 2) // Take first two parts (first name + last name)
+          .join(' ')
+          .toUpperCase();
+
+        const certList = certificates.join(', ');
+        return `${cleanCandidateName} (${certList})`;
+      })
       .join('\n');
+
+    return result;
   };
+
 
   // Convert number to words
   const numberToWords = (num) => {
@@ -179,7 +262,7 @@ function InvoicePreview() {
     window.print();
   };
 
-  const handleDownload = () => {
+  const handleDownload = async () => {
     const element = document.querySelector('.invoice-content');
     if (element) {
       // Clone the element to apply print styles
@@ -207,7 +290,51 @@ function InvoicePreview() {
           compress: true
         }
       };
-      html2pdf().set(opt).from(clonedElement).save();
+
+      try {
+        // Generate PDF blob
+        const pdfBlob = await html2pdf().set(opt).from(clonedElement).outputPdf('blob');
+
+        // Convert blob to base64
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          const base64Data = reader.result.split(',')[1]; // Remove data:application/pdf;base64, prefix
+
+          // Save to backend
+          fetch('http://127.0.0.1:5000/api/bookkeeping/save-invoice-image', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              invoice_no: data?.invoiceNo || 'N/A',
+              image_data: base64Data,
+              image_type: 'pdf',
+              file_name: `Tax_Invoice_${data?.invoiceNo || 'N/A'}.pdf`
+            })
+          })
+          .then(response => response.json())
+          .then(result => {
+            if (result.status === 'success') {
+              console.log('Invoice PDF saved to database successfully');
+            } else {
+              console.error('Failed to save invoice PDF to database:', result.message);
+            }
+          })
+          .catch(error => {
+            console.error('Error saving invoice PDF to database:', error);
+          });
+        };
+        reader.readAsDataURL(pdfBlob);
+
+        // Also save the PDF file locally
+        html2pdf().set(opt).from(clonedElement).save();
+
+      } catch (error) {
+        console.error('Error generating PDF:', error);
+        // Fallback to just saving locally
+        html2pdf().set(opt).from(clonedElement).save();
+      }
     }
   };
 

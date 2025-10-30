@@ -48,6 +48,7 @@ function CandidateDetails() {
     clientName: "",
     paymentStatus: "",
     rollNo: "",
+    personInCharge: "",
     paymentProof: null,
     session_id: sessionId || "",
   });
@@ -200,7 +201,7 @@ function CandidateDetails() {
 const handleChange = (e) => {
   const { id, value } = e.target;
 
-  const isDropdown = ["clientName", "paymentStatus"].includes(id);
+  const isDropdown = ["clientName", "paymentStatus", "personInCharge"].includes(id);
 
   // force uppercase here before saving to state
   const updatedFormData = {
@@ -322,6 +323,7 @@ const handleChange = (e) => {
     clientName: <Building2 size={16} />,
     paymentStatus: <CreditCard size={16} />,
     rollNo: <Wallet size={16} />,
+    personInCharge: <User size={16} />,
   };
 
   return (
@@ -614,10 +616,45 @@ const handleChange = (e) => {
               </motion.div>
 
               {/* Enhanced Payment Status dropdown */}
+              {/* Person In Charge dropdown */}
+              <motion.div
+                initial={{ x: -20, opacity: 0 }}
+                animate={{ x: 0, opacity: 1 }}
+                transition={{ delay: 2.3, duration: 0.5 }}
+                className="group"
+              >
+                <label
+                  htmlFor="personInCharge"
+                  className="block font-semibold mb-3 flex items-center gap-3 text-gray-700"
+                >
+                  <div className="w-8 h-8 bg-gradient-to-r from-purple-500 to-indigo-500 rounded-full flex items-center justify-center">
+                    <User size={16} className="text-white" />
+                  </div>
+                  Person In Charge:
+                </label>
+                <div className="relative">
+                  <select
+                    id="personInCharge"
+                    name="personInCharge"
+                    value={formData.personInCharge}
+                    onChange={handleChange}
+                    autoComplete="off"
+                    required
+                    className="w-full text-sm bg-white border-2 border-gray-200 rounded-xl px-4 py-3 focus:outline-none focus:border-purple-500 transition-colors duration-200 hover:border-purple-300 shadow-sm appearance-none"
+                  >
+                    <option value="">Select Person</option>
+                    <option value="SHUBHAM">SHUBHAM</option>
+                    <option value="CHANDAN">CHANDAN</option>
+                    <option value="ABHISHEK">ABHISHEK</option>
+                    <option value="BHUSHAN">BHUSHAN</option>
+                  </select>
+                </div>
+              </motion.div>
+
               <motion.div
                 initial={{ x: 20, opacity: 0 }}
                 animate={{ x: 0, opacity: 1 }}
-                transition={{ delay: 2.2, duration: 0.5 }}
+                transition={{ delay: 2.4, duration: 0.5 }}
                 className="group"
               >
                 <label

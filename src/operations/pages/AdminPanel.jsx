@@ -12,7 +12,10 @@ import {
   Lock,
   CheckCircle,
   AlertCircle,
-  Loader2
+  Loader2,
+  X,
+  ZoomIn,
+  FileText
 } from 'lucide-react';
 
 function AdminPanel() {
@@ -35,6 +38,22 @@ function AdminPanel() {
   const [selectedCandidateId, setSelectedCandidateId] = useState('');
   const [isLoadingCandidates, setIsLoadingCandidates] = useState(false);
 
+  // Combined data state
+  const [combinedData, setCombinedData] = useState(null);
+  const [selectedCandidateName, setSelectedCandidateName] = useState('');
+
+  // Invoice images state
+  const [invoiceImages, setInvoiceImages] = useState([]);
+  const [isLoadingInvoiceImages, setIsLoadingInvoiceImages] = useState(false);
+
+  // Image viewer state
+  const [imageViewer, setImageViewer] = useState({
+    isOpen: false,
+    imageSrc: '',
+    imageAlt: '',
+    imageTitle: ''
+  });
+
   // Authentication
   const handleAuth = () => {
     // Simple password check - in production, use proper authentication
@@ -48,16 +67,36 @@ function AdminPanel() {
     }
   };
 
+  // Security: Clear sensitive data on logout
+  const handleLogout = () => {
+    setIsAuthenticated(false);
+    setPassword('');
+    setAuthError('');
+    setCandidateData(null);
+    setCombinedData(null);
+    setImages([]);
+    setInvoiceImages([]);
+    setSelectedCandidateId('');
+    setSelectedCandidateName('');
+    setError('');
+    setCandidates([]);
+  };
+
   // Load all candidates for dropdown
   const loadCandidates = useCallback(async () => {
     setIsLoadingCandidates(true);
     try {
-      const response = await fetch('http://127.0.0.1:5000/candidate/get-all-candidates');
+      const response = await fetch('http://127.0.0.1:5000/candidate/get-unique-candidate-names');
       const result = await response.json();
 
       if (result.status === 'success') {
-        setCandidates(result.data);
-        if (result.data.length === 0) {
+        // Transform to match existing format
+        const candidateOptions = result.data.map((name, index) => ({
+          id: index + 1,
+          candidate_name: name
+        }));
+        setCandidates(candidateOptions);
+        if (candidateOptions.length === 0) {
           setError('No candidates found in the database');
         } else {
           setError(''); // Clear any previous error if candidates are found
@@ -67,7 +106,7 @@ function AdminPanel() {
       }
     } catch (err) {
       console.error('Failed to load candidates:', err);
-      setError('Failed to load candidates from database');
+      setError(`Failed to load candidates from database: ${err.message || 'Network error'}`);
     } finally {
       setIsLoadingCandidates(false);
     }
@@ -85,6 +124,53 @@ function AdminPanel() {
       return () => clearInterval(interval);
     }
   }, [isAuthenticated, loadCandidates]);
+
+  // Security: Clear data when component unmounts
+  useEffect(() => {
+    return () => {
+      setCandidateData(null);
+      setCombinedData(null);
+      setImages([]);
+      setInvoiceImages([]);
+      setSelectedCandidateId('');
+      setSelectedCandidateName('');
+      setError('');
+      setImageViewer({ isOpen: false, imageSrc: '', imageAlt: '', imageTitle: '' });
+    };
+  }, []);
+
+  // Keyboard handler for ESC key to close image viewer
+  useEffect(() => {
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape' && imageViewer.isOpen) {
+        closeImageViewer();
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [imageViewer.isOpen]);
+
+  // Image viewer functions
+  const openImageViewer = (imageSrc, imageAlt, imageTitle) => {
+    setImageViewer({
+      isOpen: true,
+      imageSrc,
+      imageAlt,
+      imageTitle
+    });
+  };
+
+  const closeImageViewer = () => {
+    setImageViewer({
+      isOpen: false,
+      imageSrc: '',
+      imageAlt: '',
+      imageTitle: ''
+    });
+  };
 
   // Search candidate
   const handleSearch = async () => {
@@ -173,6 +259,68 @@ function AdminPanel() {
     }
   };
 
+  // Load invoice images for candidate
+  const loadInvoiceImages = async (candidateName) => {
+    setIsLoadingInvoiceImages(true);
+    try {
+      // First get master data to find invoice numbers for this candidate
+      const masterResponse = await fetch(`http://127.0.0.1:5000/candidate/get-combined-candidate-data/${encodeURIComponent(candidateName)}`);
+      const masterResult = await masterResponse.json();
+
+      if (masterResult.status === 'success' && masterResult.data.master_data && masterResult.data.master_data.length > 0) {
+        // Get all invoice numbers for this candidate
+        const invoiceNumbers = masterResult.data.master_data
+          .map(record => record.invoice_no)
+          .filter(invoiceNo => invoiceNo && invoiceNo !== 'N/A');
+
+        if (invoiceNumbers.length > 0) {
+          // Load invoice images for each invoice number
+          const invoiceImagesPromises = invoiceNumbers.map(async (invoiceNo) => {
+            try {
+              const imageResponse = await fetch(`http://127.0.0.1:5000/api/bookkeeping/get-invoice-image/${encodeURIComponent(invoiceNo)}`);
+              if (imageResponse.ok) {
+                const imageResult = await imageResponse.json();
+
+                if (imageResult.status === 'success') {
+                  return {
+                    ...imageResult.data,
+                    candidate_name: candidateName,
+                    master_record: masterResult.data.master_data.find(record => record.invoice_no === invoiceNo)
+                  };
+                }
+              } else if (imageResponse.status === 404) {
+                // Invoice image not found - return placeholder object (expected for not yet generated)
+                return {
+                  invoice_no: invoiceNo,
+                  noImage: true,
+                  candidate_name: candidateName,
+                  master_record: masterResult.data.master_data.find(record => record.invoice_no === invoiceNo)
+                };
+              } else {
+                console.warn(`Unexpected response for invoice ${invoiceNo}: ${imageResponse.status}`);
+              }
+            } catch (error) {
+              console.warn(`Failed to load invoice image for ${invoiceNo}:`, error.message);
+            }
+            return null;
+          });
+
+          const loadedImages = (await Promise.all(invoiceImagesPromises)).filter(Boolean);
+          setInvoiceImages(loadedImages);
+        } else {
+          setInvoiceImages([]);
+        }
+      } else {
+        setInvoiceImages([]);
+      }
+    } catch (err) {
+      console.error('Failed to load invoice images:', err.message);
+      setInvoiceImages([]);
+    } finally {
+      setIsLoadingInvoiceImages(false);
+    }
+  };
+
   // Handle edit
   const handleEdit = () => {
     setIsEditing(true);
@@ -205,7 +353,7 @@ function AdminPanel() {
       }
     } catch (err) {
       console.error('Save error:', err);
-      setError('Failed to save changes');
+      setError(`Failed to save changes: ${err.message || 'Unknown error'}`);
     } finally {
       setIsLoading(false);
     }
@@ -223,8 +371,11 @@ function AdminPanel() {
   const handleCandidateSelect = async (candidateId) => {
     if (!candidateId) {
       setSelectedCandidateId('');
+      setSelectedCandidateName('');
       setCandidateData(null);
+      setCombinedData(null);
       setImages([]);
+      setInvoiceImages([]);
       setError('');
       return;
     }
@@ -233,23 +384,59 @@ function AdminPanel() {
     setIsLoading(true);
     setError('');
     setCandidateData(null);
+    setCombinedData(null);
     setImages([]);
+    setInvoiceImages([]);
 
     try {
       const candidate = candidates.find(c => c.id.toString() === candidateId);
       if (candidate) {
-        setCandidateData({
-          id: candidate.id,
-          ...candidate.candidate_data
-        });
-        setEditedData(candidate.candidate_data || {});
-        await loadCandidateImages(candidate.candidate_name);
+        const candidateName = candidate.candidate_name;
+        setSelectedCandidateName(candidateName);
+
+        // Load combined data from all sources
+        const response = await fetch(`http://127.0.0.1:5000/candidate/get-combined-candidate-data/${encodeURIComponent(candidateName)}`);
+        const result = await response.json();
+
+        if (result.status === 'success') {
+          setCombinedData(result.data);
+
+          // Set basic candidate data for editing
+          if (result.data.candidate_info) {
+            setCandidateData({
+              id: result.data.candidate_info.id,
+              ...result.data.candidate_info.json_data
+            });
+            setEditedData(result.data.candidate_info.json_data || {});
+          }
+
+          // Load images from uploads
+          if (result.data.uploads && result.data.uploads.length > 0) {
+            const imageFiles = result.data.uploads.filter(upload =>
+              upload.file_type && ['jpg', 'jpeg', 'png', 'gif'].includes(upload.file_type.toLowerCase())
+            ).map(upload => ({
+              id: upload.id,
+              file_name: upload.file_name,
+              file_type: upload.file_type,
+              mime_type: upload.mime_type,
+              file_size: upload.file_size,
+              image_num: 1, // Will be set properly when displaying
+              upload_time: upload.upload_time
+            }));
+            setImages(imageFiles);
+          }
+
+          // Load invoice images (don't await - let it run in background)
+          loadInvoiceImages(candidateName);
+        } else {
+          setError(result.message || 'Failed to load combined candidate data');
+        }
       } else {
         setError('Selected candidate not found');
       }
     } catch (err) {
       console.error('Failed to load candidate data:', err);
-      setError('Failed to load candidate data');
+      setError(`Failed to load candidate data: ${err.message || 'Unknown error'}`);
     } finally {
       setIsLoading(false);
     }
@@ -311,11 +498,11 @@ function AdminPanel() {
       {/* Grid Pattern Overlay */}
       <div className="absolute inset-0 bg-grid-pattern opacity-5"></div>
 
-      {/* Floating Back Button */}
+      {/* Floating Action Buttons */}
       <motion.div
         initial={{ opacity: 0, scale: 0.8 }}
         animate={{ opacity: 1, scale: 1 }}
-        className="fixed top-6 left-6 z-50"
+        className="fixed top-6 left-6 z-50 flex gap-3"
       >
         <motion.button
           onClick={() => navigate('/')}
@@ -325,6 +512,16 @@ function AdminPanel() {
         >
           <div className="absolute inset-0 bg-gradient-to-r from-gray-500 to-gray-600 rounded-full blur opacity-30 group-hover:opacity-50 transition-opacity duration-300"></div>
           <ArrowLeft size={20} className="relative z-10" />
+        </motion.button>
+
+        <motion.button
+          onClick={handleLogout}
+          whileHover={{ scale: 1.1, y: -2 }}
+          whileTap={{ scale: 0.9 }}
+          className="group relative bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 text-white p-3 rounded-full shadow-2xl transition-all duration-300"
+        >
+          <div className="absolute inset-0 bg-gradient-to-r from-red-500 to-red-600 rounded-full blur opacity-30 group-hover:opacity-50 transition-opacity duration-300"></div>
+          <Lock size={20} className="relative z-10" />
         </motion.button>
       </motion.div>
 
@@ -398,88 +595,166 @@ function AdminPanel() {
         </motion.div>
 
         {/* Candidate Data Display */}
-        {candidateData && (
+        {combinedData && (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.4 }}
-            className="max-w-6xl mx-auto"
+            className="max-w-6xl mx-auto space-y-8"
           >
-            <div className="bg-white/95 backdrop-blur-sm rounded-2xl shadow-xl p-8 border border-white/20 mb-8">
-              <div className="flex justify-between items-center mb-6">
-                <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-3">
-                  <User size={24} />
-                  Candidate Information
-                </h2>
-                <div className="flex gap-3">
-                  {!isEditing ? (
-                    <motion.button
-                      onClick={handleEdit}
-                      whileHover={{ scale: 1.05 }}
-                      whileTap={{ scale: 0.95 }}
-                      className="bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 text-white px-4 py-2 rounded-lg font-semibold transition-all duration-300 flex items-center gap-2"
-                    >
-                      <Edit size={16} />
-                      Edit
-                    </motion.button>
-                  ) : (
-                    <motion.button
-                      onClick={handleSave}
-                      disabled={isLoading}
-                      whileHover={{ scale: 1.05 }}
-                      whileTap={{ scale: 0.95 }}
-                      className="bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600 text-white px-4 py-2 rounded-lg font-semibold transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-                    >
-                      {isLoading ? <Loader2 className="animate-spin" size={16} /> : <Save size={16} />}
-                      Save
-                    </motion.button>
-                  )}
+            {/* Data Sources Summary */}
+            <div className="bg-white/95 backdrop-blur-sm rounded-2xl shadow-xl p-6 border border-white/20">
+              <h3 className="text-xl font-bold text-gray-800 mb-4">Data Sources Summary</h3>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-blue-600">{combinedData.data_sources.master_table_records}</div>
+                  <div className="text-sm text-gray-600">Master Table Records</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-green-600">{combinedData.data_sources.upload_files}</div>
+                  <div className="text-sm text-gray-600">Uploaded Files</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-purple-600">{combinedData.data_sources.certificate_records}</div>
+                  <div className="text-sm text-gray-600">Certificate Records</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-orange-600">{combinedData.data_sources.has_candidate_info ? '1' : '0'}</div>
+                  <div className="text-sm text-gray-600">Candidate Info</div>
                 </div>
               </div>
+            </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {Object.entries(isEditing ? editedData : candidateData).map(([key, value]) => (
-                  <div key={key} className="space-y-2">
-                    <label className="block font-semibold text-gray-700 capitalize">
-                      {key.replace(/([A-Z])/g, ' $1').trim()}:
-                    </label>
-                    {isEditing ? (
-                       typeof value === 'object' && value !== null ? (
-                         <textarea
-                           value={JSON.stringify(value, null, 2)}
-                           onChange={(e) => {
-                             try {
-                               const parsed = JSON.parse(e.target.value);
-                               handleInputChange(key, parsed);
-                             } catch {
-                               // If invalid JSON, store as string for now
-                               handleInputChange(key, e.target.value);
-                             }
-                           }}
-                           rows={4}
-                           className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:outline-none focus:border-blue-500 transition-colors font-mono text-sm"
-                           placeholder="JSON data"
-                         />
-                       ) : (
-                         <input
-                           type="text"
-                           value={value || ''}
-                           onChange={(e) => handleInputChange(key, e.target.value)}
-                           className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:outline-none focus:border-blue-500 transition-colors"
-                         />
-                       )
-                     ) : (
-                      <div className="px-3 py-2 bg-gray-50 rounded-lg text-gray-800">
-                        {typeof value === 'object' && value !== null
-                          ? JSON.stringify(value, null, 2)
-                          : (value || 'N/A')
-                        }
+            {/* Master Database Table A Data */}
+            {combinedData.master_data && combinedData.master_data.length > 0 && (
+              <div className="bg-white/95 backdrop-blur-sm rounded-2xl shadow-xl p-8 border border-white/20">
+                <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-3 mb-6">
+                  <Shield size={24} />
+                  Master Database Records
+                </h2>
+                <div className="space-y-4">
+                  {combinedData.master_data.map((record, index) => (
+                    <div key={index} className="border border-gray-200 rounded-lg p-4">
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        <div><strong>Client:</strong> {record.client_name} ({record.client_id})</div>
+                        <div><strong>Certificate:</strong> {record.certificate_name} ({record.certificate_id})</div>
+                        <div><strong>Invoice:</strong> {record.invoice_no}</div>
+                        <div><strong>Company:</strong> {record.companyName}</div>
+                        <div><strong>Person in Charge:</strong> {record.person_in_charge}</div>
+                        <div><strong>Creation Date:</strong> {record.creation_date ? new Date(record.creation_date).toISOString().slice(0, 19).replace('T', ' ') : 'Not Available'}</div>
+                        <div><strong>Terms:</strong> {record.terms_of_delivery}</div>
+                        <div><strong>Passport:</strong> {record.passport}</div>
+                        <div><strong>Nationality:</strong> {record.nationality}</div>
                       </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Certificate Selections */}
+            {combinedData.certificates && combinedData.certificates.length > 0 && (
+              <div className="bg-white/95 backdrop-blur-sm rounded-2xl shadow-xl p-8 border border-white/20">
+                <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-3 mb-6">
+                  <CheckCircle size={24} />
+                  Certificate Records
+                </h2>
+                <div className="space-y-4">
+                  {combinedData.certificates.map((cert, index) => (
+                    <div key={cert.id} className="border border-gray-200 rounded-lg p-4">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div><strong>Certificate:</strong> {cert.certificate_name}</div>
+                        <div><strong>Client:</strong> {cert.client_name}</div>
+                        <div><strong>Created:</strong> {new Date(cert.creation_date).toLocaleDateString()}</div>
+                        <div><strong>Images:</strong>
+                          {cert.has_verification_image && <span className="text-green-600 ml-2">✓ Verification</span>}
+                          {cert.has_certificate_image && <span className="text-green-600 ml-2">✓ Certificate</span>}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Candidate Information */}
+            {candidateData && (
+              <div className="bg-white/95 backdrop-blur-sm rounded-2xl shadow-xl p-8 border border-white/20">
+                <div className="flex justify-between items-center mb-6">
+                  <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-3">
+                    <User size={24} />
+                    Candidate Information
+                  </h2>
+                  <div className="flex gap-3">
+                    {!isEditing ? (
+                      <motion.button
+                        onClick={handleEdit}
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                        className="bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 text-white px-4 py-2 rounded-lg font-semibold transition-all duration-300 flex items-center gap-2"
+                      >
+                        <Edit size={16} />
+                        Edit
+                      </motion.button>
+                    ) : (
+                      <motion.button
+                        onClick={handleSave}
+                        disabled={isLoading}
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                        className="bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600 text-white px-4 py-2 rounded-lg font-semibold transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                      >
+                        {isLoading ? <Loader2 className="animate-spin" size={16} /> : <Save size={16} />}
+                        Save
+                      </motion.button>
                     )}
                   </div>
-                ))}
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {Object.entries(isEditing ? editedData : candidateData).map(([key, value]) => (
+                    <div key={key} className="space-y-2">
+                      <label className="block font-semibold text-gray-700 capitalize">
+                        {key.replace(/([A-Z])/g, ' $1').trim()}:
+                      </label>
+                      {isEditing ? (
+                          typeof value === 'object' && value !== null ? (
+                            <textarea
+                              value={JSON.stringify(value, null, 2)}
+                              onChange={(e) => {
+                                try {
+                                  const parsed = JSON.parse(e.target.value);
+                                  handleInputChange(key, parsed);
+                                } catch {
+                                  // If invalid JSON, store as string for now
+                                  handleInputChange(key, e.target.value);
+                                }
+                              }}
+                              rows={4}
+                              className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:outline-none focus:border-blue-500 transition-colors font-mono text-sm"
+                              placeholder="JSON data"
+                            />
+                          ) : (
+                            <input
+                              type="text"
+                              value={value || ''}
+                              onChange={(e) => handleInputChange(key, e.target.value)}
+                              className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:outline-none focus:border-blue-500 transition-colors"
+                            />
+                          )
+                        ) : (
+                         <div className="px-3 py-2 bg-gray-50 rounded-lg text-gray-800">
+                           {typeof value === 'object' && value !== null
+                             ? JSON.stringify(value, null, 2)
+                             : (value || 'N/A')
+                           }
+                         </div>
+                       )}
+                    </div>
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Images Section */}
             {images.length > 0 && (
@@ -491,7 +766,7 @@ function AdminPanel() {
               >
                 <h3 className="text-2xl font-bold text-gray-800 flex items-center gap-3 mb-6">
                   <ImageIcon size={24} />
-                  Candidate Images
+                  Uploaded Images ({images.length})
                 </h3>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -503,24 +778,336 @@ function AdminPanel() {
                       transition={{ delay: 0.1 * index }}
                       className="group relative"
                     >
-                      <div className="aspect-square bg-gray-100 rounded-xl overflow-hidden shadow-lg">
+                      <div className="aspect-square bg-gray-100 rounded-xl overflow-hidden shadow-lg cursor-pointer group-hover:shadow-xl transition-shadow duration-300 relative">
                         <img
-                          src={`http://127.0.0.1:5000/candidate/image/${candidateData.id}/${image.image_num}`}
+                          src={`http://127.0.0.1:5000/candidate/download-image/${image.id}`}
                           alt={image.file_name}
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                          className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-300"
+                          onClick={() => openImageViewer(`http://127.0.0.1:5000/candidate/download-image/${image.id}`, image.file_name, `Uploaded Image: ${image.file_name}`)}
                           onError={(e) => {
-                            e.target.src = '/placeholder-image.png';
+                            console.error('Image failed to load:', image.id, image.file_name);
+                            e.target.style.display = 'none';
+                            if (e.target.nextElementSibling) {
+                              e.target.nextElementSibling.style.display = 'flex';
+                            }
                           }}
+                          style={{ imageRendering: 'auto' }}
                         />
+                        <div className="hidden w-full h-full items-center justify-center text-gray-500 text-sm bg-gray-100">
+                          <div className="text-center">
+                            <ImageIcon size={24} className="mx-auto mb-2 opacity-50" />
+                            Image not available
+                          </div>
+                        </div>
+                        {/* Zoom indicator */}
+                        <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 transition-all duration-300 flex items-center justify-center opacity-0 group-hover:opacity-100 pointer-events-none">
+                          <ZoomIn size={32} className="text-white drop-shadow-lg" />
+                        </div>
                       </div>
                       <div className="mt-2 text-sm text-gray-600 text-center">
-                        {image.file_name}
+                        <div className="font-medium">{image.file_name}</div>
+                        <div className="text-xs text-gray-500">
+                          {image.file_type?.toUpperCase()} • {(image.file_size / 1024).toFixed(1)} KB
+                        </div>
+                        {image.upload_time && (
+                          <div className="text-xs text-gray-500">
+                            {new Date(image.upload_time).toLocaleDateString()}
+                          </div>
+                        )}
                       </div>
                     </motion.div>
                   ))}
                 </div>
               </motion.div>
             )}
+
+            {/* Invoice Images Section */}
+            {invoiceImages.length > 0 && (
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.6 }}
+                className="bg-white/95 backdrop-blur-sm rounded-2xl shadow-xl p-8 border border-white/20"
+              >
+                <h3 className="text-2xl font-bold text-gray-800 flex items-center gap-3 mb-6">
+                  <FileText size={24} />
+                  Invoice Images ({invoiceImages.length})
+                  {isLoadingInvoiceImages && <Loader2 className="animate-spin" size={20} />}
+                </h3>
+
+                <div className="space-y-6">
+                  {invoiceImages.map((invoiceImage, index) => (
+                    <motion.div
+                      key={invoiceImage.id || invoiceImage.invoice_no}
+                      initial={{ opacity: 0, scale: 0.95 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      transition={{ delay: 0.1 * index }}
+                      className="border border-gray-200 rounded-lg p-6 bg-gradient-to-r from-blue-50 to-indigo-50"
+                    >
+                      <div className="flex justify-between items-start mb-4">
+                        <div>
+                          <h4 className="text-lg font-bold text-gray-800 mb-2">
+                            Invoice: {invoiceImage.invoice_no}
+                          </h4>
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm text-gray-600">
+                            {invoiceImage.noImage ? (
+                              <div className="col-span-4 text-orange-600 font-medium">
+                                <strong>Status:</strong> No invoice image available
+                              </div>
+                            ) : (
+                              <>
+                                <div><strong>Generated:</strong> {new Date(invoiceImage.generated_at).toLocaleDateString()}</div>
+                                <div><strong>Size:</strong> {(invoiceImage.file_size / 1024).toFixed(1)} KB</div>
+                                <div><strong>Type:</strong> {invoiceImage.image_type.toUpperCase()}</div>
+                                <div><strong>Client:</strong> {invoiceImage.master_record?.client_name || 'N/A'}</div>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                        {!invoiceImage.noImage && (
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => openImageViewer(
+                                `data:application/pdf;base64,${invoiceImage.image_data}`,
+                                `Invoice ${invoiceImage.invoice_no}`,
+                                `Tax Invoice - ${invoiceImage.invoice_no}`
+                              )}
+                              className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-semibold transition-colors flex items-center gap-2"
+                            >
+                              <ZoomIn size={16} />
+                              View PDF
+                            </button>
+                            <a
+                              href={`data:application/pdf;base64,${invoiceImage.image_data}`}
+                              download={invoiceImage.file_name}
+                              className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-semibold transition-colors flex items-center gap-2"
+                            >
+                              <FileText size={16} />
+                              Download
+                            </a>
+                          </div>
+                        )}
+                      </div>
+
+                      {invoiceImage.noImage ? (
+                        /* No Image Placeholder */
+                        <div className="bg-white rounded-lg border-2 border-gray-200 overflow-hidden shadow-lg">
+                          <div className="bg-gray-100 px-4 py-2 border-b border-gray-200">
+                            <h5 className="font-semibold text-gray-800">Invoice Preview</h5>
+                          </div>
+                          <div className="p-4">
+                            <div className="w-full h-96 flex items-center justify-center text-gray-500 text-sm bg-gray-100 rounded border-2 border-dashed border-gray-300">
+                              <div className="text-center">
+                                <FileText size={48} className="mx-auto mb-4 opacity-50" />
+                                <p className="font-medium">No invoice image available</p>
+                                <p className="text-xs">Invoice PDF has not been generated yet</p>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ) : (
+                        /* Invoice Preview */
+                        <div className="bg-white rounded-lg border-2 border-gray-200 overflow-hidden shadow-lg">
+                          <div className="bg-gray-100 px-4 py-2 border-b border-gray-200">
+                            <h5 className="font-semibold text-gray-800">Invoice Preview</h5>
+                          </div>
+                          <div className="p-4">
+                            <iframe
+                              src={`data:application/pdf;base64,${invoiceImage.image_data}`}
+                              className="w-full h-[600px] border-0 rounded"
+                              title={`Invoice ${invoiceImage.invoice_no}`}
+                              scrolling="yes"
+                              onError={(e) => {
+                                console.error('Invoice PDF failed to load:', invoiceImage.id);
+                                e.target.style.display = 'none';
+                                if (e.target.nextElementSibling) {
+                                  e.target.nextElementSibling.style.display = 'flex';
+                                }
+                              }}
+                            />
+                            <div className="hidden w-full h-[600px] items-center justify-center text-gray-500 text-sm bg-gray-100 rounded border-2 border-dashed border-gray-300">
+                              <div className="text-center">
+                                <FileText size={48} className="mx-auto mb-4 opacity-50" />
+                                <p className="font-medium">Invoice PDF Preview</p>
+                                <p className="text-xs">Click "View PDF" to open in full screen</p>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Related Master Data */}
+                      {invoiceImage.master_record && (
+                        <div className="mt-4 p-4 bg-gray-50 rounded-lg">
+                          <h6 className="font-semibold text-gray-700 mb-2">Related Information:</h6>
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                            <div><strong>Certificates:</strong> {invoiceImage.master_record.certificate_name}</div>
+                            <div><strong>Company:</strong> {invoiceImage.master_record.companyName}</div>
+                            <div><strong>Amount:</strong> ₹{invoiceImage.master_record.final_amount || 'N/A'}</div>
+                          </div>
+                        </div>
+                      )}
+                    </motion.div>
+                  ))}
+                </div>
+              </motion.div>
+            )}
+
+            {/* Certificate Images Section */}
+            {combinedData && combinedData.certificates && combinedData.certificates.some(cert => cert.has_verification_image || cert.has_certificate_image) && (
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.7 }}
+                className="bg-white/95 backdrop-blur-sm rounded-2xl shadow-xl p-8 border border-white/20"
+              >
+                <h3 className="text-2xl font-bold text-gray-800 flex items-center gap-3 mb-6">
+                  <Shield size={24} />
+                  Certificate Images
+                </h3>
+
+                <div className="space-y-6">
+                  {combinedData.certificates.filter(cert => cert.has_verification_image || cert.has_certificate_image).map((cert) => (
+                    <div key={cert.id} className="border border-gray-200 rounded-lg p-4">
+                      <h4 className="font-semibold text-gray-800 mb-3">{cert.certificate_name}</h4>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {cert.has_verification_image && (
+                          <div>
+                            <div className="text-sm font-medium text-gray-600 mb-2">Verification Image</div>
+                            <div className="aspect-video bg-gray-100 rounded-lg overflow-hidden shadow-lg cursor-pointer group-hover:shadow-xl transition-shadow duration-300 relative group">
+                              <img
+                                src={`http://127.0.0.1:5000/certificate/verification-image/${cert.id}`}
+                                alt={`Verification - ${cert.certificate_name}`}
+                                className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-300"
+                                onClick={() => openImageViewer(`http://127.0.0.1:5000/certificate/verification-image/${cert.id}`, `Verification - ${cert.certificate_name}`, `Verification Image: ${cert.certificate_name}`)}
+                                onError={(e) => {
+                                  console.error('Verification image failed to load:', cert.id, cert.certificate_name);
+                                  e.target.style.display = 'none';
+                                  if (e.target.nextElementSibling) {
+                                    e.target.nextElementSibling.style.display = 'flex';
+                                  }
+                                }}
+                                style={{ imageRendering: 'auto' }}
+                              />
+                              <div className="hidden w-full h-full items-center justify-center text-gray-500 text-sm bg-gray-100">
+                                <div className="text-center">
+                                  <ImageIcon size={24} className="mx-auto mb-2 opacity-50" />
+                                  Image not available
+                                </div>
+                              </div>
+                              {/* Zoom indicator */}
+                              <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 transition-all duration-300 flex items-center justify-center opacity-0 group-hover:opacity-100 pointer-events-none">
+                                <ZoomIn size={32} className="text-white drop-shadow-lg" />
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                        {cert.has_certificate_image && (
+                          <div>
+                            <div className="text-sm font-medium text-gray-600 mb-2">Certificate Image</div>
+                            <div className="aspect-video bg-gray-100 rounded-lg overflow-hidden shadow-lg cursor-pointer group-hover:shadow-xl transition-shadow duration-300 relative group">
+                              <img
+                                src={`http://127.0.0.1:5000/certificate/certificate-image/${cert.id}`}
+                                alt={`Certificate - ${cert.certificate_name}`}
+                                className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-300"
+                                onClick={() => openImageViewer(`http://127.0.0.1:5000/certificate/certificate-image/${cert.id}`, `Certificate - ${cert.certificate_name}`, `Certificate Image: ${cert.certificate_name}`)}
+                                onError={(e) => {
+                                  console.error('Certificate image failed to load:', cert.id, cert.certificate_name);
+                                  e.target.style.display = 'none';
+                                  if (e.target.nextElementSibling) {
+                                    e.target.nextElementSibling.style.display = 'flex';
+                                  }
+                                }}
+                                style={{ imageRendering: 'auto' }}
+                              />
+                              <div className="hidden w-full h-full items-center justify-center text-gray-500 text-sm bg-gray-100">
+                                <div className="text-center">
+                                  <ImageIcon size={24} className="mx-auto mb-2 opacity-50" />
+                                  Image not available
+                                </div>
+                              </div>
+                              {/* Zoom indicator */}
+                              <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 transition-all duration-300 flex items-center justify-center opacity-0 group-hover:opacity-100 pointer-events-none">
+                                <ZoomIn size={32} className="text-white drop-shadow-lg" />
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </motion.div>
+            )}
+
+            {/* No Data Message */}
+            {combinedData && !candidateData && images.length === 0 && combinedData.certificates.length === 0 && combinedData.master_data.length === 0 && (
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="bg-white/95 backdrop-blur-sm rounded-2xl shadow-xl p-8 border border-white/20 text-center"
+              >
+                <AlertCircle size={48} className="mx-auto text-gray-400 mb-4" />
+                <h3 className="text-xl font-semibold text-gray-600 mb-2">No Data Available</h3>
+                <p className="text-gray-500">No records found for this candidate in any of the data sources.</p>
+              </motion.div>
+            )}
+          </motion.div>
+        )}
+
+        {/* Full-Screen Image Viewer */}
+        {imageViewer.isOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 bg-black flex items-center justify-center"
+            onClick={closeImageViewer}
+          >
+            {/* Close button */}
+            <button
+              onClick={closeImageViewer}
+              className="absolute top-4 right-4 z-60 p-3 bg-black bg-opacity-50 hover:bg-opacity-70 text-white rounded-full transition-all duration-200"
+            >
+              <X size={24} />
+            </button>
+
+            {/* Image */}
+            <motion.img
+              initial={{ scale: 0.8, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.8, opacity: 0 }}
+              src={imageViewer.imageSrc}
+              alt={imageViewer.imageAlt}
+              className="max-w-full max-h-full object-contain"
+              style={{
+                imageRendering: 'auto',
+                width: 'auto',
+                height: 'auto',
+                maxWidth: '95vw',
+                maxHeight: '95vh'
+              }}
+              onClick={(e) => e.stopPropagation()}
+              onError={(e) => {
+                e.target.style.display = 'none';
+                if (e.target.nextElementSibling) {
+                  e.target.nextElementSibling.style.display = 'flex';
+                }
+              }}
+            />
+
+            {/* Error fallback */}
+            <div className="hidden w-full h-full items-center justify-center text-white text-xl bg-gray-900">
+              <div className="text-center">
+                <ImageIcon size={64} className="mx-auto mb-4 opacity-50" />
+                Image failed to load
+              </div>
+            </div>
+
+            {/* Instructions overlay */}
+            <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 bg-black bg-opacity-50 text-white px-4 py-2 rounded-full text-sm">
+              Click anywhere or press ESC to close
+            </div>
           </motion.div>
         )}
       </div>

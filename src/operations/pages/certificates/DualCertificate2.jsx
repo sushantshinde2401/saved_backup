@@ -94,7 +94,7 @@ function DualCertificate2() {
     };
   }, []);
 
-  // STEP 3: Fetch Name functionality - Extract and save certificate data for financial tracking
+  // STEP 3: Fetch Name functionality - Extract and save certificate data with filled images for financial tracking
   const handleFetchName = async () => {
     // Double-check validation (should not be needed due to button state)
     if (!isFetchNameEnabled) {
@@ -116,18 +116,42 @@ function DualCertificate2() {
     const certificateName = "MODU Survival Training";
 
     try {
-      // STEP 3 & 4: Save certificate data for financial tracking
+      // STEP 3 & 4: Save certificate data with filled images for financial tracking
+      // Get selected company from candidate data
+      const selectedCompanyData = JSON.parse(localStorage.getItem('selectedCompanyForCandidate') || '{}');
+      const candidateName = `${candidateData.firstName.trim()}_${candidateData.lastName.trim()}_${candidateData.passport.trim()}`;
+
+      // Convert canvas images to base64 data URLs
+      const convertCanvasToBase64 = (canvas) => {
+        return new Promise((resolve) => {
+          canvas.toBlob((blob) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result);
+            reader.readAsDataURL(blob);
+          }, 'image/png');
+        });
+      };
+
+      // Get base64 data for both canvases
+      const verificationImageData = await convertCanvasToBase64(canvasLeftRef.current);
+      const certificateImageData = await convertCanvasToBase64(canvasRightRef.current);
+
       const certificateData = {
         firstName: candidateData.firstName,
         lastName: candidateData.lastName,
+        passport: candidateData.passport,
+        clientName: candidateData.clientName,
         certificateName: certificateName,
         // Use company from candidate details (partyName field)
         companyName: candidateData.partyName || "",
         // Get rate data from localStorage for amount calculation
-        rateData: JSON.parse(localStorage.getItem('courseRates') || '{}')
+        rateData: JSON.parse(localStorage.getItem('courseRates') || '{}'),
+        // Include filled certificate images
+        verificationImageData: verificationImageData, // STSDSD verification image
+        certificateImageData: certificateImageData    // Angel Maritime certificate image
       };
 
-      const response = await fetch('http://localhost:5000/save-certificate-data', {
+      const response = await fetch('http://127.0.0.1:5000/certificate/save-certificate-data', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -137,12 +161,12 @@ function DualCertificate2() {
 
       if (response.ok) {
         const result = await response.json();
-        console.log('[CERTIFICATE] Certificate data saved for receipt processing:', result);
+        console.log('[CERTIFICATE] Certificate data with images saved to certificate_selections table:', result);
 
         if (result.duplicate) {
-          alert(`⚠️ Certificate Already Exists!\n\nCandidate: ${candidateData.firstName} ${candidateData.lastName}\nCertificate: ${certificateName}\n\nThis certificate has already been added to the receipt processing list.`);
+          alert(`⚠️ Certificate Already Exists!\n\nCandidate: ${candidateData.firstName} ${candidateData.lastName}\nCertificate: ${certificateName}\n\nThis certificate has already been added to the certificate_selections table.`);
         } else {
-          alert(`✅ Certificate Added Successfully!\n\nCandidate: ${candidateData.firstName} ${candidateData.lastName}\nCertificate: ${certificateName}\n\nData saved for receipt processing.\nTotal certificates available: ${result.total_certificates}`);
+          alert(`✅ Certificate Added Successfully!\n\nCandidate: ${candidateData.firstName} ${candidateData.lastName}\nCertificate: ${certificateName}\n\nCertificate images saved to certificate_selections table.\nTotal certificates available: ${result.total_certificates}`);
 
           // Dispatch events for real-time synchronization
           window.dispatchEvent(new CustomEvent('certificateDataUpdated', {
@@ -150,14 +174,16 @@ function DualCertificate2() {
               type: 'certificate_added',
               data: result.data,
               certificateName: certificateName,
-              candidateName: `${candidateData.firstName} ${candidateData.lastName}`
+              candidateName: `${candidateData.firstName} ${candidateData.lastName}`,
+              hasImages: true
             }
           }));
           window.dispatchEvent(new CustomEvent('dataUpdated', {
             detail: {
               type: 'certificate',
               action: 'added',
-              data: result.data
+              data: result.data,
+              hasImages: true
             }
           }));
         }
@@ -191,8 +217,15 @@ function DualCertificate2() {
       if (response.ok) {
         const result = await response.json();
         if (result.status === 'success' && result.data) {
-          setCandidateData(result.data);
-          console.log("[CANDIDATE] Current candidate data fetched successfully:", result.data);
+          // Ensure data is trimmed to prevent whitespace issues
+          const trimmedData = {
+            ...result.data,
+            firstName: result.data.firstName?.trim() || '',
+            lastName: result.data.lastName?.trim() || '',
+            passport: result.data.passport?.trim() || ''
+          };
+          setCandidateData(trimmedData);
+          console.log("[CANDIDATE] Current candidate data fetched and trimmed successfully:", trimmedData);
         } else {
           console.warn("[CANDIDATE] No current candidate data available");
           setCandidateData(null);

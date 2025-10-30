@@ -99,52 +99,6 @@ def migrate_ocr_data():
     print(f"📊 OCR migration complete: {migrated_count} successful, {error_count} errors")
     return migrated_count > 0
 
-def migrate_certificate_selections():
-    """Migrate certificate_selections_for_receipt.json to database"""
-    print("🔄 Migrating certificate selections...")
-
-    json_path = "uploads/json/certificate_selections_for_receipt.json"
-    if not os.path.exists(json_path):
-        print("⚠️  Certificate selections JSON file not found, skipping...")
-        return False
-
-    try:
-        with open(json_path, 'r', encoding='utf-8') as f:
-            selections_data = json.load(f)
-
-        # First, unset any existing certificate selections
-        execute_query("""
-            UPDATE candidate_uploads
-            SET is_certificate_selection = FALSE
-            WHERE is_certificate_selection = TRUE
-        """, fetch=False)
-
-        # Insert certificate selections
-        result = execute_query("""
-            INSERT INTO candidate_uploads (
-                candidate_name, file_name, file_type, file_path, certificate_selections, is_certificate_selection, last_updated
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s)
-            RETURNING id
-        """, (
-            "certificate_selections",
-            "certificate_selections_for_receipt.json",  # Original filename
-            'json',  # File type
-            'database_storage',  # Placeholder file path
-            json.dumps(selections_data),
-            True,
-            None
-        ))
-
-        if result:
-            print("✅ Migrated certificate selections")
-            return True
-        else:
-            print("❌ Failed to insert certificate selections")
-            return False
-
-    except Exception as e:
-        print(f"❌ Error migrating certificate selections: {e}")
-        return False
 
 def verify_migration():
     """Verify that migration was successful"""
@@ -185,7 +139,7 @@ if __name__ == "__main__":
     print("🚀 Starting JSON to Database Migration...")
 
     success_count = 0
-    total_steps = 4
+    total_steps = 3
 
     # Step 1: Migrate current candidate
     if migrate_current_candidate():
@@ -195,9 +149,6 @@ if __name__ == "__main__":
     if migrate_ocr_data():
         success_count += 1
 
-    # Step 3: Migrate certificate selections
-    if migrate_certificate_selections():
-        success_count += 1
 
     # Step 4: Verify migration
     if verify_migration():

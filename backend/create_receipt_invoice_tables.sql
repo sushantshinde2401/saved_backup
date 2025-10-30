@@ -4,7 +4,7 @@
 -- Create ReceiptInvoiceData table (for steps 1-4 data)
 CREATE TABLE IF NOT EXISTS ReceiptInvoiceData (
     invoice_no VARCHAR(50) PRIMARY KEY,
-    candidate_id INTEGER NOT NULL UNIQUE REFERENCES candidates(candidate_id),
+    candidate_id INTEGER NOT NULL REFERENCES certificate_selections(candidate_id),
     company_name VARCHAR(255),
     company_account_number VARCHAR(100),
     customer_name VARCHAR(255),
@@ -37,7 +37,7 @@ CREATE INDEX IF NOT EXISTS idx_receipt_invoice_data_party_name ON ReceiptInvoice
 -- Add comments for documentation
 COMMENT ON TABLE ReceiptInvoiceData IS 'Stores invoice data from NewStepper steps 1-4';
 COMMENT ON COLUMN ReceiptInvoiceData.invoice_no IS 'Unique invoice number (Primary Key)';
-COMMENT ON COLUMN ReceiptInvoiceData.candidate_id IS 'Foreign key reference to candidates table (one-to-one relationship)';
+COMMENT ON COLUMN ReceiptInvoiceData.candidate_id IS 'Foreign key reference to certificate_selections table (candidate_id column)';
 COMMENT ON COLUMN ReceiptInvoiceData.selected_courses IS 'JSON array of selected courses/certificates';
 COMMENT ON COLUMN ReceiptInvoiceData.final_amount IS 'Final amount after GST applied';
 COMMENT ON COLUMN ReceiptInvoiceData.gst_applied IS 'Boolean flag indicating if GST is applied';
@@ -51,7 +51,7 @@ BEGIN
     RAISE NOTICE '';
     RAISE NOTICE 'ReceiptInvoiceData table structure:';
     RAISE NOTICE '- invoice_no: VARCHAR(50) PRIMARY KEY';
-    RAISE NOTICE '- candidate_id: INTEGER NOT NULL UNIQUE REFERENCES candidates(candidate_id)';
+    RAISE NOTICE '- candidate_id: INTEGER NOT NULL REFERENCES certificate_selections(candidate_id)';
     RAISE NOTICE '- company_name, customer_name, party_name: VARCHAR(255)';
     RAISE NOTICE '- amount, gst, cgst, sgst, final_amount: DECIMAL(10,2)';
     RAISE NOTICE '- gst_applied: BOOLEAN';

@@ -153,8 +153,8 @@ function NewStepper() {
     { id: 2, title: 'Client Info', icon: Users, description: 'Client information' },
     { id: 3, title: 'Billing Info', icon: Receipt, description: 'Billing configuration' },
     { id: 4, title: 'Invoice Details', icon: Truck, description: 'Delivery & dispatch info' },
-    { id: 5, title: 'Finalize', icon: Eye, description: 'Finalize & upload' },
-    { id: 6, title: 'Preview & Download', icon: FileText, description: 'Preview and download invoice' }
+    { id: 5, title: 'Preview & Download', icon: FileText, description: 'Preview and download invoice' },
+    { id: 6, title: 'Finalize', icon: CheckCircle2, description: 'Finalize & upload' }
   ];
 
   // Load data on component mount
@@ -199,9 +199,10 @@ function NewStepper() {
   // Load available certificates
   const loadAvailableCertificates = async () => {
     try {
-      const response = await fetch('http://localhost:5000/get-certificate-selections-for-receipt');
+      const response = await fetch('http://localhost:5000/certificate/get-certificate-selections-for-receipt');
       if (response.ok) {
         const result = await response.json();
+        console.log('Loaded certificates:', result.data);
         dispatch({ type: 'SET_AVAILABLE_CERTIFICATES', payload: result.data || [] });
       }
     } catch (error) {
@@ -281,19 +282,22 @@ function NewStepper() {
 
     try {
       // First get all certificates
-      const response = await fetch('http://localhost:5000/get-certificate-selections-for-receipt');
+      const response = await fetch('http://localhost:5000/certificate/get-certificate-selections-for-receipt');
       if (response.ok) {
         const result = await response.json();
         const certificates = result.data || [];
 
-        // Get certificate IDs that need updating (those without companyName or with empty companyName)
+        // Get certificate IDs that need updating (those without client_name or with empty client_name)
         const certificateIdsToUpdate = certificates
-          .filter(cert => !cert.companyName || cert.companyName.trim() === '')
+          .filter(cert => !cert.client_name || cert.client_name.trim() === '')
           .map(cert => cert.id);
+
+        console.log('[INVOICE] Certificates to update:', certificateIdsToUpdate);
+        console.log('[INVOICE] Company name:', companyName);
 
         if (certificateIdsToUpdate.length > 0) {
           // Update certificates with company name and rate data
-          const updateResponse = await fetch('http://localhost:5000/update-certificate-company-data', {
+          const updateResponse = await fetch('http://localhost:5000/certificate/update-certificate-company-data', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -312,9 +316,14 @@ function NewStepper() {
             // Reload available certificates to reflect the changes
             loadAvailableCertificates();
           } else {
-            console.error('[INVOICE] Failed to update certificates with company data');
+            const errorText = await updateResponse.text();
+            console.error('[INVOICE] Failed to update certificates with company data:', updateResponse.status, errorText);
           }
+        } else {
+          console.log('[INVOICE] No certificates need updating');
         }
+      } else {
+        console.error('[INVOICE] Failed to fetch certificates for update');
       }
     } catch (error) {
       console.error('[INVOICE] Error updating certificates with company:', error);
@@ -363,7 +372,7 @@ function NewStepper() {
   const nextStep = async () => {
     if (state.currentStep < 6) {
       // Check if data upload is required and completed before proceeding
-      if (state.currentStep === 5 && !state.savedInvoiceData) {
+      if (state.currentStep === 6 && !state.savedInvoiceData) {
         toast.error('Please upload the invoice data before proceeding to the next step.');
         return;
       }
@@ -408,13 +417,14 @@ function NewStepper() {
         }
         break;
       case 4:
-        // InvoiceDetails step - no validation needed, just proceed
+        // InvoiceDetails step - validate delivery date
+        if (!state.formData.deliveryNoteDate) errors.push('Delivery Note Date is required');
         break;
       case 5:
-        // Finalize step - no validation needed, just proceed
+        // Preview & Download step - no validation needed, just proceed
         break;
       case 6:
-        // Preview & Download step - no validation needed, just proceed
+        // Finalize step - no validation needed, just proceed
         break;
       default:
         break;
@@ -442,78 +452,60 @@ function NewStepper() {
     throw new Error('No candidates found');
   };
 
-  // Get or create candidate ID based on customer type
+  // Get candidate ID from selected certificate selections
   const getCandidateId = async () => {
     try {
-      if (state.formData.customerType === 'B2C') {
-        // For B2C, try to search for existing candidate first
-        if (state.formData.b2cPhoneNumber) {
-          try {
-            const searchResponse = await fetch(`http://localhost:5000/candidate/search-candidates?q=${encodeURIComponent(state.formData.b2cPhoneNumber)}&field=phone`);
-            if (searchResponse.ok) {
-              const searchResult = await searchResponse.json();
-              if (searchResult.data && searchResult.data.length > 0) {
-                console.log('Found existing candidate:', searchResult.data[0]);
-                return searchResult.data[0].candidate_id || searchResult.data[0].id;
-              }
-            }
-          } catch (searchError) {
-            console.warn('Search failed, proceeding to create:', searchError);
-          }
-        }
+      // Get the first selected course to determine candidate_id
+      const selectedCourses = state.formData.selectedCourses || [];
+      if (selectedCourses.length === 0) {
+        throw new Error('No courses selected - cannot determine candidate_id');
+      }
 
-        // Create new candidate if not found
-        const candidateData = {
-          firstName: state.formData.b2cFullName || 'Unknown',
-          lastName: '',
-          passport: state.formData.b2cPhoneNumber || `B2C_${Date.now()}`, // Unique identifier
-          dob: state.formData.b2cDateOfBirth || '',
-          email: state.formData.b2cEmail || '',
-          phone: state.formData.b2cPhoneNumber || '',
-          address: state.formData.b2cAddress || '',
-          city: state.formData.b2cCity || '',
-          state: state.formData.b2cState || '',
-          pincode: state.formData.b2cPincode || '',
-          gender: state.formData.b2cGender || ''
-        };
+      // Get certificate details for the first selected course
+      const firstCourseId = selectedCourses[0];
 
-        const response = await fetch('http://localhost:5000/candidate/save-candidate-data', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(candidateData),
-        });
+      console.log('Looking for certificate ID:', firstCourseId);
+      console.log('Available certificates count:', state.availableCertificates.length);
 
+      // Always fetch fresh data from API to ensure we have the latest certificates
+      console.log(`Fetching fresh certificate data from API...`);
+      try {
+        const response = await fetch(`http://localhost:5000/certificate/get-certificate-selections-for-receipt`);
         if (response.ok) {
           const result = await response.json();
-          console.log('Created new candidate:', result);
-          return result.candidate_id;
-        } else {
-          const errorText = await response.text();
-          console.error('Candidate creation failed:', response.status, errorText);
-          throw new Error(`Failed to create candidate: ${response.status} ${errorText}`);
-        }
-      } else if (state.formData.customerType === 'B2B') {
-        // For B2B, try to search for existing candidate first
-        if (state.formData.selectedB2BCustomerName) {
-          try {
-            const searchResponse = await fetch(`http://localhost:5000/candidate/search-candidates?q=${encodeURIComponent(state.formData.selectedB2BCustomerName)}&field=firstName`);
-            if (searchResponse.ok) {
-              const searchResult = await searchResponse.json();
-              if (searchResult.data && searchResult.data.length > 0) {
-                console.log('Found existing B2B candidate:', searchResult.data[0]);
-                return searchResult.data[0].candidate_id || searchResult.data[0].id;
-              }
-            }
-          } catch (searchError) {
-            console.warn('B2B search failed:', searchError);
-          }
-        }
+          const allCertificates = result.data || [];
+          console.log('Fetched certificates from API:', allCertificates.length);
 
-        // For B2B, use the current candidate ID instead of creating new
-        console.log('No existing candidate found for B2B customer, using current candidate ID');
-        return await getCurrentCandidateId();
+          console.log('First certificate object:', allCertificates[0]);
+          const certificate = allCertificates.find(cert => {
+            console.log(`Comparing cert.id (${cert.id}, type: ${typeof cert.id}) with firstCourseId (${firstCourseId}, type: ${typeof firstCourseId})`);
+            return cert.certificates && cert.certificates.length > 0 && cert.certificates[0].id == firstCourseId;
+          });
+
+          // Update the state with fresh data
+          dispatch({ type: 'SET_AVAILABLE_CERTIFICATES', payload: allCertificates });
+
+          if (!certificate) {
+            console.error('Certificate not found in API response. Available certificates:', allCertificates);
+            console.error('Available IDs:', allCertificates.map(c => c.id));
+            console.error('Looking for ID:', firstCourseId, 'Type:', typeof firstCourseId);
+            throw new Error(`Certificate with ID ${firstCourseId} not found in database`);
+          }
+
+          // Return the candidate_id from the certificate selection
+          const candidateId = certificate.candidate_id;
+          if (!candidateId) {
+            throw new Error('No candidate_id found in certificate selection');
+          }
+
+          console.log('Using candidate_id from certificate selection:', candidateId);
+          return candidateId;
+        } else {
+          throw new Error(`API request failed: ${response.status}`);
+        }
+      } catch (apiError) {
+        console.error('Failed to fetch certificate from API:', apiError);
+        throw new Error(`Failed to fetch certificate data: ${apiError.message}`);
       }
     } catch (error) {
       console.error('Error in getCandidateId:', error);
@@ -560,7 +552,7 @@ function NewStepper() {
         selected_courses: resolvedCourses,
         delivery_note: state.formData.deliveryNote || '',
         dispatch_doc_no: state.formData.dispatchDocNo || '',
-        delivery_date: state.formData.deliveryNoteDate || null,
+        delivery_date: state.formData.deliveryNoteDate || state.formData.dateReceived || new Date().toISOString().split('T')[0],
         dispatch_through: state.formData.dispatchThrough || '',
         destination: state.formData.destination || '',
         terms_of_delivery: state.formData.termsOfDelivery || ''
@@ -780,6 +772,12 @@ function NewStepper() {
 
               {state.currentStep === 5 && (
                 <motion.div key="step5" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} transition={{ duration: 0.3 }}>
+                  <PreviewDownloadStep formData={state.formData} />
+                </motion.div>
+              )}
+
+              {state.currentStep === 6 && (
+                <motion.div key="step6" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} transition={{ duration: 0.3 }}>
                   <FinalizeStep
                     formData={state.formData}
                     onUploadInvoiceData={saveInvoiceData}
@@ -788,12 +786,6 @@ function NewStepper() {
                     availableCertificates={state.availableCertificates}
                     savedReceiptData={state.savedReceiptData}
                   />
-                </motion.div>
-              )}
-
-              {state.currentStep === 6 && (
-                <motion.div key="step6" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} transition={{ duration: 0.3 }}>
-                  <PreviewDownloadStep formData={state.formData} />
                 </motion.div>
               )}
 

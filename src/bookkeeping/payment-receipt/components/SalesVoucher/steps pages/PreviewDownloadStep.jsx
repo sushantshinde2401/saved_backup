@@ -12,13 +12,23 @@ function PreviewDownloadStep({ formData }) {
     let resolvedCourses = [];
     if (formData.selectedCourses && formData.selectedCourses.length > 0) {
       try {
-        const response = await fetch('http://localhost:5000/get-certificate-selections-for-receipt');
+        const response = await fetch('http://localhost:5000/certificate/get-certificate-selections-for-receipt');
         if (response.ok) {
           const result = await response.json();
           const allCertificates = result.data || [];
-          resolvedCourses = formData.selectedCourses.map(id =>
-            allCertificates.find(cert => cert.id === id)
-          ).filter(Boolean);
+          resolvedCourses = formData.selectedCourses.map(id => {
+            const cert = allCertificates.find(c => c.id === id);
+            if (cert) {
+              return {
+                id: cert.id,
+                certificate_name: cert.certificate_name,
+                candidate_name: cert.candidate_name,
+                candidate_id: cert.candidate_id,
+                creation_date: cert.creation_date
+              };
+            }
+            return null;
+          }).filter(Boolean);
         }
       } catch (error) {
         console.warn('Failed to resolve selected courses:', error);
@@ -71,8 +81,10 @@ function PreviewDownloadStep({ formData }) {
       destination: formData.destination || '',
       termsOfDelivery: formData.termsOfDelivery || '',
 
-      // Selected Courses
-      selectedCourses: resolvedCourses
+      // Selected Courses - pass both IDs and resolved objects
+      selectedCourses: formData.selectedCourses || [],
+      selected_courses_resolved: resolvedCourses,
+      availableCertificates: [] // Will be populated by InvoicePreview component
     };
 
     return invoiceData;
