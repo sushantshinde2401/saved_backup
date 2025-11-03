@@ -11,3 +11,8 @@ def register_blueprints(app):
     app.register_blueprint(certificate_bp, url_prefix='/certificate')
     app.register_blueprint(misc_bp)
     app.register_blueprint(bookkeeping_bp, url_prefix='/api/bookkeeping')
+
+    # Register certificate status update endpoint directly on app
+    # This ensures it has proper CORS handling
+    from .bookkeeping import update_certificate_status
+    app.add_url_rule('/certificate/update-certificate-status', 'update_certificate_status', update_certificate_status, methods=['POST'])

@@ -8,6 +8,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from config import Config
 from database.db_connection import execute_query
 from hooks.post_data_insert import update_master_table_after_certificate_insert
+from utils.file_ops import sanitize_folder_name
 
 certificate_bp = Blueprint('certificate', __name__)
 
@@ -49,9 +50,9 @@ def save_certificate_data():
             return jsonify({"error": "No data provided"}), 400
 
         # Extract required fields
-        first_name = data.get('firstName')
-        last_name = data.get('lastName')
-        passport = data.get('passport')
+        first_name = data.get('firstName', '').strip()
+        last_name = data.get('lastName', '').strip()
+        passport = sanitize_folder_name(data.get('passport', '').strip())
         client_name = data.get('clientName')
         certificate_name = data.get('certificateName')
         verification_image_data = data.get('verificationImageData')
@@ -61,8 +62,8 @@ def save_certificate_data():
             return jsonify({"error": "Missing required fields: firstName, lastName, passport, certificateName"}), 400
 
         # Get candidate data from candidates table
-        # Database stores names with underscores, not spaces
-        candidate_name = f"{first_name}_{last_name}_{passport}"
+        # Database stores names with spaces preserved, only passport sanitized
+        candidate_name = f"{first_name} {last_name}_{passport}"
         get_candidate_query = """
             SELECT id, candidate_name FROM candidates
             WHERE candidate_name = %s
@@ -167,7 +168,7 @@ def save_certificate_data():
 def get_certificate_selections_for_receipt():
     """Get all certificate selections for receipt processing, aggregated by candidate"""
     try:
-        # First, get all certificate selections
+        # First, get all certificate selections that are not marked as 'done'
         query = """
             SELECT
                 cs.id,
@@ -176,9 +177,11 @@ def get_certificate_selections_for_receipt():
                 cs.client_name,
                 cs.certificate_name,
                 cs.creation_date,
+                cs.status,
                 CASE WHEN cs.verification_image IS NOT NULL THEN true ELSE false END as has_verification_image,
                 CASE WHEN cs.certificate_image IS NOT NULL THEN true ELSE false END as has_certificate_image
             FROM certificate_selections cs
+            WHERE cs.status IS NULL OR cs.status != 'done'
             ORDER BY cs.client_name, cs.candidate_name, cs.creation_date DESC
         """
 
@@ -212,6 +215,7 @@ def get_certificate_selections_for_receipt():
                 'id': row['id'],
                 'certificate_name': row['certificate_name'],
                 'creation_date': row['creation_date'],
+                'status': row['status'],
                 'has_verification_image': row['has_verification_image'],
                 'has_certificate_image': row['has_certificate_image']
             })

@@ -16,9 +16,11 @@ def generate_session_id():
     return str(uuid.uuid4())
 
 def sanitize_folder_name(name):
-    """Sanitize folder name by removing special characters"""
+    """Sanitize folder name by replacing spaces with underscores and removing other special characters"""
+    # First replace spaces with underscores
+    sanitized = str(name).replace(' ', '_')
     # Remove special characters, keep only alphanumeric, underscore, hyphen
-    sanitized = re.sub(r'[^a-zA-Z0-9_-]', '', str(name))
+    sanitized = re.sub(r'[^a-zA-Z0-9_-]', '', sanitized)
     # Replace multiple underscores/hyphens with single ones
     sanitized = re.sub(r'[-_]+', '_', sanitized)
     # Remove leading/trailing underscores

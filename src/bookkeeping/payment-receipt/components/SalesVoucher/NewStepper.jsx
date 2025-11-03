@@ -136,7 +136,12 @@ function NewStepper() {
     const saved = localStorage.getItem('newStepperState');
     if (saved) {
       try {
-        return JSON.parse(saved);
+        const parsedState = JSON.parse(saved);
+        // Clear availableCertificates to force fresh load from API
+        return {
+          ...parsedState,
+          availableCertificates: []
+        };
       } catch (e) {
         console.warn('Failed to parse saved stepper state:', e);
         return initialState;

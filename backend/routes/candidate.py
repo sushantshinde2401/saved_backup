@@ -21,8 +21,8 @@ def save_candidate_data():
             return jsonify({"error": "No data provided"}), 400
 
         # Extract candidate information and trim whitespace
-        first_name = sanitize_folder_name(data.get('firstName', '').strip())
-        last_name = sanitize_folder_name(data.get('lastName', '').strip())
+        first_name = data.get('firstName', '').strip()
+        last_name = data.get('lastName', '').strip()
         passport_no = sanitize_folder_name(data.get('passport', '').strip())
         session_id = data.get('session_id', '')
 
@@ -53,8 +53,8 @@ def save_candidate_data():
         if phone and not re.match(r'^\+?[\d\s\-\(\)]{10,}$', phone):
             return jsonify({"error": "Invalid phone format"}), 400
 
-        # Create candidate name
-        candidate_name = f"{first_name}_{last_name}_{passport_no}"
+        # Create candidate name - preserve spaces in names, only sanitize passport
+        candidate_name = f"{first_name} {last_name}_{passport_no}"
 
         # Check if candidate name already exists
         from database.db_connection import execute_query

@@ -3332,6 +3332,85 @@ def save_invoice_image():
             "status": "error"
         }), 500
 
+@bookkeeping_bp.route('/certificate/update-certificate-status', methods=['POST'])
+def update_certificate_status():
+    """Update certificate status to 'done' for finalized certificates"""
+    try:
+        data = request.get_json()
+
+        if not data or 'selectedCourses' not in data:
+            return jsonify({
+                "error": "Missing required field",
+                "message": "selectedCourses is required",
+                "status": "validation_error"
+            }), 400
+
+        selected_courses = data['selectedCourses']
+        status = data.get('status', 'done')
+
+        if not selected_courses or len(selected_courses) == 0:
+            return jsonify({
+                "error": "No courses selected",
+                "message": "At least one course must be selected",
+                "status": "validation_error"
+            }), 400
+
+        # Get certificate selections to match by certificate_name, candidate_id, and candidate_name
+        certificate_query = """
+            SELECT id, certificate_name, candidate_id, candidate_name, client_name
+            FROM certificate_selections
+            WHERE status IS NULL OR status != 'done'
+        """
+        certificate_results = execute_query(certificate_query)
+
+        if not certificate_results:
+            return jsonify({
+                "status": "success",
+                "data": {"updated_count": 0},
+                "message": "No certificates found to update"
+            }), 200
+
+        updated_count = 0
+
+        # For each selected course, find matching certificates and update status
+        for course_id in selected_courses:
+            # Get the certificate details for this course_id from the certificate_selections table
+            cert_query = """
+                SELECT id, certificate_name, candidate_id, candidate_name
+                FROM certificate_selections
+                WHERE status IS NULL OR status != 'done'
+            """
+            cert_results = execute_query(cert_query)
+
+            for cert in cert_results:
+                # Update the status to 'done' for each certificate that matches the course_id
+                # Since course_id corresponds to certificate id, update directly
+                update_query = """
+                    UPDATE certificate_selections
+                    SET status = %s
+                    WHERE id = %s AND (status IS NULL OR status != 'done')
+                """
+                result = execute_query(update_query, (status, course_id), fetch=False)
+                if result and hasattr(result, 'rowcount') and result.rowcount > 0:
+                    updated_count += 1
+                    logger.info(f"[CERTIFICATE_STATUS] Updated certificate ID {course_id} status to '{status}'")
+                    break
+
+        logger.info(f"[CERTIFICATE_STATUS] Updated {updated_count} certificates to status '{status}'")
+        return jsonify({
+            "status": "success",
+            "data": {"updated_count": updated_count},
+            "message": f"Successfully updated {updated_count} certificates to status '{status}'"
+        }), 200
+
+    except Exception as e:
+        logger.error(f"[CERTIFICATE_STATUS] Failed to update certificate status: {e}")
+        return jsonify({
+            "error": str(e),
+            "message": "Failed to update certificate status",
+            "status": "error"
+        }), 500
+
 @bookkeeping_bp.route('/get-invoice-image/<path:invoice_no>', methods=['GET'])
 def get_invoice_image(invoice_no):
     """Retrieve invoice image by invoice number"""

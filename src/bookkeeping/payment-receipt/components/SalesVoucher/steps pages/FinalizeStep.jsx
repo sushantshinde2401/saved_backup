@@ -542,7 +542,7 @@ function FinalizeStep({ formData, onUploadInvoiceData, savedInvoiceData, isUploa
     setFinalizationStatus('');
 
     try {
-      // Step 1: Upload Invoice Data
+      // Step 1: Upload Invoice Data to receipt_invoice_data and master_database_table_a
       if (!savedInvoiceData) {
         await onUploadInvoiceData();
         setFinalizationStatus('invoice_uploaded');
@@ -584,6 +584,35 @@ function FinalizeStep({ formData, onUploadInvoiceData, savedInvoiceData, isUploa
 
       // Step 3: Upload to Ledger (sequential execution)
       await handleUploadToLedger();
+
+      // Step 4: Update certificate status to "done" for finalized certificates
+      try {
+        // Find matching certificates in certificate_selections based on certificate_name, candidate_id, and candidate_name
+        const updateResponse = await fetch('http://localhost:5000/certificate/update-certificate-status', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            selectedCourses: formData.selectedCourses,
+            status: 'done'
+          }),
+        });
+
+        if (updateResponse.ok) {
+          const updateResult = await updateResponse.json();
+          console.log('Certificate status updated successfully:', updateResult);
+          toast.success('✓ Certificate status updated to finalized');
+        } else {
+          const errorText = await updateResponse.text();
+          console.error('Failed to update certificate status:', errorText);
+          toast.warning('⚠️ Finalization completed but certificate status update failed');
+        }
+      } catch (statusError) {
+        console.error('Error updating certificate status:', statusError);
+        toast.warning('⚠️ Finalization completed but certificate status update failed');
+      }
+
       setFinalizationStatus('completed');
 
     } catch (error) {

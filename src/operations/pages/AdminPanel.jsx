@@ -636,15 +636,23 @@ function AdminPanel() {
                   {combinedData.master_data.map((record, index) => (
                     <div key={index} className="border border-gray-200 rounded-lg p-4">
                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                        <div><strong>Client:</strong> {record.client_name} ({record.client_id})</div>
-                        <div><strong>Certificate:</strong> {record.certificate_name} ({record.certificate_id})</div>
-                        <div><strong>Invoice:</strong> {record.invoice_no}</div>
-                        <div><strong>Company:</strong> {record.companyName}</div>
-                        <div><strong>Person in Charge:</strong> {record.person_in_charge}</div>
                         <div><strong>Creation Date:</strong> {record.creation_date ? new Date(record.creation_date).toISOString().slice(0, 19).replace('T', ' ') : 'Not Available'}</div>
-                        <div><strong>Terms:</strong> {record.terms_of_delivery}</div>
-                        <div><strong>Passport:</strong> {record.passport}</div>
-                        <div><strong>Nationality:</strong> {record.nationality}</div>
+                        <div><strong>Client Name:</strong> {record.client_name || 'N/A'}</div>
+                        <div><strong>Client ID:</strong> {record.client_id || 'N/A'}</div>
+                        <div><strong>Candidate ID:</strong> {record.candidate_id || 'N/A'}</div>
+                        <div><strong>Candidate Name:</strong> {record.candidate_name || 'N/A'}</div>
+                        <div><strong>Nationality:</strong> {record.nationality || 'N/A'}</div>
+                        <div><strong>Passport:</strong> {record.passport || 'N/A'}</div>
+                        <div><strong>CDC No:</strong> {record.cdcno || 'N/A'}</div>
+                        <div><strong>INDOS No:</strong> {record.indosno || 'N/A'}</div>
+                        <div><strong>Certificate Name:</strong> {record.certificate_name || 'N/A'}</div>
+                        <div><strong>Certificate ID:</strong> {record.certificate_id || 'N/A'}</div>
+                        <div><strong>Company Name:</strong> {record.companyname || 'N/A'}</div>
+                        <div><strong>Person in Charge:</strong> {record.person_in_charge || 'N/A'}</div>
+                        <div><strong>Delivery Note:</strong> {record.delivery_note || 'N/A'}</div>
+                        <div><strong>Delivery Date:</strong> {record.delivery_date ? new Date(record.delivery_date).toISOString().slice(0, 19).replace('T', ' ') : 'Not Available'}</div>
+                        <div><strong>Terms of Delivery:</strong> {record.terms_of_delivery || 'N/A'}</div>
+                        <div><strong>Invoice No:</strong> {record.invoice_no || 'N/A'}</div>
                       </div>
                     </div>
                   ))}

@@ -28,13 +28,15 @@ function BillingInfoStep({ formData, onInputChange, availableCertificates }) {
         console.log('[BILLING] Loaded certificates for companies:', certificates);
 
         // Extract unique company names from certificates where client_name is not empty
+        // and status is not "done"
         const companies = [...new Set(
           certificates
-            .filter(cert => cert.client_name && cert.client_name.trim() !== '')
+            .filter(cert => cert.client_name && cert.client_name.trim() !== '' &&
+                          (!cert.status || cert.status !== 'done'))
             .map(cert => cert.client_name)
         )];
 
-        console.log('[BILLING] Available companies:', companies);
+        console.log('[BILLING] Available companies (excluding done):', companies);
         setAvailableCompanies(companies);
       } else {
         console.warn('[BILLING] Failed to load companies from certificates');
@@ -268,16 +270,19 @@ function BillingInfoStep({ formData, onInputChange, availableCertificates }) {
               console.log('[BILLING] formData.partyName:', formData.partyName);
 
               // Flatten the certificates from the aggregated data structure
+              // Filter out certificates with status="done"
               const allCertificates = [];
               availableCertificates.forEach(candidateGroup => {
                 if (candidateGroup.client_name === formData.partyName && candidateGroup.certificates) {
-                  // Add candidate info to each certificate
+                  // Add candidate info to each certificate, but only if status is not "done"
                   candidateGroup.certificates.forEach(cert => {
-                    allCertificates.push({
-                      ...cert,
-                      candidate_name: candidateGroup.candidate_name,
-                      candidate_id: candidateGroup.candidate_id
-                    });
+                    if (!cert.status || cert.status !== 'done') {
+                      allCertificates.push({
+                        ...cert,
+                        candidate_name: candidateGroup.candidate_name,
+                        candidate_id: candidateGroup.candidate_id
+                      });
+                    }
                   });
                 }
               });

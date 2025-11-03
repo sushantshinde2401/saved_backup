@@ -15,7 +15,8 @@ import {
   User,
   RefreshCw,
   ArrowLeft,
-  Trash2
+  Trash2,
+  Image
 } from 'lucide-react';
 import { API_ENDPOINTS } from '../../shared/utils';
 import useDeleteLedgerRow from '../../shared/hooks/useDeleteLedgerRow';
@@ -56,6 +57,12 @@ const ClientLedger = () => {
   // Delete functionality state
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [entryToDelete, setEntryToDelete] = useState(null);
+
+  // Image modal state
+  const [imageModalOpen, setImageModalOpen] = useState(false);
+  const [imageLoading, setImageLoading] = useState(false);
+  const [imageError, setImageError] = useState(null);
+  const [imageData, setImageData] = useState(null);
 
   // Delete hook
   const {
@@ -255,6 +262,40 @@ const ClientLedger = () => {
     setEntryToDelete(entry);
     setDeleteModalOpen(true);
     resetError();
+  };
+
+  // Image modal handlers
+  const handleViewImage = async (voucherNo) => {
+    setImageModalOpen(true);
+    setImageLoading(true);
+    setImageError(null);
+    setImageData(null);
+
+    try {
+      const response = await fetch(`${API_ENDPOINTS.GET_INVOICE_IMAGE}/${voucherNo}`);
+      if (!response.ok) {
+        throw new Error('Failed to fetch invoice image');
+      }
+
+      const result = await response.json();
+      if (result.status === 'success') {
+        setImageData(result.data);
+      } else {
+        throw new Error(result.message || 'Failed to load image');
+      }
+    } catch (err) {
+      setImageError(err.message);
+      console.error('[CLIENT_LEDGER] Error fetching invoice image:', err);
+    } finally {
+      setImageLoading(false);
+    }
+  };
+
+  const handleCloseImageModal = () => {
+    setImageModalOpen(false);
+    setImageLoading(false);
+    setImageError(null);
+    setImageData(null);
   };
 
   const handleConfirmDelete = async () => {
@@ -628,6 +669,14 @@ const ClientLedger = () => {
                             <Eye className="w-4 h-4" />
                           </button>
                           <button
+                            onClick={() => handleViewImage(entry.voucher_no)}
+                            className="text-green-600 hover:text-green-900 p-1 rounded hover:bg-green-50 transition-colors"
+                            title="View Image"
+                            aria-label={`View image for voucher: ${entry.voucher_no}`}
+                          >
+                            <Image className="w-4 h-4" />
+                          </button>
+                          <button
                             onClick={() => handleDeleteClick(entry)}
                             className="text-red-600 hover:text-red-900 p-1 rounded hover:bg-red-50 transition-colors"
                             title="Delete Entry"
@@ -776,6 +825,70 @@ const ClientLedger = () => {
             </div>
           )}
         </ConfirmationModal>
+
+        {/* Image Modal */}
+        {imageModalOpen && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-lg max-w-4xl w-full mx-4 max-h-[90vh] overflow-hidden">
+              <div className="p-6">
+                <div className="flex items-center justify-between mb-6">
+                  <h3 className="text-xl font-bold text-gray-900">Invoice Image</h3>
+                  <button
+                    onClick={handleCloseImageModal}
+                    className="text-gray-400 hover:text-gray-600 text-2xl"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                <div className="flex items-center justify-center min-h-[400px]">
+                  {imageLoading && (
+                    <div className="text-center">
+                      <RefreshCw className="w-8 h-8 animate-spin mx-auto mb-4 text-blue-600" />
+                      <p className="text-gray-600">Loading invoice image...</p>
+                    </div>
+                  )}
+
+                  {imageError && (
+                    <div className="text-center">
+                      <div className="text-red-500 mb-4">
+                        <svg className="w-12 h-12 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                        </svg>
+                      </div>
+                      <p className="text-red-600 font-medium">Failed to load image</p>
+                      <p className="text-gray-500 text-sm mt-1">{imageError}</p>
+                    </div>
+                  )}
+
+                  {imageData && !imageLoading && !imageError && (
+                    <div className="w-full">
+                      <iframe
+                        src={`data:application/pdf;base64,${imageData.image_data}`}
+                        className="w-full h-[600px] border rounded-lg"
+                        title={`Invoice ${imageData.invoice_no}`}
+                      />
+                      <div className="mt-4 text-center text-sm text-gray-600">
+                        <p><strong>Invoice:</strong> {imageData.invoice_no}</p>
+                        <p><strong>File:</strong> {imageData.file_name}</p>
+                        <p><strong>Size:</strong> {(imageData.file_size / 1024).toFixed(2)} KB</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="mt-6 flex justify-end">
+                  <button
+                    onClick={handleCloseImageModal}
+                    className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-lg transition-colors"
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
