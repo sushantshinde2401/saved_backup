@@ -35,7 +35,6 @@ from(Step 3)  |	course_selection string  ""
                 "gst_applied": ,
                 "gst_rate": ,
                 "final_amount": ,
-                "selected_courses": ["Course A", "Course B", "Course C"]
                 }
                 
 
@@ -128,7 +127,6 @@ invoice_no (Primary Key for invoices).
 
 Party name, invoice date, amount, discount, GST, final amount.
 
-selected_courses (stored as an array/JSON).
 
 Invoice details → Delivery note, dispatch doc no., delivery date, dispatch through, destination, terms of delivery.
 

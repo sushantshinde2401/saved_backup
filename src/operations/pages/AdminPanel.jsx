@@ -42,9 +42,6 @@ function AdminPanel() {
   const [combinedData, setCombinedData] = useState(null);
   const [selectedCandidateName, setSelectedCandidateName] = useState('');
 
-  // Invoice images state
-  const [invoiceImages, setInvoiceImages] = useState([]);
-  const [isLoadingInvoiceImages, setIsLoadingInvoiceImages] = useState(false);
 
   // Image viewer state
   const [imageViewer, setImageViewer] = useState({
@@ -75,7 +72,6 @@ function AdminPanel() {
     setCandidateData(null);
     setCombinedData(null);
     setImages([]);
-    setInvoiceImages([]);
     setSelectedCandidateId('');
     setSelectedCandidateName('');
     setError('');
@@ -131,7 +127,6 @@ function AdminPanel() {
       setCandidateData(null);
       setCombinedData(null);
       setImages([]);
-      setInvoiceImages([]);
       setSelectedCandidateId('');
       setSelectedCandidateName('');
       setError('');
@@ -259,67 +254,6 @@ function AdminPanel() {
     }
   };
 
-  // Load invoice images for candidate
-  const loadInvoiceImages = async (candidateName) => {
-    setIsLoadingInvoiceImages(true);
-    try {
-      // First get master data to find invoice numbers for this candidate
-      const masterResponse = await fetch(`http://127.0.0.1:5000/candidate/get-combined-candidate-data/${encodeURIComponent(candidateName)}`);
-      const masterResult = await masterResponse.json();
-
-      if (masterResult.status === 'success' && masterResult.data.master_data && masterResult.data.master_data.length > 0) {
-        // Get all invoice numbers for this candidate
-        const invoiceNumbers = masterResult.data.master_data
-          .map(record => record.invoice_no)
-          .filter(invoiceNo => invoiceNo && invoiceNo !== 'N/A');
-
-        if (invoiceNumbers.length > 0) {
-          // Load invoice images for each invoice number
-          const invoiceImagesPromises = invoiceNumbers.map(async (invoiceNo) => {
-            try {
-              const imageResponse = await fetch(`http://127.0.0.1:5000/api/bookkeeping/get-invoice-image/${encodeURIComponent(invoiceNo)}`);
-              if (imageResponse.ok) {
-                const imageResult = await imageResponse.json();
-
-                if (imageResult.status === 'success') {
-                  return {
-                    ...imageResult.data,
-                    candidate_name: candidateName,
-                    master_record: masterResult.data.master_data.find(record => record.invoice_no === invoiceNo)
-                  };
-                }
-              } else if (imageResponse.status === 404) {
-                // Invoice image not found - return placeholder object (expected for not yet generated)
-                return {
-                  invoice_no: invoiceNo,
-                  noImage: true,
-                  candidate_name: candidateName,
-                  master_record: masterResult.data.master_data.find(record => record.invoice_no === invoiceNo)
-                };
-              } else {
-                console.warn(`Unexpected response for invoice ${invoiceNo}: ${imageResponse.status}`);
-              }
-            } catch (error) {
-              console.warn(`Failed to load invoice image for ${invoiceNo}:`, error.message);
-            }
-            return null;
-          });
-
-          const loadedImages = (await Promise.all(invoiceImagesPromises)).filter(Boolean);
-          setInvoiceImages(loadedImages);
-        } else {
-          setInvoiceImages([]);
-        }
-      } else {
-        setInvoiceImages([]);
-      }
-    } catch (err) {
-      console.error('Failed to load invoice images:', err.message);
-      setInvoiceImages([]);
-    } finally {
-      setIsLoadingInvoiceImages(false);
-    }
-  };
 
   // Handle edit
   const handleEdit = () => {
@@ -375,7 +309,6 @@ function AdminPanel() {
       setCandidateData(null);
       setCombinedData(null);
       setImages([]);
-      setInvoiceImages([]);
       setError('');
       return;
     }
@@ -386,7 +319,6 @@ function AdminPanel() {
     setCandidateData(null);
     setCombinedData(null);
     setImages([]);
-    setInvoiceImages([]);
 
     try {
       const candidate = candidates.find(c => c.id.toString() === candidateId);
@@ -426,8 +358,6 @@ function AdminPanel() {
             setImages(imageFiles);
           }
 
-          // Load invoice images (don't await - let it run in background)
-          loadInvoiceImages(candidateName);
         } else {
           setError(result.message || 'Failed to load combined candidate data');
         }
@@ -634,7 +564,7 @@ function AdminPanel() {
                 </h2>
                 <div className="space-y-4">
                   {combinedData.master_data.map((record, index) => (
-                    <div key={index} className="border border-gray-200 rounded-lg p-4">
+                    <div key={`${record.candidate_id}-${record.certificate_name}-${index}`} className="border border-gray-200 rounded-lg p-4">
                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                         <div><strong>Creation Date:</strong> {record.creation_date ? new Date(record.creation_date).toISOString().slice(0, 19).replace('T', ' ') : 'Not Available'}</div>
                         <div><strong>Client Name:</strong> {record.client_name || 'N/A'}</div>
@@ -669,7 +599,7 @@ function AdminPanel() {
                 </h2>
                 <div className="space-y-4">
                   {combinedData.certificates.map((cert, index) => (
-                    <div key={cert.id} className="border border-gray-200 rounded-lg p-4">
+                    <div key={`${cert.id}-${cert.certificate_name}-${index}`} className="border border-gray-200 rounded-lg p-4">
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div><strong>Certificate:</strong> {cert.certificate_name}</div>
                         <div><strong>Client:</strong> {cert.client_name}</div>
@@ -829,137 +759,6 @@ function AdminPanel() {
               </motion.div>
             )}
 
-            {/* Invoice Images Section */}
-            {invoiceImages.length > 0 && (
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.6 }}
-                className="bg-white/95 backdrop-blur-sm rounded-2xl shadow-xl p-8 border border-white/20"
-              >
-                <h3 className="text-2xl font-bold text-gray-800 flex items-center gap-3 mb-6">
-                  <FileText size={24} />
-                  Invoice Images ({invoiceImages.length})
-                  {isLoadingInvoiceImages && <Loader2 className="animate-spin" size={20} />}
-                </h3>
-
-                <div className="space-y-6">
-                  {invoiceImages.map((invoiceImage, index) => (
-                    <motion.div
-                      key={invoiceImage.id || invoiceImage.invoice_no}
-                      initial={{ opacity: 0, scale: 0.95 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      transition={{ delay: 0.1 * index }}
-                      className="border border-gray-200 rounded-lg p-6 bg-gradient-to-r from-blue-50 to-indigo-50"
-                    >
-                      <div className="flex justify-between items-start mb-4">
-                        <div>
-                          <h4 className="text-lg font-bold text-gray-800 mb-2">
-                            Invoice: {invoiceImage.invoice_no}
-                          </h4>
-                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm text-gray-600">
-                            {invoiceImage.noImage ? (
-                              <div className="col-span-4 text-orange-600 font-medium">
-                                <strong>Status:</strong> No invoice image available
-                              </div>
-                            ) : (
-                              <>
-                                <div><strong>Generated:</strong> {new Date(invoiceImage.generated_at).toLocaleDateString()}</div>
-                                <div><strong>Size:</strong> {(invoiceImage.file_size / 1024).toFixed(1)} KB</div>
-                                <div><strong>Type:</strong> {invoiceImage.image_type.toUpperCase()}</div>
-                                <div><strong>Client:</strong> {invoiceImage.master_record?.client_name || 'N/A'}</div>
-                              </>
-                            )}
-                          </div>
-                        </div>
-                        {!invoiceImage.noImage && (
-                          <div className="flex gap-2">
-                            <button
-                              onClick={() => openImageViewer(
-                                `data:application/pdf;base64,${invoiceImage.image_data}`,
-                                `Invoice ${invoiceImage.invoice_no}`,
-                                `Tax Invoice - ${invoiceImage.invoice_no}`
-                              )}
-                              className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-semibold transition-colors flex items-center gap-2"
-                            >
-                              <ZoomIn size={16} />
-                              View PDF
-                            </button>
-                            <a
-                              href={`data:application/pdf;base64,${invoiceImage.image_data}`}
-                              download={invoiceImage.file_name}
-                              className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-semibold transition-colors flex items-center gap-2"
-                            >
-                              <FileText size={16} />
-                              Download
-                            </a>
-                          </div>
-                        )}
-                      </div>
-
-                      {invoiceImage.noImage ? (
-                        /* No Image Placeholder */
-                        <div className="bg-white rounded-lg border-2 border-gray-200 overflow-hidden shadow-lg">
-                          <div className="bg-gray-100 px-4 py-2 border-b border-gray-200">
-                            <h5 className="font-semibold text-gray-800">Invoice Preview</h5>
-                          </div>
-                          <div className="p-4">
-                            <div className="w-full h-96 flex items-center justify-center text-gray-500 text-sm bg-gray-100 rounded border-2 border-dashed border-gray-300">
-                              <div className="text-center">
-                                <FileText size={48} className="mx-auto mb-4 opacity-50" />
-                                <p className="font-medium">No invoice image available</p>
-                                <p className="text-xs">Invoice PDF has not been generated yet</p>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      ) : (
-                        /* Invoice Preview */
-                        <div className="bg-white rounded-lg border-2 border-gray-200 overflow-hidden shadow-lg">
-                          <div className="bg-gray-100 px-4 py-2 border-b border-gray-200">
-                            <h5 className="font-semibold text-gray-800">Invoice Preview</h5>
-                          </div>
-                          <div className="p-4">
-                            <iframe
-                              src={`data:application/pdf;base64,${invoiceImage.image_data}`}
-                              className="w-full h-[600px] border-0 rounded"
-                              title={`Invoice ${invoiceImage.invoice_no}`}
-                              scrolling="yes"
-                              onError={(e) => {
-                                console.error('Invoice PDF failed to load:', invoiceImage.id);
-                                e.target.style.display = 'none';
-                                if (e.target.nextElementSibling) {
-                                  e.target.nextElementSibling.style.display = 'flex';
-                                }
-                              }}
-                            />
-                            <div className="hidden w-full h-[600px] items-center justify-center text-gray-500 text-sm bg-gray-100 rounded border-2 border-dashed border-gray-300">
-                              <div className="text-center">
-                                <FileText size={48} className="mx-auto mb-4 opacity-50" />
-                                <p className="font-medium">Invoice PDF Preview</p>
-                                <p className="text-xs">Click "View PDF" to open in full screen</p>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Related Master Data */}
-                      {invoiceImage.master_record && (
-                        <div className="mt-4 p-4 bg-gray-50 rounded-lg">
-                          <h6 className="font-semibold text-gray-700 mb-2">Related Information:</h6>
-                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
-                            <div><strong>Certificates:</strong> {invoiceImage.master_record.certificate_name}</div>
-                            <div><strong>Company:</strong> {invoiceImage.master_record.companyName}</div>
-                            <div><strong>Amount:</strong> ₹{invoiceImage.master_record.final_amount || 'N/A'}</div>
-                          </div>
-                        </div>
-                      )}
-                    </motion.div>
-                  ))}
-                </div>
-              </motion.div>
-            )}
 
             {/* Certificate Images Section */}
             {combinedData && combinedData.certificates && combinedData.certificates.some(cert => cert.has_verification_image || cert.has_certificate_image) && (
@@ -975,8 +774,8 @@ function AdminPanel() {
                 </h3>
 
                 <div className="space-y-6">
-                  {combinedData.certificates.filter(cert => cert.has_verification_image || cert.has_certificate_image).map((cert) => (
-                    <div key={cert.id} className="border border-gray-200 rounded-lg p-4">
+                  {combinedData.certificates.filter(cert => cert.has_verification_image || cert.has_certificate_image).map((cert, index) => (
+                    <div key={`${cert.id}-${cert.certificate_name}-${index}`} className="border border-gray-200 rounded-lg p-4">
                       <h4 className="font-semibold text-gray-800 mb-3">{cert.certificate_name}</h4>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         {cert.has_verification_image && (

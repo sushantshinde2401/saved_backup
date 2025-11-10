@@ -481,32 +481,41 @@ function NewStepper() {
           const allCertificates = result.data || [];
           console.log('Fetched certificates from API:', allCertificates.length);
 
+          if (allCertificates.length === 0) {
+            throw new Error('No certificates available from API');
+          }
+
           console.log('First certificate object:', allCertificates[0]);
-          const certificate = allCertificates.find(cert => {
-            console.log(`Comparing cert.id (${cert.id}, type: ${typeof cert.id}) with firstCourseId (${firstCourseId}, type: ${typeof firstCourseId})`);
-            return cert.certificates && cert.certificates.length > 0 && cert.certificates[0].id == firstCourseId;
-          });
+
+          // The API returns aggregated data by candidate, so we need to search through certificates array
+          let foundCertificate = null;
+          let candidateId = null;
+
+          for (const candidate of allCertificates) {
+            if (candidate.certificates && Array.isArray(candidate.certificates) && candidate.certificates.length > 0) {
+              const cert = candidate.certificates.find(c => c.id == firstCourseId);
+              if (cert) {
+                foundCertificate = cert;
+                candidateId = candidate.candidate_id;
+                break;
+              }
+            }
+          }
 
           // Update the state with fresh data
           dispatch({ type: 'SET_AVAILABLE_CERTIFICATES', payload: allCertificates });
 
-          if (!certificate) {
+          if (!foundCertificate || !candidateId) {
             console.error('Certificate not found in API response. Available certificates:', allCertificates);
-            console.error('Available IDs:', allCertificates.map(c => c.id));
+            console.error('Available certificate IDs:', allCertificates.flatMap(c => c.certificates?.map(cert => cert.id) || []));
             console.error('Looking for ID:', firstCourseId, 'Type:', typeof firstCourseId);
-            throw new Error(`Certificate with ID ${firstCourseId} not found in database`);
-          }
-
-          // Return the candidate_id from the certificate selection
-          const candidateId = certificate.candidate_id;
-          if (!candidateId) {
-            throw new Error('No candidate_id found in certificate selection');
+            throw new Error(`Certificate with ID ${firstCourseId} not found in database. Available IDs: ${allCertificates.flatMap(c => c.certificates?.map(cert => cert.id) || []).join(', ')}`);
           }
 
           console.log('Using candidate_id from certificate selection:', candidateId);
           return candidateId;
         } else {
-          throw new Error(`API request failed: ${response.status}`);
+          throw new Error(`API request failed: ${response.status} ${response.statusText}`);
         }
       } catch (apiError) {
         console.error('Failed to fetch certificate from API:', apiError);
@@ -533,10 +542,55 @@ function NewStepper() {
       const sgstAmount = state.formData.applyGST ? gstAmount / 2 : 0; // 9% SGST
       const finalAmount = baseAmount + gstAmount;
 
-      // Resolve selected courses to full objects
-      const resolvedCourses = (state.formData.selectedCourses || []).map(id =>
-        state.availableCertificates.find(cert => cert.id === id)
-      ).filter(Boolean);
+      // Resolve selected courses to full objects using fresh API data
+      let resolvedCourses = [];
+      try {
+        const response = await fetch('http://localhost:5000/certificate/get-certificate-selections-for-receipt');
+        if (response.ok) {
+          const result = await response.json();
+          const freshCertificates = result.data || [];
+
+          console.log('Fresh certificates data:', freshCertificates);
+          console.log('Selected course IDs:', state.formData.selectedCourses);
+
+          resolvedCourses = (state.formData.selectedCourses || []).map(courseId => {
+            // Search through the aggregated certificate data
+            for (const candidate of freshCertificates) {
+              if (candidate.certificates && Array.isArray(candidate.certificates) && candidate.certificates.length > 0) {
+                const cert = candidate.certificates.find(c => c.id == courseId);
+                if (cert) {
+                  console.log(`Found certificate ${courseId}:`, cert);
+                  return {
+                    id: cert.id,
+                    certificate_name: cert.certificate_name,
+                    candidate_name: candidate.candidate_name,
+                    candidate_id: candidate.candidate_id,
+                    creation_date: cert.creation_date
+                  };
+                }
+              }
+            }
+            console.warn(`Certificate ${courseId} not found in fresh data`);
+            return null;
+          }).filter(Boolean);
+
+          console.log('Final resolved courses:', resolvedCourses);
+
+          if (resolvedCourses.length === 0 && state.formData.selectedCourses.length > 0) {
+            throw new Error(`Failed to resolve any selected courses. Selected IDs: ${state.formData.selectedCourses.join(', ')}`);
+          }
+        } else {
+          console.warn('Failed to fetch fresh certificate data, using cached data');
+          resolvedCourses = (state.formData.selectedCourses || []).map(id =>
+            state.availableCertificates.find(cert => cert.id === id)
+          ).filter(Boolean);
+        }
+      } catch (error) {
+        console.error('Error fetching fresh certificate data:', error);
+        resolvedCourses = (state.formData.selectedCourses || []).map(id =>
+          state.availableCertificates.find(cert => cert.id === id)
+        ).filter(Boolean);
+      }
 
       // Prepare data for ReceiptInvoiceData table
       const invoiceData = {
@@ -554,7 +608,7 @@ function NewStepper() {
         cgst: cgstAmount,
         sgst: sgstAmount,
         final_amount: finalAmount,
-        selected_courses: resolvedCourses,
+        selectedCourses: resolvedCourses,
         delivery_note: state.formData.deliveryNote || '',
         dispatch_doc_no: state.formData.dispatchDocNo || '',
         delivery_date: state.formData.deliveryNoteDate || state.formData.dateReceived || new Date().toISOString().split('T')[0],
@@ -564,6 +618,7 @@ function NewStepper() {
       };
 
       console.log('Sending invoice data:', invoiceData);
+      console.log('Selected courses in payload:', invoiceData.selectedCourses);
 
       const response = await fetch('http://localhost:5000/api/bookkeeping/receipt-invoice-data', {
         method: 'POST',
@@ -575,6 +630,7 @@ function NewStepper() {
 
       if (response.ok) {
         const result = await response.json();
+        console.log('Invoice save successful, result:', result);
         dispatch({ type: 'SET_SAVED_INVOICE_DATA', payload: result.data });
         toast.success('Invoice data saved successfully!');
         return result.data;

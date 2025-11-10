@@ -875,6 +875,37 @@ def create_receipt_invoice_data():
                     "status": "validation_error"
                 }), 400
 
+        # Handle selectedCourses from frontend and convert to selected_courses for database
+        if 'selectedCourses' in data:
+            # Convert array of course names to comma-separated string or keep as is
+            selected_courses = data['selectedCourses']
+            if isinstance(selected_courses, list):
+                # Check if list is not empty
+                if selected_courses:
+                    # Join array elements with comma separator
+                    data['selected_courses'] = ', '.join(str(course) for course in selected_courses)
+                else:
+                    # Empty list, set to None so it defaults to 'N/A' in master table
+                    data['selected_courses'] = None
+            elif isinstance(selected_courses, dict):
+                # Handle case where it's an empty object {}
+                if selected_courses:
+                    # If dict has content, convert to string representation
+                    data['selected_courses'] = str(selected_courses)
+                else:
+                    # Empty dict, set to None
+                    data['selected_courses'] = None
+            elif isinstance(selected_courses, str) and selected_courses.strip():
+                # If it's a non-empty string, use as is
+                data['selected_courses'] = selected_courses.strip()
+            else:
+                # Empty or invalid, set to None
+                data['selected_courses'] = None
+
+        # Log the incoming data for debugging
+        logger.info(f"[RECEIPT_INVOICE] Received data: {data}")
+        logger.info(f"[RECEIPT_INVOICE] selectedCourses: {data.get('selectedCourses')}")
+
         # Use the existing database function
         from database.db_connection import insert_receipt_invoice_data
         result = insert_receipt_invoice_data(data)

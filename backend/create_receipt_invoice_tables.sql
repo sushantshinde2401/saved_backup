@@ -17,7 +17,6 @@ CREATE TABLE IF NOT EXISTS ReceiptInvoiceData (
     cgst DECIMAL(10,2) DEFAULT 0,
     sgst DECIMAL(10,2) DEFAULT 0,
     final_amount DECIMAL(10,2),
-    selected_courses JSONB,
     delivery_note VARCHAR(100),
     dispatch_doc_no VARCHAR(100),
     delivery_date DATE,
@@ -38,7 +37,6 @@ CREATE INDEX IF NOT EXISTS idx_receipt_invoice_data_party_name ON ReceiptInvoice
 COMMENT ON TABLE ReceiptInvoiceData IS 'Stores invoice data from NewStepper steps 1-4';
 COMMENT ON COLUMN ReceiptInvoiceData.invoice_no IS 'Unique invoice number (Primary Key)';
 COMMENT ON COLUMN ReceiptInvoiceData.candidate_id IS 'Foreign key reference to certificate_selections table (candidate_id column)';
-COMMENT ON COLUMN ReceiptInvoiceData.selected_courses IS 'JSON array of selected courses/certificates';
 COMMENT ON COLUMN ReceiptInvoiceData.final_amount IS 'Final amount after GST applied';
 COMMENT ON COLUMN ReceiptInvoiceData.gst_applied IS 'Boolean flag indicating if GST is applied';
 COMMENT ON COLUMN ReceiptInvoiceData.cgst IS 'Central GST amount (9% of base amount)';
@@ -55,7 +53,6 @@ BEGIN
     RAISE NOTICE '- company_name, customer_name, party_name: VARCHAR(255)';
     RAISE NOTICE '- amount, gst, cgst, sgst, final_amount: DECIMAL(10,2)';
     RAISE NOTICE '- gst_applied: BOOLEAN';
-    RAISE NOTICE '- selected_courses: JSONB';
     RAISE NOTICE '- delivery_note, dispatch_doc_no, dispatch_through: VARCHAR';
     RAISE NOTICE '- destination, terms_of_delivery: TEXT';
     RAISE NOTICE '- created_at, updated_at: TIMESTAMP';

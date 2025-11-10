@@ -110,39 +110,8 @@ class MasterTableUpdater:
                 COALESCE(c.json_data->>'passport', 'N/A') AS passport,
                 COALESCE(c.json_data->>'cdcNo', 'N/A') AS cdcNo,
                 COALESCE(c.json_data->>'indosNo', 'N/A') AS indosNo,
-                COALESCE(
-                    CASE
-                        WHEN rid.selected_courses IS NOT NULL AND jsonb_array_length(rid.selected_courses) > 0 THEN
-                            string_agg(
-                                CASE
-                                    WHEN jsonb_typeof(elem) = 'object' AND elem ? 'certificate_name' THEN elem->>'certificate_name'
-                                    WHEN jsonb_typeof(elem) = 'string' THEN elem::text
-                                    ELSE 'Unknown'
-                                END,
-                                ','
-                            )
-                        ELSE 'N/A'
-                    END,
-                    'N/A'
-                ) AS certificate_name,
-                COALESCE(
-                    CASE
-                        WHEN rid.selected_courses IS NOT NULL AND jsonb_array_length(rid.selected_courses) > 0 THEN
-                            string_agg(
-                                UPPER(LEFT(
-                                    CASE
-                                        WHEN jsonb_typeof(elem) = 'object' AND elem ? 'certificate_name' THEN elem->>'certificate_name'
-                                        WHEN jsonb_typeof(elem) = 'string' THEN elem::text
-                                        ELSE 'UNK'
-                                    END,
-                                    3
-                                )),
-                                ','
-                            )
-                        ELSE 'N/A'
-                    END,
-                    'N/A'
-                ) AS certificate_id,
+                'N/A' AS certificate_name,
+                'N/A' AS certificate_id,
                 COALESCE(c.json_data->>'companyName', 'N/A') AS companyName,
                 COALESCE(c.json_data->>'personInCharge', 'N/A') AS person_in_charge,
                 COALESCE(rid.delivery_note, 'N/A') AS delivery_note,
@@ -152,13 +121,12 @@ class MasterTableUpdater:
             FROM certificate_selections cs
             JOIN candidates c ON cs.candidate_id = c.id
             LEFT JOIN receiptinvoicedata rid ON cs.candidate_id = rid.candidate_id
-            LEFT JOIN LATERAL jsonb_array_elements(rid.selected_courses) AS elem ON true
             WHERE cs.candidate_id IS NOT NULL
               AND c.id IS NOT NULL
               AND cs.creation_date > %s
             GROUP BY cs.creation_date, cs.client_name, cs.candidate_id, cs.candidate_name,
                      c.json_data, rid.delivery_note, rid.delivery_date, rid.terms_of_delivery,
-                     rid.invoice_no, rid.selected_courses
+                     rid.invoice_no
             ON CONFLICT (candidate_id, invoice_no) DO NOTHING;
             """
 

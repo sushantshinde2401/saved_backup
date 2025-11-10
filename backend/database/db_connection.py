@@ -498,13 +498,13 @@ def insert_receipt_invoice_data(receipt_data):
             cgst DECIMAL(10,2) DEFAULT 0,
             sgst DECIMAL(10,2) DEFAULT 0,
             final_amount DECIMAL(10,2),
-            selected_courses JSONB,
             delivery_note VARCHAR(100),
             dispatch_doc_no VARCHAR(100),
             delivery_date DATE,
             dispatch_through VARCHAR(100),
             destination TEXT,
             terms_of_delivery TEXT,
+            selected_courses JSONB,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
@@ -542,28 +542,36 @@ def insert_receipt_invoice_data(receipt_data):
             INSERT INTO ReceiptInvoiceData (
                 invoice_no, candidate_id, company_name, company_account_number,
                 customer_name, customer_phone, party_name, invoice_date,
-                amount, gst, gst_applied, cgst, sgst, final_amount, selected_courses,
+                amount, gst, gst_applied, cgst, sgst, final_amount,
                 delivery_note, dispatch_doc_no, delivery_date, dispatch_through,
-                destination, terms_of_delivery
+                destination, terms_of_delivery, selected_courses
             ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING invoice_no
         """
 
         # Convert boolean gst_applied to numeric for database compatibility
         gst_applied_value = 1 if receipt_data.get('gst_applied', False) else 0
-
-        # Extract only certificate names from selected_courses
-        selected_courses = receipt_data.get('selected_courses', [])
-        if selected_courses and isinstance(selected_courses, list):
-            # If it's an array of objects, extract certificateName
-            if selected_courses and isinstance(selected_courses[0], dict) and 'certificateName' in selected_courses[0]:
-                certificate_names = [course.get('certificateName') for course in selected_courses if course.get('certificateName')]
-            else:
-                # If it's already an array of strings, use as is
-                certificate_names = selected_courses
+    
+        # Handle selectedCourses - convert array of objects to JSON string for database storage
+        selected_courses_json = None
+        if receipt_data.get('selectedCourses'):
+            if isinstance(receipt_data['selectedCourses'], list):
+                # Store as JSON array of objects
+                selected_courses_json = json.dumps(receipt_data['selectedCourses'])
+            elif isinstance(receipt_data['selectedCourses'], str):
+                # If already a string, try to parse as JSON or store as-is
+                try:
+                    # Try to parse as JSON first
+                    json.loads(receipt_data['selectedCourses'])
+                    selected_courses_json = receipt_data['selectedCourses']
+                except (json.JSONDecodeError, TypeError):
+                    # If not valid JSON, wrap in array
+                    selected_courses_json = json.dumps([receipt_data['selectedCourses']])
         else:
-            certificate_names = []
-
+            selected_courses_json = json.dumps([])  # Empty array for no courses
+    
+        logger.info(f"[DB] Processing selectedCourses: {receipt_data.get('selectedCourses')} -> JSON stored")
+    
         result = execute_query(query, (
             receipt_data['invoice_no'],
             receipt_data.get('candidate_id'),
@@ -579,13 +587,13 @@ def insert_receipt_invoice_data(receipt_data):
             receipt_data.get('cgst', 0),
             receipt_data.get('sgst', 0),
             receipt_data.get('final_amount', 0),
-            json.dumps(certificate_names),
             receipt_data.get('delivery_note'),
             receipt_data.get('dispatch_doc_no'),
             receipt_data.get('delivery_date'),
             receipt_data.get('dispatch_through'),
             receipt_data.get('destination'),
-            receipt_data.get('terms_of_delivery')
+            receipt_data.get('terms_of_delivery'),
+            selected_courses_json  # JSON data for selected courses
         ))
 
         if result:
@@ -638,13 +646,6 @@ def get_receipt_invoice_data(invoice_no=None, candidate_id=None, limit=50, offse
 
     try:
         results = execute_query(query, params)
-        # Parse JSON fields (only if they are strings, as psycopg2 may auto-parse JSONB)
-        for result in results:
-            if result.get('selected_courses'):
-                # Check if it's already parsed (list) or still a JSON string
-                if isinstance(result['selected_courses'], str):
-                    result['selected_courses'] = json.loads(result['selected_courses'])
-
         logger.info(f"[DB] Retrieved {len(results)} ReceiptInvoiceData records")
         return results
     except Exception as e:
@@ -667,22 +668,8 @@ def update_receipt_invoice_data(invoice_no, update_data):
     params = []
 
     for field, value in update_data.items():
-        if field == 'selected_courses':
-            # Transform selected_courses to only certificate names
-            if value and isinstance(value, list):
-                # If it's an array of objects, extract certificateName
-                if value and isinstance(value[0], dict) and 'certificateName' in value[0]:
-                    certificate_names = [course.get('certificateName') for course in value if course.get('certificateName')]
-                else:
-                    # If it's already an array of strings, use as is
-                    certificate_names = value
-            else:
-                certificate_names = []
-            set_parts.append(f"{field} = %s")
-            params.append(json.dumps(certificate_names))
-        else:
-            set_parts.append(f"{field} = %s")
-            params.append(value)
+        set_parts.append(f"{field} = %s")
+        params.append(value)
 
     set_clause = ", ".join(set_parts)
     query = f"""

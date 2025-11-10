@@ -20,7 +20,7 @@ This document outlines the data flow for the invoicing system using stepper logi
 - **Columns**:
   - Company Details: company_name, company_account_number
   - Customer Details: customer_name, customer_phone
-  - Invoice Info: party_name, invoice_date, amount, discount, gst, final_amount, selected_courses (JSONB)
+  - Invoice Info: party_name, invoice_date, amount, discount, gst, final_amount
   - Delivery Details: delivery_note, dispatch_doc_no, delivery_date, dispatch_through, destination, terms_of_delivery
   - created_at (TIMESTAMP DEFAULT CURRENT_TIMESTAMP)
 
@@ -63,9 +63,8 @@ The invoicing process uses a 5-step stepper wizard for creating invoices, follow
 ### Step 3: Invoice Details
 - **Purpose**: Enter core invoice information including amounts and courses
 - **Data Flow**:
-  - Input fields: party_name, invoice_date, amount, discount, gst, selected_courses
+  - Input fields: party_name, invoice_date, amount, discount, gst
   - Calculate final_amount = amount - discount + gst
-  - selected_courses stored as JSONB array
 - **Validation**: Amounts must be numeric, final_amount calculated automatically
 
 ### Step 4: Delivery Details
