@@ -3,6 +3,7 @@ from .candidate import candidate_bp
 from .certificate import certificate_bp
 from .misc import misc_bp
 from .bookkeeping import bookkeeping_bp
+from bookkeeping.routes.files import files_bp
 
 def register_blueprints(app):
     """Register all blueprints with the Flask app"""
@@ -11,6 +12,7 @@ def register_blueprints(app):
     app.register_blueprint(certificate_bp, url_prefix='/certificate')
     app.register_blueprint(misc_bp)
     app.register_blueprint(bookkeeping_bp, url_prefix='/api/bookkeeping')
+    app.register_blueprint(files_bp, url_prefix='/api/files')
 
     # Register certificate status update endpoint directly on app
     # This ensures it has proper CORS handling

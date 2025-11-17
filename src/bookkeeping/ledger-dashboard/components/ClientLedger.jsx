@@ -512,6 +512,7 @@ const ClientLedger = () => {
                     <option value="">All Types</option>
                     <option value="Sales">Sales</option>
                     <option value="Receipt">Receipt</option>
+                    <option value="Adjustment">Adjustment</option>
                   </select>
                 </div>
               </div>
@@ -633,7 +634,10 @@ const ClientLedger = () => {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                         <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                          entry.voucher_type === 'Sales' ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800'
+                          entry.voucher_type === 'Sales' ? 'bg-blue-100 text-blue-800' :
+                          entry.voucher_type === 'Receipt' ? 'bg-green-100 text-green-800' :
+                          entry.voucher_type === 'Adjustment' ? 'bg-orange-100 text-orange-800' :
+                          'bg-gray-100 text-gray-800'
                         }`}>
                           {entry.voucher_type}
                         </span>

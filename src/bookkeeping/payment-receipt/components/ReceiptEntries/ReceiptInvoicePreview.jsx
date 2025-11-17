@@ -15,6 +15,7 @@ function ReceiptInvoicePreview() {
     remark: receiptData.deliveryNote
   });
   const [amountReceived, setAmountReceived] = useState(receiptData.amountReceived);
+  const [isAutoSaving, setIsAutoSaving] = useState(false);
 
   const calculateTotals = () => {
     const baseAmount = amountReceived;
@@ -23,6 +24,120 @@ function ReceiptInvoicePreview() {
   };
 
   const totals = calculateTotals();
+
+  // Auto-save invoice to database when component loads
+  useEffect(() => {
+    if (receiptData && receiptData.savedReceiptData) {
+      autoSaveInvoice();
+    }
+  }, [receiptData]);
+
+  const autoSaveInvoice = async () => {
+    console.log('autoSaveInvoice called', { receiptData: !!receiptData, savedReceiptData: !!receiptData?.savedReceiptData });
+    if (isAutoSaving) {
+      console.log('Already saving, skipping');
+      return; // Prevent multiple saves
+    }
+
+    setIsAutoSaving(true);
+    console.log('Starting auto-save process');
+
+    const element = document.querySelector('.receipt-content');
+    console.log('Element found:', !!element);
+
+    if (element) {
+      const clonedElement = element.cloneNode(true);
+      clonedElement.style.boxShadow = 'none';
+
+      const opt = {
+        margin: 0.5,
+        filename: `Payment_Receipt_${receiptData.savedReceiptData?.receipt_amount_id || 'N/A'}.pdf`,
+        image: { type: 'jpeg', quality: 1.0 },
+        html2canvas: {
+          scale: 3,
+          useCORS: true,
+          letterRendering: true,
+          allowTaint: false
+        },
+        jsPDF: {
+          unit: 'in',
+          format: 'a4',
+          orientation: 'portrait',
+          compress: true
+        }
+      };
+
+      try {
+        // Generate unique identifier for the invoice (matching backend format)
+        const receiptId = receiptData.savedReceiptData?.receipt_amount_id;
+        const uniqueIdentifier = `RCPT-${receiptId}`;
+        console.log('Generated unique identifier:', uniqueIdentifier);
+
+        // Always save the exact visual replica from frontend
+        console.log('Saving exact visual replica of receipt invoice to database');
+
+        // Generate PDF blob for saving to database
+        console.log('Generating PDF blob...');
+        const pdfBlob = await html2pdf().set(opt).from(clonedElement).outputPdf('blob');
+        console.log('PDF blob generated, size:', pdfBlob.size);
+
+        // Convert blob to base64
+        const reader = new FileReader();
+        reader.onloadend = async () => {
+          console.log('Blob converted to base64');
+          const base64Data = reader.result.split(',')[1]; // Remove data:application/pdf;base64, prefix
+
+          // Prepare invoice data
+          const invoiceData = {
+            invoice_no: uniqueIdentifier,
+            image_data: base64Data,
+            image_type: 'pdf',
+            file_name: `Payment_Receipt_${uniqueIdentifier}.pdf`,
+            voucher_type: 'Receipt'
+          };
+
+          console.log('Sending invoice data to backend...');
+
+          // Save to database
+          try {
+            const response = await fetch('http://localhost:5000/api/files/save-invoice-image', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify(invoiceData),
+            });
+
+            console.log('Backend response status:', response.status);
+
+            if (response.ok) {
+              const result = await response.json();
+              console.log('Receipt invoice automatically saved to database successfully', {
+                invoice_no: uniqueIdentifier,
+                receipt_id: receiptId,
+                customer: receiptData.customerName,
+                amount: receiptData.amountReceived
+              });
+            } else {
+              const errorData = await response.json();
+              console.error('Failed to auto-save receipt invoice to database:', errorData);
+            }
+          } catch (saveError) {
+            console.error('Error auto-saving receipt invoice to database:', saveError);
+          }
+        };
+        reader.readAsDataURL(pdfBlob);
+
+      } catch (error) {
+        console.error('Error generating PDF for auto-save:', error);
+      } finally {
+        setIsAutoSaving(false);
+      }
+    } else {
+      console.log('Receipt content element not found');
+      setIsAutoSaving(false);
+    }
+  };
 
   const numberToWords = (num) => {
     const ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine'];
@@ -75,35 +190,100 @@ function ReceiptInvoicePreview() {
 
   const handlePrint = () => window.print();
 
-  const handleDownload = () => {
-    const element = document.querySelector('.receipt-content');
-    if (element) {
-      // Clone the element to apply print styles
-      const clonedElement = element.cloneNode(true);
+  const handleDownload = async () => {
+    try {
+      const invoiceNo = `RCPT-${receiptData.savedReceiptData?.receipt_amount_id || 'N/A'}`;
 
-      // Apply print styles to the cloned element
-      clonedElement.style.boxShadow = 'none';
-      clonedElement.style.width = '100%';
-      clonedElement.style.maxWidth = 'none';
+      // First try to get the already generated PDF from database
+      const response = await fetch(`http://localhost:5000/api/files/get-invoice-image/${invoiceNo}`);
 
-      const opt = {
-        margin: 0.5,
-        filename: `Payment_Receipt_${receiptData.savedReceiptData?.receipt_amount_id || 'N/A'}.pdf`,
-        image: { type: 'jpeg', quality: 1.0 },
-        html2canvas: {
-          scale: 3,
-          useCORS: true,
-          letterRendering: true,
-          allowTaint: false
-        },
-        jsPDF: {
-          unit: 'in',
-          format: 'a4',
-          orientation: 'portrait',
-          compress: true
+      if (response.ok) {
+        const result = await response.json();
+        if (result.status === 'success' && result.data?.image_data) {
+          // Convert base64 to blob and download
+          const base64Data = result.data.image_data;
+          const byteCharacters = atob(base64Data);
+          const byteNumbers = new Array(byteCharacters.length);
+          for (let i = 0; i < byteCharacters.length; i++) {
+            byteNumbers[i] = byteCharacters.charCodeAt(i);
+          }
+          const byteArray = new Uint8Array(byteNumbers);
+          const blob = new Blob([byteArray], { type: 'application/pdf' });
+
+          // Create download link
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = url;
+          link.download = result.data.file_name || `Payment_Receipt_${invoiceNo}.pdf`;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          URL.revokeObjectURL(url);
+
+          console.log('Downloaded existing receipt invoice from database');
+          return;
         }
-      };
-      html2pdf().set(opt).from(clonedElement).save();
+      }
+
+      // Fallback: Generate new PDF if not found in database
+      console.log('Receipt invoice not found in database, generating new PDF');
+      const element = document.querySelector('.receipt-content');
+      if (element) {
+        // Clone the element to apply print styles
+        const clonedElement = element.cloneNode(true);
+
+        // Apply print styles to the cloned element
+        clonedElement.style.boxShadow = 'none';
+
+        const opt = {
+          margin: 0.5,
+          filename: `Payment_Receipt_${receiptData.savedReceiptData?.receipt_amount_id || 'N/A'}.pdf`,
+          image: { type: 'jpeg', quality: 1.0 },
+          html2canvas: {
+            scale: 3,
+            useCORS: true,
+            letterRendering: true,
+            allowTaint: false
+          },
+          jsPDF: {
+            unit: 'in',
+            format: 'a4',
+            orientation: 'portrait',
+            compress: true
+          }
+        };
+
+        // Generate and download PDF
+        html2pdf().set(opt).from(clonedElement).save();
+      }
+    } catch (error) {
+      console.error('Error downloading PDF:', error);
+      // Fallback: Generate new PDF
+      const element = document.querySelector('.receipt-content');
+    if (element) {
+      const clonedElement = element.cloneNode(true);
+      clonedElement.style.boxShadow = 'none';
+
+        const opt = {
+          margin: 0.5,
+          filename: `Payment_Receipt_${receiptData.savedReceiptData?.receipt_amount_id || 'N/A'}.pdf`,
+          image: { type: 'jpeg', quality: 1.0 },
+          html2canvas: {
+            scale: 3,
+            useCORS: true,
+            letterRendering: true,
+            allowTaint: false
+          },
+          jsPDF: {
+            unit: 'in',
+            format: 'a4',
+            orientation: 'portrait',
+            compress: true
+          }
+        };
+
+        html2pdf().set(opt).from(clonedElement).save();
+      }
     }
   };
 
@@ -312,6 +492,32 @@ function ReceiptInvoicePreview() {
 
           <div className="input-controls w-96 bg-gray-50 border border-gray-200 rounded-lg p-4 no-print">
             <h2 className="text-xl font-bold text-gray-800 mb-4 text-center">RECEIPT CONTROLS</h2>
+
+            {/* Status Section */}
+            <div className="mb-6">
+              <h4 className="text-md font-medium text-gray-700 mb-3">Receipt Status</h4>
+              <div className="flex items-center gap-2 p-3 bg-green-50 border border-green-200 rounded-lg">
+                {isAutoSaving ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-green-600 border-t-transparent rounded-full animate-spin"></div>
+                    <div>
+                      <p className="text-sm font-medium text-green-800">Saving Invoice...</p>
+                      <p className="text-xs text-green-600">Auto-saving PDF to database</p>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-5 h-5 text-green-600" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                    </svg>
+                    <div>
+                      <p className="text-sm font-medium text-green-800">Receipt Recorded</p>
+                      <p className="text-xs text-green-600">ID: {receiptData.savedReceiptData?.receipt_amount_id || 'N/A'}</p>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
             <div className="mb-6">
               <label className="block text-sm font-medium text-gray-700 mb-1">Receipt Date</label>
               <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} className="bg-yellow-50 border border-yellow-300 rounded px-2 py-1 text-sm w-full" />

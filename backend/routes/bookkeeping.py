@@ -975,6 +975,9 @@ def create_receipt_amount_received():
             receipt_id = result[0]['receipt_amount_id']
             logger.info(f"[RECEIPT] Created receipt amount received record ID: {receipt_id}")
 
+            # PDF generation will be handled by frontend autoSaveInvoice for exact visual replica
+            logger.info(f"[RECEIPT_INVOICE] Skipping backend PDF generation - frontend will handle exact visual replica for receipt ID: {receipt_id}")
+
             # After creating receipt, insert into ClientLedger and Bank Ledger
             try:
                 # Retrieve the receipt data we just inserted
@@ -1035,9 +1038,9 @@ def create_receipt_amount_received():
                                     amount, remark, transaction_type
                                 ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                             """
-    
+
                             bank_remark = f"Receipt from {customer_name} - {transaction_id or ''}"
-    
+
                             execute_query(bank_ledger_query, (
                                 transaction_date,  # payment_date
                                 transaction_id,  # transaction_id
@@ -1142,50 +1145,6 @@ def get_receipt_amount_received():
             "status": "error"
         }), 500
 
-@bookkeeping_bp.route('/receipt-amount-received/<int:receipt_id>', methods=['GET'])
-def get_receipt_amount_received_by_id(receipt_id):
-    """Get a specific receipt amount received record by ID"""
-    try:
-        query = "SELECT * FROM ReceiptAmountReceived WHERE receipt_amount_id = %s"
-        results = execute_query(query, (receipt_id,))
-
-        if results and len(results) > 0:
-            receipt = results[0]
-            receipt_data = {
-                'receipt_amount_id': receipt['receipt_amount_id'],
-                'amount_received': float(receipt['amount_received']) if receipt['amount_received'] else 0,
-                'payment_type': receipt['payment_type'],
-                'transaction_date': str(receipt['transaction_date']) if receipt['transaction_date'] else None,
-                'remark': receipt['remark'],
-                'account_no': receipt['account_no'],
-                'company_name': receipt['company_name'],
-                'tds_percentage': float(receipt['tds_amount']) if receipt['tds_amount'] else 0,
-                'gst': float(receipt['gst_amount']) if receipt['gst_amount'] else 0,
-                'customer_name': receipt['customer_name'],
-                'transaction_id': receipt['transaction_id'],
-                'on_account_of': receipt['on_account_of'],
-                'created_at': str(receipt['created_at'])
-            }
-
-            logger.info(f"[RECEIPT] Retrieved receipt amount received record ID: {receipt_id}")
-            return jsonify({
-                "status": "success",
-                "data": receipt_data,
-                "message": f"Retrieved receipt amount received record ID: {receipt_id}"
-            }), 200
-        else:
-            return jsonify({
-                "error": "Receipt not found",
-                "message": f"No receipt amount received record found with ID: {receipt_id}"
-            }), 404
-
-    except Exception as e:
-        logger.error(f"[RECEIPT] Failed to retrieve receipt amount received ID {receipt_id}: {e}")
-        return jsonify({
-            "error": str(e),
-            "message": "Failed to retrieve receipt amount received record",
-            "status": "error"
-        }), 500
 
 @bookkeeping_bp.route('/receipt-amount-received/<int:receipt_id>', methods=['PUT'])
 def update_receipt_amount_received(receipt_id):
@@ -1555,785 +1514,125 @@ def get_company_ledger():
             "status": "error"
         }), 500
 
-@bookkeeping_bp.route('/company-ledger/<int:ledger_id>', methods=['DELETE'])
-def delete_company_ledger_entry(ledger_id):
-    """Delete a company ledger entry or adjustment entry based on the source table"""
-    try:
-        # First, check if this is a regular ClientLedger entry
-        select_query = """
-            SELECT id, voucher_no, company_name, entry_type
-            FROM ClientLedger
-            WHERE id = %s
-        """
-        ledger_results = execute_query(select_query, (ledger_id,))
-
-        if ledger_results and len(ledger_results) > 0:
-            # This is a regular ClientLedger entry
-            ledger_entry = ledger_results[0]
-            voucher_no = ledger_entry['voucher_no']
-            entry_type = ledger_entry['entry_type']
-
-            # If this is an auto-generated receipt entry, also delete the receipt and bank ledger entries
-            if voucher_no and voucher_no.startswith('RCPT-'):
-                try:
-                    # Extract receipt ID from voucher_no (format: RCPT-{receipt_id})
-                    receipt_id_str = voucher_no.replace('RCPT-', '')
-                    receipt_id = int(receipt_id_str)
-
-                    # Get transaction_id from the receipt to delete bank ledger entry
-                    receipt_query = "SELECT transaction_id FROM ReceiptAmountReceived WHERE receipt_amount_id = %s"
-                    receipt_results = execute_query(receipt_query, (receipt_id,))
-
-                    if receipt_results and len(receipt_results) > 0:
-                        transaction_id = receipt_results[0]['transaction_id']
-
-                        # Delete from bank_ledger if transaction_id exists
-                        if transaction_id:
-                            bank_ledger_delete_query = "DELETE FROM bank_ledger WHERE transaction_id = %s"
-                            execute_query(bank_ledger_delete_query, (transaction_id,), fetch=False)
-                            logger.info(f"[BANK_LEDGER] Deleted associated bank ledger entry for receipt ID: {receipt_id}, transaction: {transaction_id}")
-
-                    # Delete from ReceiptAmountReceived
-                    receipt_delete_query = "DELETE FROM ReceiptAmountReceived WHERE receipt_amount_id = %s"
-                    execute_query(receipt_delete_query, (receipt_id,), fetch=False)
-                    logger.info(f"[RECEIPT] Deleted associated receipt ID: {receipt_id} for ledger entry {ledger_id}")
-
-                except (ValueError, Exception) as receipt_e:
-                    logger.warning(f"[RECEIPT] Could not delete associated receipt for ledger {ledger_id}: {receipt_e}")
-                    # For atomicity, we should fail the entire operation if receipt deletion fails
-                    return jsonify({
-                        "error": "Failed to delete associated records",
-                        "message": f"Could not delete associated receipt data: {str(receipt_e)}",
-                        "status": "error"
-                    }), 500
-
-            # Delete from ClientLedger
-            ledger_delete_query = "DELETE FROM ClientLedger WHERE id = %s"
-            execute_query(ledger_delete_query, (ledger_id,), fetch=False)
-
-            logger.info(f"[LEDGER] Successfully deleted ClientLedger entry ID: {ledger_id} and all associated records")
-            return jsonify({
-                "status": "success",
-                "message": f"Ledger entry {ledger_id} and associated records deleted successfully"
-            }), 200
-
-        # If not found in ClientLedger, check if it's an adjustment entry
-        # Check client_adjustments table
-        client_adjustment_query = """
-            SELECT id, company_id, customer_id, particular_of_service, adjustment_amount
-            FROM client_adjustments
-            WHERE id = %s
-        """
-        client_results = execute_query(client_adjustment_query, (ledger_id,))
-
-        if client_results and len(client_results) > 0:
-            # This is a client adjustment entry
-            adjustment_data = client_results[0]
-
-            # Delete from client_adjustments
-            delete_query = "DELETE FROM client_adjustments WHERE id = %s"
-            execute_query(delete_query, (ledger_id,), fetch=False)
-
-            logger.info(f"[CLIENT_ADJUSTMENT] Deleted client adjustment entry ID: {ledger_id}, Amount: {adjustment_data['adjustment_amount']}")
-            return jsonify({
-                "status": "success",
-                "message": f"Client adjustment entry {ledger_id} deleted successfully"
-            }), 200
-
-        # Check vendor_adjustments table
-        vendor_adjustment_query = """
-            SELECT id, company_id, vendor_id, particular_of_service, adjustment_amount
-            FROM vendor_adjustments
-            WHERE id = %s
-        """
-        vendor_results = execute_query(vendor_adjustment_query, (ledger_id,))
-
-        if vendor_results and len(vendor_results) > 0:
-            # This is a vendor adjustment entry
-            adjustment_data = vendor_results[0]
-
-            # Delete from vendor_adjustments
-            delete_query = "DELETE FROM vendor_adjustments WHERE id = %s"
-            execute_query(delete_query, (ledger_id,), fetch=False)
-
-            logger.info(f"[VENDOR_ADJUSTMENT] Deleted vendor adjustment entry ID: {ledger_id}, Amount: {adjustment_data['adjustment_amount']}")
-            return jsonify({
-                "status": "success",
-                "message": f"Vendor adjustment entry {ledger_id} deleted successfully"
-            }), 200
-
-        # If not found in any table, return 404
-        return jsonify({
-            "error": "Ledger entry not found",
-            "message": f"No ledger entry found with ID: {ledger_id}",
-            "status": "not_found"
-        }), 404
-
-    except Exception as e:
-        logger.error(f"[LEDGER] Failed to delete ledger entry {ledger_id}: {e}")
-        return jsonify({
-            "error": str(e),
-            "message": "Failed to delete ledger entry",
-            "status": "error"
-        }), 500
-
-@bookkeeping_bp.route('/vendor-service-entry', methods=['POST'])
-def create_vendor_service_entry():
-    """Create a new vendor service entry in vendor_services table"""
-    try:
-        data = request.get_json()
-
-        required_fields = ['vendorId', 'dateOfService', 'particularOfService', 'feesToBePaid']
-        for field in required_fields:
-            if field not in data:
-                return jsonify({
-                    "error": f"Missing required field: {field}",
-                    "message": f"Field '{field}' is required",
-                    "status": "validation_error"
-                }), 400
-
-        # Validate and convert data types
-        try:
-            vendor_id = int(data['vendorId'])
-            company_id = int(data.get('companyId')) if data.get('companyId') else None
-            fees = float(data['feesToBePaid'])
-            if fees <= 0:
-                raise ValueError("Fees must be positive")
-        except (ValueError, TypeError) as e:
-            return jsonify({
-                "error": f"Invalid data type: {e}",
-                "message": "Please check that IDs are valid integers and fees are a positive number",
-                "status": "validation_error"
-            }), 400
-
-        # Insert into vendor_services
-        query = """
-            INSERT INTO vendor_services (
-                vendor_id, company_id, service_date, particulars,
-                amount, on_account_of, remark
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s)
-            RETURNING id
-        """
-
-        params = (
-            vendor_id,
-            company_id,
-            data['dateOfService'],
-            data['particularOfService'],
-            fees,
-            data.get('onAccountOf'),
-            data.get('remark')
-        )
-
-        result = execute_query(query, params)
-
-        if result:
-            entry_id = result[0]['id']
-            logger.info(f"[VENDOR_SERVICE] Created vendor service entry ID: {entry_id}")
-            return jsonify({
-                "status": "success",
-                "data": {"entry_id": entry_id},
-                "message": f"Vendor service entry created successfully with ID: {entry_id}"
-            }), 201
-        else:
-            return jsonify({
-                "error": "Failed to create entry",
-                "message": "No ID returned from insert operation",
-                "status": "error"
-            }), 500
-
-    except Exception as e:
-        logger.error(f"[VENDOR_SERVICE] Failed to create vendor service entry: {e}")
-        return jsonify({
-            "error": str(e),
-            "message": "Failed to create vendor service entry",
-            "status": "error"
-        }), 500
-
-@bookkeeping_bp.route('/vendor-payment-entry', methods=['POST'])
-def create_vendor_payment_entry():
-    """Create a new vendor payment entry in vendor_payments and bank_ledger"""
-    try:
-        data = request.get_json()
-
-        required_fields = ['vendorId', 'dateOfPayment', 'transactionId', 'amount']
-        for field in required_fields:
-            if field not in data:
-                return jsonify({
-                    "error": f"Missing required field: {field}",
-                    "message": f"Field '{field}' is required",
-                    "status": "validation_error"
-                }), 400
-
-        # Validate and convert data types
-        try:
-            vendor_id = int(data['vendorId'])
-            company_id = int(data.get('companyId')) if data.get('companyId') else None
-            amount = float(data['amount'])
-            if amount <= 0:
-                raise ValueError("Amount must be positive")
-        except (ValueError, TypeError) as e:
-            return jsonify({
-                "error": f"Invalid data type: {e}",
-                "message": "Please check that IDs are valid integers and amount is a positive number",
-                "status": "validation_error"
-            }), 400
-
-        # Check if transaction_id is unique in vendor_payments
-        check_query = "SELECT id FROM vendor_payments WHERE transaction_id = %s"
-        check_result = execute_query(check_query, (data['transactionId'],))
-
-        if check_result and len(check_result) > 0:
-            return jsonify({
-                "error": "Transaction ID already exists",
-                "message": f"Transaction ID '{data['transactionId']}' is already used",
-                "status": "validation_error"
-            }), 400
-
-        # Get vendor name for bank ledger
-        vendor_query = "SELECT vendor_name FROM vendors WHERE id = %s"
-        vendor_result = execute_query(vendor_query, (vendor_id,))
-
-        if not vendor_result:
-            return jsonify({
-                "error": "Vendor not found",
-                "message": f"No vendor found with ID: {vendor_id}",
-                "status": "validation_error"
-            }), 400
-
-        vendor_name = vendor_result[0]['vendor_name']
-
-        # Insert into vendor_payments
-        payment_query = """
-            INSERT INTO vendor_payments (
-                vendor_id, company_id, payment_date, transaction_id,
-                amount, on_account_of, remark
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s)
-            RETURNING id
-        """
-
-        payment_params = (
-            vendor_id,
-            company_id,
-            data['dateOfPayment'],
-            data['transactionId'],
-            amount,
-            data.get('onAccountOf'),
-            data.get('remark')
-        )
-
-        payment_result = execute_query(payment_query, payment_params)
-
-        if payment_result:
-            payment_id = payment_result[0]['id']
-
-            # Insert into bank_ledger
-            bank_query = """
-                INSERT INTO bank_ledger (
-                    payment_date, transaction_id, vendor_id, company_id, vendor_name,
-                    amount, remark, transaction_type
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                RETURNING id
-            """
-
-            bank_params = (
-                data['dateOfPayment'],
-                data['transactionId'],
-                vendor_id,
-                company_id,
-                vendor_name,
-                amount,
-                f"Payment to {vendor_name} - {data['transactionId']}",
-                'payment'
-            )
-
-            bank_result = execute_query(bank_query, bank_params)
-            bank_created = bank_result is not None and len(bank_result) > 0
-
-            logger.info(f"[VENDOR_PAYMENT] Created vendor payment entry ID: {payment_id}, bank entry: {bank_created}")
-
-            return jsonify({
-                "status": "success",
-                "data": {
-                    "payment_id": payment_id,
-                    "bank_entry_created": bank_created
-                },
-                "message": f"Vendor payment entry created successfully with ID: {payment_id}"
-            }), 201
-        else:
-            return jsonify({
-                "error": "Failed to create payment entry",
-                "message": "No ID returned from insert operation",
-                "status": "error"
-            }), 500
-
-    except Exception as e:
-        logger.error(f"[VENDOR_PAYMENT] Failed to create vendor payment entry: {e}")
-        # Return more detailed error for debugging
-        import traceback
-        error_details = traceback.format_exc()
-        logger.error(f"[VENDOR_PAYMENT] Traceback: {error_details}")
-        return jsonify({
-            "error": str(e),
-            "message": "Failed to create vendor payment entry",
-            "status": "error",
-            "debug": {
-                "vendor_id": data.get('vendorId'),
-                "company_id": data.get('companyId'),
-                "amount": data.get('amount'),
-                "transaction_id": data.get('transactionId'),
-                "date": data.get('dateOfPayment')
-            }
-        }), 500
-
-@bookkeeping_bp.route('/expense-payment-entry', methods=['POST'])
-def create_expense_payment_entry():
-    """Create a new expense payment entry with double-entry accounting"""
-    try:
-        data = request.get_json()
-
-        # Use provided transaction ID or generate unique one
-        transaction_id = data.get('transactionId')
-        if not transaction_id:
-            import uuid
-            transaction_id = str(uuid.uuid4())[:8].upper()
-
-        # Get company_id if company name is provided
-        company_id = None
-        if data.get('company'):
-            company_query = "SELECT id FROM company_details WHERE company_name = %s LIMIT 1"
-            company_result = execute_query(company_query, (data['company'],))
-            if company_result:
-                company_id = company_result[0]['id']
-
-        # Convert amount to float if provided
-        amount = float(data.get('amount', 0)) if data.get('amount') else 0
-
-        # Create double-entry accounting entries
-        expense_particulars = f"Payment to {data.get('vendorName', 'Vendor')} for {data.get('description', data.get('expenseType', 'Expense'))}"
-        bank_particulars = f"Expense payment for {data.get('expenseType', 'Expense')} to {data.get('vendorName', 'Vendor')}"
-
-        # Insert expense ledger entry (debit)
-        expense_query = """
-            INSERT INTO expense_ledger (
-                transaction_id, expense_type, company, vendor_name, vendor_gst_number,
-                amount, expense_date, payment_method, description, particulars,
-                debit, credit, account_type, company_id
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            RETURNING id
-        """
-
-        expense_params = (
-            transaction_id,
-            data.get('expenseType'),
-            data.get('company'),
-            data.get('vendorName'),
-            data.get('vendorGstNumber'),
-            amount,
-            data.get('expenseDate'),
-            data.get('paymentMethod'),
-            data.get('description'),
-            expense_particulars,
-            amount,  # debit
-            0,       # credit
-            'expense',
-            company_id
-        )
-
-        expense_result = execute_query(expense_query, expense_params)
-
-        # Insert bank ledger entry (credit) - into expense_ledger for accounting
-        bank_query = """
-            INSERT INTO expense_ledger (
-                transaction_id, expense_type, company, vendor_name, vendor_gst_number,
-                amount, expense_date, payment_method, description, particulars,
-                debit, credit, account_type, company_id
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            RETURNING id
-        """
-
-        bank_params = (
-            transaction_id,
-            data.get('expenseType'),
-            data.get('company'),
-            data.get('vendorName'),
-            data.get('vendorGstNumber'),
-            amount,
-            data.get('expenseDate'),
-            data.get('paymentMethod'),
-            data.get('description'),
-            bank_particulars,
-            0,       # debit
-            amount,  # credit
-            'bank',
-            company_id
-        )
-
-        bank_result = execute_query(bank_query, bank_params)
-
-        # Also insert into bank_ledger table for bank reconciliation
-        bank_ledger_query = """
-            INSERT INTO bank_ledger (
-                payment_date, transaction_id, vendor_id, company_id, vendor_name,
-                amount, remark, transaction_type
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-        """
-
-        bank_ledger_params = (
-            data.get('expenseDate'),  # payment_date
-            transaction_id,  # transaction_id
-            None,  # vendor_id (not applicable for expense payments)
-            company_id,  # company_id
-            data.get('vendorName'),  # vendor_name
-            amount,  # amount
-            f"Expense payment: {data.get('expenseType', 'Expense')} to {data.get('vendorName', 'Vendor')}",  # remark
-            'payment'  # transaction_type
-        )
-
-        execute_query(bank_ledger_query, bank_ledger_params, fetch=False)
-
-        if expense_result and bank_result:
-            expense_id = expense_result[0]['id']
-            bank_id = bank_result[0]['id']
-
-            # Log audit trail
-            logger.info(f"[EXPENSE_PAYMENT] Created expense payment entry - Transaction ID: {transaction_id}, Amount: {amount}, Company: {data.get('company')}")
-
-            # Flag for GST reconciliation if GST number provided
-            gst_flag = bool(data.get('vendorGstNumber'))
-
-            return jsonify({
-                "status": "success",
-                "data": {
-                    "transaction_id": transaction_id,
-                    "expense_entry_id": expense_id,
-                    "bank_entry_id": bank_id,
-                    "gst_reconciliation_flag": gst_flag
-                },
-                "message": f"Expense payment entry created successfully with transaction ID: {transaction_id}"
-            }), 201
-        else:
-            return jsonify({
-                "error": "Failed to create ledger entries",
-                "message": "Database insertion failed",
-                "status": "error"
-            }), 500
-
-    except Exception as e:
-        logger.error(f"[EXPENSE_PAYMENT] Failed to create expense payment entry: {e}")
-        import traceback
-        error_details = traceback.format_exc()
-        logger.error(f"[EXPENSE_PAYMENT] Traceback: {error_details}")
-        return jsonify({
-            "error": str(e),
-            "message": "Failed to create expense payment entry",
-            "status": "error"
-        }), 500
-
-@bookkeeping_bp.route('/vendor-ledger-report', methods=['GET'])
-def get_vendor_ledger_report():
-    """Get vendor ledger report with running balance"""
-    try:
-        vendor_id = request.args.get('vendor_id', type=int)
-        company_id = request.args.get('company_id', type=int)
-        start_date = request.args.get('start_date')
-        end_date = request.args.get('end_date')
-        limit = request.args.get('limit', 100, type=int)
-        offset = request.args.get('offset', 0, type=int)
-
-        if not vendor_id or not company_id:
-            return jsonify({
-                "error": "Vendor ID and Company ID are required",
-                "message": "Please provide vendor_id and company_id parameters",
-                "status": "validation_error"
-            }), 400
-
-        query = """
-            SELECT * FROM VendorLedgerReport
-            WHERE vendor_id = %s AND company_id = %s
-        """
-        params = [int(vendor_id), int(company_id)]  # Convert to int
-
-        if start_date:
-            query += " AND entry_date >= %s"
-            params.append(start_date)
-        if end_date:
-            query += " AND entry_date <= %s"
-            params.append(end_date)
-
-        query += " ORDER BY entry_date DESC, id DESC LIMIT %s OFFSET %s"
-        params.extend([limit, offset])
-
-        results = execute_query(query, params)
-
-        if results:
-            entries = []
-            for row in results:
-                entries.append({
-                    'id': row['id'],
-                    'entry_date': str(row['entry_date']) if row['entry_date'] else None,
-                    'vendor_name': row['vendor_name'],
-                    'company_name': row['company_name'],
-                    'type': row['type'],
-                    'particulars': row['particulars'],
-                    'remark': row['remark'],
-                    'on_account_of': row['on_account_of'],
-                    'dr': float(row['dr']) if row['dr'] else 0,
-                    'cr': float(row['cr']) if row['cr'] else 0,
-                    'transaction_id': row['transaction_id'],
-                    'balance': float(row['balance']) if row['balance'] else 0
-                })
-
-            logger.info(f"[VENDOR_LEDGER] Retrieved {len(entries)} entries for vendor {vendor_id}, company {company_id}")
-            return jsonify({
-                "status": "success",
-                "data": entries,
-                "message": f"Retrieved {len(entries)} vendor ledger entries",
-                "total": len(entries)
-            }), 200
-        else:
-            return jsonify({
-                "status": "success",
-                "data": [],
-                "message": "No vendor ledger entries found",
-                "total": 0
-            }), 200
-
-    except Exception as e:
-        logger.error(f"[VENDOR_LEDGER] Failed to retrieve vendor ledger report: {e}")
-        return jsonify({
-            "error": str(e),
-            "message": "Failed to retrieve vendor ledger report",
-            "status": "error"
-        }), 500
-
-@bookkeeping_bp.route('/bank-ledger-report', methods=['GET'])
-def get_bank_ledger_report():
-    """Get bank ledger report with running balance, including expense credit entries"""
-    try:
-        company_id = request.args.get('company_id', type=int)
-        start_date = request.args.get('start_date')
-        end_date = request.args.get('end_date')
-        limit = request.args.get('limit', 100, type=int)
-        offset = request.args.get('offset', 0, type=int)
-
-        if not company_id:
-            return jsonify({
-                "error": "Company ID is required",
-                "message": "Please provide company_id parameter",
-                "status": "validation_error"
-            }), 400
-
-        # Get company name for filtering
-        company_query = "SELECT company_name FROM company_details WHERE id = %s"
-        company_result = execute_query(company_query, (company_id,))
-
-        if not company_result:
-            return jsonify({
-                "error": "Company not found",
-                "message": f"No company found with ID: {company_id}",
-                "status": "not_found"
-            }), 404
-
-        company_name = company_result[0]['company_name']
-
-        # Query only bank_ledger table for clean separation
-        full_query = """
-            SELECT
-                bl.id,
-                bl.payment_date as entry_date,
-                bl.transaction_id,
-                bl.vendor_name,
-                bl.amount as amount,
-                bl.remark as particulars,
-                bl.created_at,
-                'bank_ledger' as source_table,
-                NULL as expense_type,
-                CASE WHEN bl.transaction_type = 'receipt' THEN bl.amount ELSE 0 END as debit,
-                CASE WHEN bl.transaction_type = 'payment' THEN bl.amount ELSE 0 END as credit
-            FROM bank_ledger bl
-            WHERE bl.company_id = %s
-        """
-        params = [company_id]
-
-        # Add date filters
-        if start_date:
-            full_query += " AND bl.payment_date >= %s"
-            params.append(start_date)
-        if end_date:
-            full_query += " AND bl.payment_date <= %s"
-            params.append(end_date)
-
-        full_query += " ORDER BY entry_date DESC, id DESC LIMIT %s OFFSET %s"
-        params.extend([limit, offset])
-
-        logger.info(f"[BANK_LEDGER] Query: {full_query}")
-        logger.info(f"[BANK_LEDGER] Params: {params}")
-
-        results = execute_query(full_query, params)
-
-        entries = []
-        running_balance = 0
-
-        if results:
-            # Sort by date ascending for balance calculation
-            sorted_results = sorted(results, key=lambda x: x['entry_date'])
-
-            for row in sorted_results:
-                dr_amount = float(row['debit']) if row['debit'] else 0
-                cr_amount = float(row['credit']) if row['credit'] else 0
-
-                # Calculate running balance (DR increases balance, CR decreases balance)
-                running_balance += dr_amount - cr_amount
-
-                entries.append({
-                    'id': row['id'],
-                    'entry_date': str(row['entry_date']) if row['entry_date'] else None,
-                    'company_name': company_name,
-                    'particulars': row['particulars'] or f"Entry - {row['transaction_id']}",
-                    'transaction_id': row['transaction_id'],
-                    'dr': dr_amount,
-                    'cr': cr_amount,
-                    'balance': running_balance,
-                    'source': row['source_table'],
-                    'expense_type': row['expense_type']
-                })
-
-            # Sort back to descending for display
-            entries.sort(key=lambda x: x['entry_date'] or '1900-01-01', reverse=True)
-
-            # Apply pagination after sorting
-            paginated_entries = entries[offset:offset + limit]
-
-            logger.info(f"[BANK_LEDGER] Retrieved {len(paginated_entries)} entries for company {company_id}")
-            return jsonify({
-                "status": "success",
-                "data": paginated_entries,
-                "message": f"Retrieved {len(paginated_entries)} bank ledger entries",
-                "total": len(paginated_entries)
-            }), 200
-        else:
-            return jsonify({
-                "status": "success",
-                "data": [],
-                "message": "No bank ledger entries found",
-                "total": 0
-            }), 200
-
-    except Exception as e:
-        logger.error(f"[BANK_LEDGER] Failed to retrieve bank ledger report: {e}")
-        return jsonify({
-            "error": str(e),
-            "message": "Failed to retrieve bank ledger report",
-            "status": "error"
-        }), 500
-
 @bookkeeping_bp.route('/vendor-ledger/<int:vendor_id>', methods=['GET'])
 def get_vendor_ledger(vendor_id):
-    """Get unified vendor ledger combining services and payments with running balance"""
+    """Get vendor ledger data from VendorLedgerReport view with filtering and pagination"""
     try:
-        logger.info(f"[VENDOR_LEDGER] Starting request for vendor_id: {vendor_id}")
-
-        # Validate vendor exists
-        logger.info(f"[VENDOR_LEDGER] Checking if vendor {vendor_id} exists")
-        vendor_check = execute_query("SELECT vendor_name FROM vendors WHERE id = %s", (vendor_id,))
-        if not vendor_check:
-            logger.warning(f"[VENDOR_LEDGER] Vendor {vendor_id} not found")
-            return jsonify({
-                "error": "Vendor not found",
-                "message": f"No vendor found with ID: {vendor_id}",
-                "status": "not_found"
-            }), 404
-
-        vendor_name = vendor_check[0]['vendor_name']
-        logger.info(f"[VENDOR_LEDGER] Found vendor: {vendor_name}")
-
         # Get query parameters
-        start_date = request.args.get('start_date')
-        end_date = request.args.get('end_date')
-        limit = request.args.get('limit', 100, type=int)
-        offset = request.args.get('offset', 0, type=int)
+        start_date = request.args.get('start_date', '')
+        end_date = request.args.get('end_date', '')
+        limit = int(request.args.get('limit', 50))
+        offset = int(request.args.get('offset', 0))
 
-        logger.info(f"[VENDOR_LEDGER] Query params - start_date: {start_date}, end_date: {end_date}, limit: {limit}, offset: {offset}")
+        logger.info(f"[VENDOR_LEDGER] Fetching ledger data for vendor ID: {vendor_id}")
 
-        # Build the UNION query with proper date filtering
-        union_query_parts = []
+        # Ensure VendorLedger table exists
+        create_vendor_ledger_query = """
+            CREATE TABLE IF NOT EXISTS VendorLedger (
+                id SERIAL PRIMARY KEY,
+                entry_date DATE NOT NULL,
+                vendor_id INTEGER NOT NULL REFERENCES vendors(id) ON DELETE CASCADE,
+                company_id INTEGER NOT NULL REFERENCES company_details(id) ON DELETE CASCADE,
+                type entry_type NOT NULL,
+                particulars TEXT,
+                remark TEXT,
+                on_account_of TEXT,
+                dr DECIMAL(15,2) CHECK (dr IS NULL OR dr > 0),
+                cr DECIMAL(15,2) CHECK (cr IS NULL OR cr > 0),
+                transaction_id VARCHAR(100) UNIQUE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """
+        execute_query(create_vendor_ledger_query, fetch=False)
 
-        # Services query
+        # Build UNION query for vendor_services, vendor_payments, and vendor_adjustments
+        union_queries = []
+
+        # Vendor Services entries (debits)
         services_query = """
             SELECT
-                'service' AS entry_type,
-                service_date AS entry_date,
-                'service' AS type,
-                particulars,
-                amount AS dr,
-                0 AS cr,
-                'Service' AS entry_type_display,
-                id,
-                vendor_id,
-                NULL AS transaction_id
-            FROM vendor_services
-            WHERE vendor_id = %s
+                vs.id,
+                vs.service_date as entry_date,
+                v.vendor_name,
+                COALESCE(cd.company_name, 'N/A') as company_name,
+                'Service' as type,
+                vs.particulars,
+                vs.remark,
+                vs.on_account_of,
+                vs.amount as dr,
+                0 as cr,
+                NULL as transaction_id,
+                'vendor_service' as source_table
+            FROM vendor_services vs
+            JOIN vendors v ON vs.vendor_id = v.id
+            LEFT JOIN company_details cd ON vs.company_id = cd.id
+            WHERE vs.vendor_id = %s
         """
         services_params = [vendor_id]
 
-        # Add date filters to services query
         if start_date:
-            services_query += " AND service_date >= %s"
+            services_query += " AND vs.service_date >= %s"
             services_params.append(start_date)
         if end_date:
-            services_query += " AND service_date <= %s"
+            services_query += " AND vs.service_date <= %s"
             services_params.append(end_date)
 
-        union_query_parts.append(services_query)
+        union_queries.append(services_query)
 
-        # Payments query
+        # Vendor Payments entries (credits)
         payments_query = """
             SELECT
-                'payment' AS entry_type,
-                payment_date AS entry_date,
-                'payment' AS type,
-                transaction_id AS particulars,
-                0 AS dr,
-                amount AS cr,
-                'Payment' AS entry_type_display,
-                id,
-                vendor_id,
-                transaction_id
-            FROM vendor_payments
-            WHERE vendor_id = %s
+                vp.id,
+                vp.payment_date as entry_date,
+                v.vendor_name,
+                COALESCE(cd.company_name, 'N/A') as company_name,
+                'Payment' as type,
+                CONCAT('Payment - ', vp.transaction_id) as particulars,
+                vp.remark,
+                vp.on_account_of,
+                0 as dr,
+                vp.amount as cr,
+                vp.transaction_id,
+                'vendor_payment' as source_table
+            FROM vendor_payments vp
+            JOIN vendors v ON vp.vendor_id = v.id
+            LEFT JOIN company_details cd ON vp.company_id = cd.id
+            WHERE vp.vendor_id = %s
         """
         payments_params = [vendor_id]
 
-        # Add date filters to payments query
         if start_date:
-            payments_query += " AND payment_date >= %s"
+            payments_query += " AND vp.payment_date >= %s"
             payments_params.append(start_date)
         if end_date:
-            payments_query += " AND payment_date <= %s"
+            payments_query += " AND vp.payment_date <= %s"
             payments_params.append(end_date)
 
-        union_query_parts.append(payments_query)
+        union_queries.append(payments_query)
 
-        # Vendor adjustments query
+        # Vendor Adjustments entries
         adjustments_query = """
             SELECT
-                'adjustment' AS entry_type,
-                va.date_of_service AS entry_date,
-                'adjustment' AS type,
-                va.particular_of_service AS particulars,
-                CASE WHEN va.adjustment_amount < 0 THEN ABS(va.adjustment_amount) ELSE 0 END AS dr,
-                CASE WHEN va.adjustment_amount > 0 THEN va.adjustment_amount ELSE 0 END AS cr,
-                'Adjustment' AS entry_type_display,
                 va.id,
-                va.vendor_id,
-                CONCAT('ADJ-', va.id) AS transaction_id
+                va.date_of_service as entry_date,
+                v.vendor_name,
+                cd.company_name,
+                'Adjustment' as type,
+                va.particular_of_service as particulars,
+                va.remark,
+                va.on_account_of,
+                CASE WHEN va.adjustment_amount < 0 THEN ABS(va.adjustment_amount) ELSE 0 END as dr,
+                CASE WHEN va.adjustment_amount > 0 THEN va.adjustment_amount ELSE 0 END as cr,
+                CONCAT('ADJ-', va.id) as transaction_id,
+                'vendor_adjustment' as source_table
             FROM vendor_adjustments va
+            JOIN vendors v ON va.vendor_id = v.id
+            JOIN company_details cd ON va.company_id = cd.id
             WHERE va.vendor_id = %s
         """
         adjustments_params = [vendor_id]
 
-        # Add date filters to adjustments query
         if start_date:
             adjustments_query += " AND va.date_of_service >= %s"
             adjustments_params.append(start_date)
@@ -2341,294 +1640,241 @@ def get_vendor_ledger(vendor_id):
             adjustments_query += " AND va.date_of_service <= %s"
             adjustments_params.append(end_date)
 
-        union_query_parts.append(adjustments_query)
+        union_queries.append(adjustments_query)
 
-        # Combine queries
-        union_query = " UNION ALL ".join(union_query_parts)
-        params = services_params + payments_params + adjustments_params
-        logger.info(f"[VENDOR_LEDGER] Final query params: {params}")
+        # Combine all queries with UNION ALL
+        full_query = " UNION ALL ".join(union_queries)
 
-        # Order by date and apply pagination
-        union_query += " ORDER BY entry_date DESC, type DESC LIMIT %s OFFSET %s"
-        params.extend([limit, offset])
+        # Wrap in subquery for ordering and balance calculation
+        ordered_query = f"""
+            SELECT *,
+                SUM(COALESCE(dr, 0) - COALESCE(cr, 0))
+                    OVER (
+                        PARTITION BY vendor_name
+                        ORDER BY entry_date, id
+                        ROWS UNBOUNDED PRECEDING
+                    ) AS balance
+            FROM ({full_query}) as combined_entries
+            ORDER BY entry_date DESC, id DESC
+        """
 
-        logger.info(f"[VENDOR_LEDGER] Final query: {union_query}")
-        logger.info(f"[VENDOR_LEDGER] Final params: {params}")
+        # Combine all parameters
+        all_params = services_params + payments_params + adjustments_params
 
-        results = execute_query(union_query, params)
-        logger.info(f"[VENDOR_LEDGER] Query executed successfully, results count: {len(results) if results else 0}")
+        # Get total count first
+        count_query = f"SELECT COUNT(*) as total FROM ({full_query}) as subquery"
+        count_result = execute_query(count_query, all_params)
+        total_entries = count_result[0]['total'] if count_result else 0
+
+        # Apply pagination
+        paginated_query = ordered_query + " LIMIT %s OFFSET %s"
+        all_params.extend([limit, offset])
+
+        ledger_results = execute_query(paginated_query, all_params)
 
         entries = []
-        running_balance = 0
-
-        if results:
-            # Sort by date ascending for balance calculation
-            sorted_results = sorted(results, key=lambda x: x['entry_date'])
-
-            for row in sorted_results:
-                dr_amount = float(row['dr']) if row['dr'] else 0
-                cr_amount = float(row['cr']) if row['cr'] else 0
-
-                # Calculate running balance (DR increases balance, CR decreases)
-                running_balance += dr_amount - cr_amount
-
+        if ledger_results:
+            logger.info(f"[VENDOR_LEDGER] Found {len(ledger_results)} entries for vendor ID: {vendor_id}")
+            for row in ledger_results:
                 entries.append({
                     'id': row['id'],
-                    'entry_type': row['entry_type'],
                     'date': str(row['entry_date']) if row['entry_date'] else None,
+                    'vendor_name': row['vendor_name'] or '',
+                    'company_name': row['company_name'] or '',
+                    'type': row['type'] or 'Service',
                     'particulars': row['particulars'] or '',
-                    'type': row['entry_type_display'] or '',
-                    'dr': dr_amount,
-                    'cr': cr_amount,
-                    'balance': running_balance,
-                    'transaction_id': row['transaction_id']
+                    'remark': row['remark'] or '',
+                    'on_account_of': row['on_account_of'] or '',
+                    'dr': float(row['dr']) if row['dr'] else 0,
+                    'cr': float(row['cr']) if row['cr'] else 0,
+                    'balance': float(row['balance']) if row['balance'] else 0,
+                    'entry_type': row['type'] or 'service'
                 })
 
-            # Sort back to descending for display
-            entries.sort(key=lambda x: x['date'] or '1900-01-01', reverse=True)
+        # Calculate summary
+        total_dr = sum(entry['dr'] for entry in entries)
+        total_cr = sum(entry['cr'] for entry in entries)
+        closing_balance = total_dr - total_cr
+        balance_type = 'Outstanding' if closing_balance > 0 else 'Advance' if closing_balance < 0 else 'Settled'
 
-        logger.info(f"[VENDOR_LEDGER] Retrieved {len(entries)} ledger entries for vendor {vendor_id}")
+        summary = {
+            'opening_balance': 0,
+            'total_debit': total_dr,
+            'total_credit': total_cr,
+            'closing_balance': abs(closing_balance),
+            'balance_type': balance_type
+        }
+
+        logger.info(f"[VENDOR_LEDGER] Returning {len(entries)} paginated entries for vendor ID: {vendor_id}")
 
         return jsonify({
             "status": "success",
             "data": {
-                "vendor_name": vendor_name,
                 "entries": entries,
-                "total_entries": len(entries),
+                "summary": summary,
+                "total_entries": total_entries,
                 "pagination": {
                     "limit": limit,
                     "offset": offset,
-                    "has_more": len(entries) == limit
+                    "has_more": (offset + limit) < total_entries
                 }
             },
-            "message": f"Retrieved {len(entries)} ledger entries for {vendor_name}",
+            "message": f"Retrieved {len(entries)} vendor ledger entries for vendor ID: {vendor_id}",
             "total": len(entries)
         }), 200
 
     except Exception as e:
-        logger.error(f"[VENDOR_LEDGER] Failed to retrieve vendor ledger for {vendor_id}: {e}")
-        import traceback
-        logger.error(f"[VENDOR_LEDGER] Traceback: {traceback.format_exc()}")
+        logger.error(f"[VENDOR_LEDGER] Failed to retrieve vendor ledger for vendor ID {vendor_id}: {e}")
         return jsonify({
             "error": str(e),
-            "message": "Failed to retrieve vendor ledger",
-            "status": "error",
-            "debug_info": {
-                "vendor_id": vendor_id,
-                "query_params": dict(request.args)
-            }
-        }), 500
-
-@bookkeeping_bp.route('/vendor-service/<int:service_id>', methods=['DELETE'])
-def delete_vendor_service(service_id):
-    """Delete a vendor service entry"""
-    try:
-        # Check if the record exists
-        check_query = """
-            SELECT id, vendor_id, particulars, amount
-            FROM vendor_services
-            WHERE id = %s
-        """
-        check_result = execute_query(check_query, (service_id,))
-
-        if not check_result or len(check_result) == 0:
-            return jsonify({
-                "error": "Service entry not found",
-                "message": f"No vendor service entry found with ID: {service_id}",
-                "status": "not_found"
-            }), 404
-
-        service_data = check_result[0]
-
-        # Delete the record
-        delete_query = "DELETE FROM vendor_services WHERE id = %s"
-        execute_query(delete_query, (service_id,), fetch=False)
-
-        logger.info(f"[VENDOR_SERVICE] Deleted service entry ID: {service_id}, Vendor: {service_data['vendor_id']}, Amount: {service_data['amount']}")
-        return jsonify({
-            "status": "success",
-            "message": f"Vendor service entry ID {service_id} deleted successfully"
-        }), 200
-
-    except Exception as e:
-        logger.error(f"[VENDOR_SERVICE] Failed to delete service entry ID {service_id}: {e}")
-        return jsonify({
-            "error": str(e),
-            "message": "Failed to delete vendor service entry",
+            "message": "Failed to retrieve vendor ledger data",
             "status": "error"
         }), 500
 
 @bookkeeping_bp.route('/vendor-ledger/<int:ledger_id>', methods=['DELETE'])
 def delete_vendor_ledger_entry(ledger_id):
-    """Delete a vendor ledger entry (service, payment, or adjustment) based on the source table"""
+    """Delete a vendor ledger entry based on the source table"""
     try:
         # First, check if this is a vendor service entry
         service_query = """
-            SELECT id, vendor_id, particulars, amount
+            SELECT id, vendor_id, company_id
             FROM vendor_services
             WHERE id = %s
         """
-        service_result = execute_query(service_query, (ledger_id,))
+        service_results = execute_query(service_query, (ledger_id,))
 
-        if service_result and len(service_result) > 0:
-            # This is a vendor service entry
-            service_data = service_result[0]
-
+        if service_results and len(service_results) > 0:
             # Delete from vendor_services
             delete_query = "DELETE FROM vendor_services WHERE id = %s"
             execute_query(delete_query, (ledger_id,), fetch=False)
 
-            logger.info(f"[VENDOR_SERVICE] Deleted service entry ID: {ledger_id}, Vendor: {service_data['vendor_id']}, Amount: {service_data['amount']}")
+            logger.info(f"[VENDOR_LEDGER] Deleted vendor service entry ID: {ledger_id}")
             return jsonify({
                 "status": "success",
-                "message": f"Vendor service entry {ledger_id} deleted successfully"
+                "message": f"Vendor service entry ID {ledger_id} deleted successfully"
             }), 200
 
         # Check if this is a vendor payment entry
         payment_query = """
-            SELECT id, vendor_id, transaction_id, amount
+            SELECT id, vendor_id, company_id, transaction_id
             FROM vendor_payments
             WHERE id = %s
         """
-        payment_result = execute_query(payment_query, (ledger_id,))
+        payment_results = execute_query(payment_query, (ledger_id,))
 
-        if payment_result and len(payment_result) > 0:
-            # This is a vendor payment entry
-            payment_data = payment_result[0]
+        if payment_results and len(payment_results) > 0:
+            transaction_id = payment_results[0]['transaction_id']
 
-            # Delete associated bank ledger entry if it exists
-            bank_delete_query = "DELETE FROM bank_ledger WHERE transaction_id = %s"
-            execute_query(bank_delete_query, (payment_data['transaction_id'],), fetch=False)
-            logger.info(f"[BANK_LEDGER] Deleted associated bank entry for payment ID: {ledger_id}")
+            # Delete associated bank ledger entry if transaction_id exists
+            if transaction_id:
+                bank_ledger_delete_query = "DELETE FROM bank_ledger WHERE transaction_id = %s"
+                execute_query(bank_ledger_delete_query, (transaction_id,), fetch=False)
+                logger.info(f"[BANK_LEDGER] Deleted associated bank ledger entry for vendor payment ID: {ledger_id}, transaction: {transaction_id}")
 
-            # Delete the payment record
+            # Delete from vendor_payments
             delete_query = "DELETE FROM vendor_payments WHERE id = %s"
             execute_query(delete_query, (ledger_id,), fetch=False)
 
-            logger.info(f"[VENDOR_PAYMENT] Deleted payment entry ID: {ledger_id}, Vendor: {payment_data['vendor_id']}, Amount: {payment_data['amount']}")
+            logger.info(f"[VENDOR_LEDGER] Deleted vendor payment entry ID: {ledger_id}")
             return jsonify({
                 "status": "success",
-                "message": f"Vendor payment entry {ledger_id} deleted successfully"
+                "message": f"Vendor payment entry ID {ledger_id} deleted successfully"
             }), 200
 
         # Check if this is a vendor adjustment entry
         adjustment_query = """
-            SELECT id, vendor_id, particular_of_service, adjustment_amount
+            SELECT id, vendor_id, company_id
             FROM vendor_adjustments
             WHERE id = %s
         """
-        adjustment_result = execute_query(adjustment_query, (ledger_id,))
+        adjustment_results = execute_query(adjustment_query, (ledger_id,))
 
-        if adjustment_result and len(adjustment_result) > 0:
-            # This is a vendor adjustment entry
-            adjustment_data = adjustment_result[0]
-
+        if adjustment_results and len(adjustment_results) > 0:
             # Delete from vendor_adjustments
             delete_query = "DELETE FROM vendor_adjustments WHERE id = %s"
             execute_query(delete_query, (ledger_id,), fetch=False)
 
-            logger.info(f"[VENDOR_ADJUSTMENT] Deleted adjustment entry ID: {ledger_id}, Vendor: {adjustment_data['vendor_id']}, Amount: {adjustment_data['adjustment_amount']}")
+            logger.info(f"[VENDOR_LEDGER] Deleted vendor adjustment entry ID: {ledger_id}")
             return jsonify({
                 "status": "success",
-                "message": f"Vendor adjustment entry {ledger_id} deleted successfully"
+                "message": f"Vendor adjustment entry ID {ledger_id} deleted successfully"
             }), 200
 
-        # If not found in any table, return 404
+        # If none found, return not found
         return jsonify({
-            "error": "Ledger entry not found",
+            "error": "Entry not found",
             "message": f"No vendor ledger entry found with ID: {ledger_id}",
             "status": "not_found"
         }), 404
 
     except Exception as e:
-        logger.error(f"[VENDOR_LEDGER] Failed to delete vendor ledger entry {ledger_id}: {e}")
+        logger.error(f"[VENDOR_LEDGER] Failed to delete vendor ledger entry ID {ledger_id}: {e}")
         return jsonify({
             "error": str(e),
             "message": "Failed to delete vendor ledger entry",
             "status": "error"
         }), 500
 
-@bookkeeping_bp.route('/vendor-payment/<int:payment_id>', methods=['DELETE'])
-def delete_vendor_payment(payment_id):
-    """Delete a vendor payment entry and associated bank ledger entry"""
-    try:
-        # Check if the record exists in vendor_payments
-        check_query = """
-            SELECT id, vendor_id, transaction_id, amount
-            FROM vendor_payments
-            WHERE id = %s
-        """
-        check_result = execute_query(check_query, (payment_id,))
-
-        if not check_result or len(check_result) == 0:
-            # Check if the ID exists in other vendor-related tables to provide better error message
-            service_check = execute_query("SELECT id FROM vendor_services WHERE id = %s", (payment_id,))
-            adjustment_check = execute_query("SELECT id FROM vendor_adjustments WHERE id = %s", (payment_id,))
-
-            if service_check and len(service_check) > 0:
-                return jsonify({
-                    "error": "Invalid entry type",
-                    "message": f"ID {payment_id} belongs to a vendor service entry, not a payment entry. Please refresh the page and try again.",
-                    "status": "invalid_type"
-                }), 400
-            elif adjustment_check and len(adjustment_check) > 0:
-                return jsonify({
-                    "error": "Invalid entry type",
-                    "message": f"ID {payment_id} belongs to a vendor adjustment entry, not a payment entry. Please refresh the page and try again.",
-                    "status": "invalid_type"
-                }), 400
-            else:
-                return jsonify({
-                    "error": "Payment entry not found",
-                    "message": f"No vendor payment entry found with ID: {payment_id}",
-                    "status": "not_found"
-                }), 404
-
-        payment_data = check_result[0]
-
-        # Delete associated bank ledger entry if it exists
-        bank_delete_query = "DELETE FROM bank_ledger WHERE transaction_id = %s"
-        execute_query(bank_delete_query, (payment_data['transaction_id'],), fetch=False)
-        logger.info(f"[BANK_LEDGER] Deleted associated bank entry for payment ID: {payment_id}")
-
-        # Delete the payment record
-        delete_query = "DELETE FROM vendor_payments WHERE id = %s"
-        execute_query(delete_query, (payment_id,), fetch=False)
-
-        logger.info(f"[VENDOR_PAYMENT] Deleted payment entry ID: {payment_id}, Vendor: {payment_data['vendor_id']}, Amount: {payment_data['amount']}")
-        return jsonify({
-            "status": "success",
-            "message": f"Vendor payment entry ID {payment_id} deleted successfully"
-        }), 200
-
-    except Exception as e:
-        logger.error(f"[VENDOR_PAYMENT] Failed to delete payment entry ID {payment_id}: {e}")
-        return jsonify({
-            "error": str(e),
-            "message": "Failed to delete vendor payment entry",
-            "status": "error"
-        }), 500
-
 @bookkeeping_bp.route('/expense-ledger', methods=['GET'])
 def get_expense_ledger():
-    """Get expense ledger entries (debit entries only) with filtering and pagination"""
+    """Get expense ledger data from expense_ledger table with filtering and pagination"""
     try:
         # Get query parameters
-        company_id = request.args.get('company_id', type=int)
-        start_date = request.args.get('start_date')
-        end_date = request.args.get('end_date')
+        company_id = request.args.get('company_id', '').strip()
+        start_date = request.args.get('start_date', '')
+        end_date = request.args.get('end_date', '')
         expense_type = request.args.get('expense_type', '').strip()
-        limit = request.args.get('limit', 50, type=int)
-        offset = request.args.get('offset', 0, type=int)
+        limit = int(request.args.get('limit', 50))
+        offset = int(request.args.get('offset', 0))
 
         if not company_id:
             return jsonify({
                 "error": "Company ID is required",
-                "message": "Please provide company_id parameter",
+                "message": "Please provide a company_id parameter",
                 "status": "validation_error"
             }), 400
 
-        # Query expense_ledger table for debit entries only
+        logger.info(f"[EXPENSE_LEDGER] Fetching ledger data for company ID: {company_id}")
+
+        # Ensure expense_ledger table exists
+        create_expense_ledger_query = """
+            CREATE TABLE IF NOT EXISTS expense_ledger (
+                id SERIAL PRIMARY KEY,
+                transaction_id VARCHAR(100) NOT NULL,
+                expense_type VARCHAR(100) NOT NULL,
+                company VARCHAR(255) NOT NULL,
+                vendor_name VARCHAR(255) NOT NULL,
+                vendor_gst_number VARCHAR(15),
+                amount DECIMAL(15,2) NOT NULL,
+                expense_date DATE NOT NULL,
+                payment_method VARCHAR(50) NOT NULL,
+                description TEXT,
+                particulars TEXT,
+                debit DECIMAL(15,2) DEFAULT 0,
+                credit DECIMAL(15,2) DEFAULT 0,
+                account_type VARCHAR(50) NOT NULL,
+                company_id INTEGER,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """
+        execute_query(create_expense_ledger_query, fetch=False)
+
+        # Create indexes if they don't exist
+        index_queries = [
+            "CREATE INDEX IF NOT EXISTS idx_expense_ledger_transaction_id ON expense_ledger(transaction_id)",
+            "CREATE INDEX IF NOT EXISTS idx_expense_ledger_expense_date ON expense_ledger(expense_date)",
+            "CREATE INDEX IF NOT EXISTS idx_expense_ledger_company ON expense_ledger(company)",
+            "CREATE INDEX IF NOT EXISTS idx_expense_ledger_expense_type ON expense_ledger(expense_type)",
+            "CREATE INDEX IF NOT EXISTS idx_expense_ledger_account_type ON expense_ledger(account_type)"
+        ]
+        for index_query in index_queries:
+            try:
+                execute_query(index_query, fetch=False)
+            except Exception as idx_e:
+                logger.warning(f"[EXPENSE_LEDGER] Could not create index: {idx_e}")
+
+        # Build query for expense_ledger entries
         query = """
             SELECT
                 id,
@@ -2647,7 +1893,7 @@ def get_expense_ledger():
                 account_type,
                 created_at
             FROM expense_ledger
-            WHERE company_id = %s AND debit > 0
+            WHERE company_id = %s
         """
         params = [company_id]
 
@@ -2661,204 +1907,335 @@ def get_expense_ledger():
             query += " AND expense_type ILIKE %s"
             params.append(f"%{expense_type}%")
 
-        query += " ORDER BY expense_date DESC, created_at DESC LIMIT %s OFFSET %s"
+        query += " ORDER BY expense_date DESC, created_at DESC"
+
+        # Get total count first
+        count_query = f"SELECT COUNT(*) as total FROM ({query}) as subquery"
+        count_result = execute_query(count_query, params)
+        total_entries = count_result[0]['total'] if count_result else 0
+
+        # Apply pagination
+        paginated_query = query + " LIMIT %s OFFSET %s"
         params.extend([limit, offset])
 
-        results = execute_query(query, params)
+        ledger_results = execute_query(paginated_query, params)
 
         entries = []
         total_debit = 0
         total_credit = 0
 
-        if results:
-            logger.info(f"[EXPENSE_LEDGER] Found {len(results)} debit entries in expense_ledger")
-            for row in results:
+        if ledger_results:
+            logger.info(f"[EXPENSE_LEDGER] Found {len(ledger_results)} entries for company ID: {company_id}")
+            for row in ledger_results:
                 debit_amount = float(row['debit']) if row['debit'] else 0
                 credit_amount = float(row['credit']) if row['credit'] else 0
                 entries.append({
                     'id': row['id'],
-                    'transaction_id': row['transaction_id'] or '',
                     'expense_date': str(row['expense_date']) if row['expense_date'] else None,
                     'expense_type': row['expense_type'] or '',
                     'vendor_name': row['vendor_name'] or '',
-                    'particulars': row['particulars'] or '',
+                    'particulars': row['particulars'] or row['description'] or '',
+                    'transaction_id': row['transaction_id'] or '',
                     'debit': debit_amount,
                     'credit': credit_amount,
-                    'amount': float(row['amount']) if row['amount'] else 0,
                     'payment_method': row['payment_method'] or '',
-                    'description': row['description'] or '',
-                    'company': row['company'] or '',
-                    'account_type': row['account_type'] or 'expense'
+                    'amount': float(row['amount']) if row['amount'] else 0
                 })
                 total_debit += debit_amount
                 total_credit += credit_amount
+        else:
+            logger.info(f"[EXPENSE_LEDGER] No entries found in expense_ledger for company ID: {company_id}")
 
         # Calculate summary
+        opening_balance = 0  # Could be calculated from previous periods
         closing_balance = total_debit - total_credit
         balance_type = 'Outstanding' if closing_balance > 0 else 'Advance' if closing_balance < 0 else 'Settled'
 
         summary = {
-            'opening_balance': 0,
+            'opening_balance': opening_balance,
             'total_debit': total_debit,
             'total_credit': total_credit,
             'closing_balance': abs(closing_balance),
             'balance_type': balance_type
         }
 
-        logger.info(f"[EXPENSE_LEDGER] Returning {len(entries)} debit entries for company {company_id}")
+        logger.info(f"[EXPENSE_LEDGER] Returning {len(entries)} paginated entries for company ID: {company_id}")
 
         return jsonify({
             "status": "success",
             "data": {
                 "entries": entries,
                 "summary": summary,
-                "total_entries": len(entries),
+                "total_entries": total_entries,
                 "pagination": {
                     "limit": limit,
                     "offset": offset,
-                    "has_more": len(entries) == limit
+                    "has_more": (offset + limit) < total_entries
                 }
             },
-            "message": f"Retrieved {len(entries)} expense ledger debit entries",
+            "message": f"Retrieved {len(entries)} expense ledger entries for company ID: {company_id}",
             "total": len(entries)
         }), 200
 
     except Exception as e:
-        logger.error(f"[EXPENSE_LEDGER] Failed to retrieve expense ledger: {e}")
+        logger.error(f"[EXPENSE_LEDGER] Failed to retrieve expense ledger for company ID {company_id}: {e}")
         return jsonify({
             "error": str(e),
             "message": "Failed to retrieve expense ledger data",
             "status": "error"
         }), 500
 
-@bookkeeping_bp.route('/expense-ledger/<int:entry_id>', methods=['DELETE'])
-def delete_expense_ledger_entry(entry_id):
-    """Delete an expense ledger entry and its corresponding credit entry if applicable"""
+@bookkeeping_bp.route('/bank-ledger-report', methods=['GET'])
+def get_bank_ledger_report():
+    """Get bank ledger report data from bank_ledger table with filtering and pagination"""
     try:
-        # Check if the record exists
-        check_query = """
-            SELECT id, expense_type, amount, account_type, debit, credit, company, vendor_name, expense_date
-            FROM expense_ledger
-            WHERE id = %s
-        """
-        check_result = execute_query(check_query, (entry_id,))
+        # Get query parameters
+        company_id = request.args.get('company_id', '').strip()
+        start_date = request.args.get('start_date', '')
+        end_date = request.args.get('end_date', '')
+        limit = int(request.args.get('limit', 50))
+        offset = int(request.args.get('offset', 0))
 
-        if not check_result or len(check_result) == 0:
+        if not company_id:
             return jsonify({
-                "error": "Expense ledger entry not found",
-                "message": f"No expense ledger entry found with ID: {entry_id}",
-                "status": "not_found"
-            }), 404
+                "error": "Company ID is required",
+                "message": "Please provide a company_id parameter",
+                "status": "validation_error"
+            }), 400
 
-        entry_data = check_result[0]
+        logger.info(f"[BANK_LEDGER_REPORT] Fetching ledger data for company ID: {company_id}")
 
-        # If this is a debit entry (expense), also delete the corresponding credit entry (bank)
-        if entry_data['account_type'] == 'expense' and entry_data['debit'] > 0:
-            # Find the corresponding credit entry by matching key fields
-            # Since transaction_id was dropped, match by expense_type, company, vendor_name, amount, expense_date
-            credit_query = """
-                SELECT id
-                FROM expense_ledger
-                WHERE expense_type = %s AND company = %s AND vendor_name = %s AND amount = %s
-                      AND expense_date = %s AND account_type = 'bank' AND credit > 0
-            """
-            credit_result = execute_query(credit_query, (
-                entry_data['expense_type'],
-                entry_data['company'],
-                entry_data['vendor_name'],
-                entry_data['amount'],
-                entry_data['expense_date']
-            ))
+        # Ensure bank_ledger table exists
+        create_bank_ledger_query = """
+            CREATE TABLE IF NOT EXISTS bank_ledger (
+                id SERIAL PRIMARY KEY,
+                payment_date DATE NOT NULL,
+                transaction_id VARCHAR(100),
+                vendor_id INTEGER,
+                company_id INTEGER REFERENCES company_details(id),
+                vendor_name VARCHAR(255),
+                amount DECIMAL(15,2) NOT NULL,
+                remark TEXT,
+                transaction_type VARCHAR(20) DEFAULT 'payment',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """
+        execute_query(create_bank_ledger_query, fetch=False)
 
-            if credit_result and len(credit_result) > 0:
-                credit_entry_id = credit_result[0]['id']
-                # Delete the credit entry
-                delete_credit_query = "DELETE FROM expense_ledger WHERE id = %s"
-                execute_query(delete_credit_query, (credit_entry_id,), fetch=False)
-                logger.info(f"[EXPENSE_LEDGER] Deleted corresponding credit entry ID: {credit_entry_id} for expense entry {entry_id}")
+        # Create indexes if they don't exist
+        index_queries = [
+            "CREATE INDEX IF NOT EXISTS idx_bank_ledger_company_id ON bank_ledger(company_id)",
+            "CREATE INDEX IF NOT EXISTS idx_bank_ledger_payment_date ON bank_ledger(payment_date)",
+            "CREATE INDEX IF NOT EXISTS idx_bank_ledger_transaction_id ON bank_ledger(transaction_id)"
+        ]
+        for index_query in index_queries:
+            try:
+                execute_query(index_query, fetch=False)
+            except Exception as idx_e:
+                logger.warning(f"[BANK_LEDGER_REPORT] Could not create index: {idx_e}")
 
-            # Also delete from bank_ledger table using transaction_id
-            if entry_data.get('transaction_id'):
-                bank_ledger_delete_query = "DELETE FROM bank_ledger WHERE transaction_id = %s"
-                execute_query(bank_ledger_delete_query, (entry_data['transaction_id'],), fetch=False)
-                logger.info(f"[BANK_LEDGER] Deleted corresponding bank ledger entry for transaction: {entry_data['transaction_id']}")
+        # Build query for bank_ledger entries with running balance
+        query = """
+            SELECT
+                id,
+                payment_date,
+                transaction_id,
+                vendor_name,
+                amount,
+                remark,
+                transaction_type,
+                created_at
+            FROM bank_ledger
+            WHERE company_id = %s
+        """
+        params = [company_id]
 
-        # Delete the specific entry
-        delete_query = "DELETE FROM expense_ledger WHERE id = %s"
-        execute_query(delete_query, (entry_id,), fetch=False)
+        if start_date:
+            query += " AND payment_date >= %s"
+            params.append(start_date)
+        if end_date:
+            query += " AND payment_date <= %s"
+            params.append(end_date)
 
-        logger.info(f"[EXPENSE_LEDGER] Deleted expense ledger entry ID: {entry_id}, Amount: {entry_data['amount']}")
+        query += " ORDER BY payment_date DESC, created_at DESC"
+
+        # Get total count first
+        count_query = f"SELECT COUNT(*) as total FROM ({query}) as subquery"
+        count_result = execute_query(count_query, params)
+        total_entries = count_result[0]['total'] if count_result else 0
+
+        # Apply pagination
+        paginated_query = query + " LIMIT %s OFFSET %s"
+        params.extend([limit, offset])
+
+        ledger_results = execute_query(paginated_query, params)
+
+        entries = []
+        if ledger_results:
+            logger.info(f"[BANK_LEDGER_REPORT] Found {len(ledger_results)} entries for company ID: {company_id}")
+
+            # Calculate running balance
+            running_balance = 0
+            for row in ledger_results:
+                # For bank ledger: receipts are debits (money in), payments are credits (money out)
+                if row['transaction_type'] == 'receipt':
+                    dr = float(row['amount']) if row['amount'] else 0
+                    cr = 0
+                    running_balance += dr
+                else:  # payment
+                    dr = 0
+                    cr = float(row['amount']) if row['amount'] else 0
+                    running_balance -= cr
+
+                entries.append({
+                    'id': row['id'],
+                    'entry_date': str(row['payment_date']) if row['payment_date'] else None,
+                    'particulars': row['remark'] or f"{row['transaction_type'].title()} - {row['vendor_name'] or 'N/A'}",
+                    'transaction_id': row['transaction_id'] or '',
+                    'dr': dr,
+                    'cr': cr,
+                    'balance': running_balance
+                })
+        else:
+            logger.info(f"[BANK_LEDGER_REPORT] No entries found in bank_ledger for company ID: {company_id}")
+
+        logger.info(f"[BANK_LEDGER_REPORT] Returning {len(entries)} paginated entries for company ID: {company_id}")
+
         return jsonify({
             "status": "success",
-            "message": f"Expense ledger entry ID {entry_id} deleted successfully"
+            "data": entries,
+            "message": f"Retrieved {len(entries)} bank ledger entries for company ID: {company_id}",
+            "total": len(entries)
         }), 200
 
     except Exception as e:
-        logger.error(f"[EXPENSE_LEDGER] Failed to delete expense ledger entry ID {entry_id}: {e}")
+        logger.error(f"[BANK_LEDGER_REPORT] Failed to retrieve bank ledger report for company ID {company_id}: {e}")
         return jsonify({
             "error": str(e),
-            "message": "Failed to delete expense ledger entry",
+            "message": "Failed to retrieve bank ledger report data",
             "status": "error"
         }), 500
 
-@bookkeeping_bp.route('/bank-ledger/<int:entry_id>', methods=['DELETE'])
-def delete_bank_ledger_entry(entry_id):
-    """Delete a bank ledger entry from bank_ledger table"""
+@bookkeeping_bp.route('/company-ledger/<int:ledger_id>', methods=['DELETE'])
+def delete_company_ledger_entry(ledger_id):
+    """Delete a company ledger entry or adjustment entry based on the source table"""
     try:
-        # Check if the record exists in bank_ledger table
-        check_query = """
-            SELECT id, transaction_id, amount, vendor_name, payment_date
-            FROM bank_ledger
+        # First, check if this is a regular ClientLedger entry
+        select_query = """
+            SELECT id, voucher_no, company_name, entry_type
+            FROM ClientLedger
             WHERE id = %s
         """
-        check_result = execute_query(check_query, (entry_id,))
+        ledger_results = execute_query(select_query, (ledger_id,))
 
-        if not check_result or len(check_result) == 0:
+        if ledger_results and len(ledger_results) > 0:
+            # Delete from ClientLedger
+            delete_query = "DELETE FROM ClientLedger WHERE id = %s"
+            execute_query(delete_query, (ledger_id,), fetch=False)
+
+            logger.info(f"[LEDGER] Deleted ClientLedger entry ID: {ledger_id}")
             return jsonify({
-                "error": "Bank ledger entry not found",
-                "message": f"No bank ledger entry found with ID: {entry_id}",
-                "status": "not_found"
-            }), 404
+                "status": "success",
+                "message": f"ClientLedger entry ID {ledger_id} deleted successfully"
+            }), 200
 
-        entry_data = check_result[0]
+        # Check if this is a client adjustment entry
+        client_adjustment_query = """
+            SELECT id, company_id, customer_id
+            FROM client_adjustments
+            WHERE id = %s
+        """
+        client_results = execute_query(client_adjustment_query, (ledger_id,))
 
-        # If this is an expense payment entry, also delete from expense_ledger
-        if entry_data.get('transaction_id'):
-            # Check if this transaction_id exists in expense_ledger (for expense payments)
-            expense_check_query = "SELECT id FROM expense_ledger WHERE transaction_id = %s"
-            expense_result = execute_query(expense_check_query, (entry_data['transaction_id'],))
+        if client_results and len(client_results) > 0:
+            # Delete from client_adjustments
+            delete_query = "DELETE FROM client_adjustments WHERE id = %s"
+            execute_query(delete_query, (ledger_id,), fetch=False)
 
-            if expense_result and len(expense_result) > 0:
-                # This is an expense payment, delete both expense and bank entries
-                expense_delete_query = "DELETE FROM expense_ledger WHERE transaction_id = %s"
-                execute_query(expense_delete_query, (entry_data['transaction_id'],), fetch=False)
-                logger.info(f"[EXPENSE_LEDGER] Deleted expense entries for transaction: {entry_data['transaction_id']}")
+            logger.info(f"[CLIENT_ADJUSTMENT] Deleted client adjustment entry ID: {ledger_id}")
+            return jsonify({
+                "status": "success",
+                "message": f"Client adjustment entry ID {ledger_id} deleted successfully"
+            }), 200
 
-        # Delete the bank ledger entry
-        delete_query = "DELETE FROM bank_ledger WHERE id = %s"
-        execute_query(delete_query, (entry_id,), fetch=False)
+        # Check if this is a vendor adjustment entry
+        vendor_adjustment_query = """
+            SELECT id, company_id, vendor_id
+            FROM vendor_adjustments
+            WHERE id = %s
+        """
+        vendor_results = execute_query(vendor_adjustment_query, (ledger_id,))
 
-        logger.info(f"[BANK_LEDGER] Deleted bank ledger entry ID: {entry_id}, Transaction: {entry_data.get('transaction_id', 'N/A')}, Amount: {entry_data['amount']}")
+        if vendor_results and len(vendor_results) > 0:
+            # Delete from vendor_adjustments
+            delete_query = "DELETE FROM vendor_adjustments WHERE id = %s"
+            execute_query(delete_query, (ledger_id,), fetch=False)
+
+            logger.info(f"[VENDOR_ADJUSTMENT] Deleted vendor adjustment entry ID: {ledger_id}")
+            return jsonify({
+                "status": "success",
+                "message": f"Vendor adjustment entry ID {ledger_id} deleted successfully"
+            }), 200
+
+        # If none found, return not found
         return jsonify({
-            "status": "success",
-            "message": f"Bank ledger entry ID {entry_id} deleted successfully"
-        }), 200
+            "error": "Entry not found",
+            "message": f"No ledger or adjustment entry found with ID: {ledger_id}",
+            "status": "not_found"
+        }), 404
 
     except Exception as e:
-        logger.error(f"[BANK_LEDGER] Failed to delete bank ledger entry ID {entry_id}: {e}")
+        logger.error(f"[LEDGER] Failed to delete ledger entry ID {ledger_id}: {e}")
         return jsonify({
             "error": str(e),
-            "message": "Failed to delete bank ledger entry",
+            "message": "Failed to delete ledger entry",
             "status": "error"
         }), 500
 
 @bookkeeping_bp.route('/adjustments', methods=['POST'])
 def create_adjustment():
-    """Create a new adjustment entry"""
+    """Create a new adjustment entry (client or vendor based on adjustment_type)"""
     try:
         data = request.get_json()
 
-        required_fields = ['adjustment_type', 'company_id', 'date_of_service', 'particular_of_service', 'adjustment_amount']
+        # Check adjustment type
+        adjustment_type = data.get('adjustment_type', 'client')
+
+        if adjustment_type == 'client':
+            required_fields = ['company_id', 'customer_id', 'date_of_service', 'particular_of_service', 'adjustment_amount']
+            table_name = 'client_adjustments'
+            insert_fields = 'company_id, customer_id, date_of_service, particular_of_service, adjustment_amount, on_account_of, remark'
+            params = (
+                data['company_id'],
+                data['customer_id'],
+                data['date_of_service'],
+                data['particular_of_service'],
+                data['adjustment_amount'],
+                data.get('on_account_of'),
+                data.get('remark')
+            )
+        elif adjustment_type == 'vendor':
+            required_fields = ['company_id', 'vendor_id', 'date_of_service', 'particular_of_service', 'adjustment_amount']
+            table_name = 'vendor_adjustments'
+            insert_fields = 'company_id, vendor_id, date_of_service, particular_of_service, adjustment_amount, on_account_of, remark'
+            params = (
+                data['company_id'],
+                data['vendor_id'],
+                data['date_of_service'],
+                data['particular_of_service'],
+                data['adjustment_amount'],
+                data.get('on_account_of'),
+                data.get('remark')
+            )
+        else:
+            return jsonify({
+                "error": "Invalid adjustment type",
+                "message": "adjustment_type must be either 'client' or 'vendor'",
+                "status": "validation_error"
+            }), 400
+
+        # Validate required fields
         for field in required_fields:
             if field not in data:
                 return jsonify({
@@ -2867,133 +2244,66 @@ def create_adjustment():
                     "status": "validation_error"
                 }), 400
 
-        # Validate adjustment_type
-        if data['adjustment_type'] not in ['client', 'vendor']:
-            return jsonify({
-                "error": "Invalid adjustment type",
-                "message": "Adjustment type must be 'client' or 'vendor'",
-                "status": "validation_error"
-            }), 400
-
-        # Validate that either customer_id or vendor_id is provided based on type
-        if data['adjustment_type'] == 'client' and 'customer_id' not in data:
-            return jsonify({
-                "error": "Missing customer_id",
-                "message": "customer_id is required for client adjustments",
-                "status": "validation_error"
-            }), 400
-
-        if data['adjustment_type'] == 'vendor' and 'vendor_id' not in data:
-            return jsonify({
-                "error": "Missing vendor_id",
-                "message": "vendor_id is required for vendor adjustments",
-                "status": "validation_error"
-            }), 400
-
-        # Validate amount is non-zero
-        try:
-            amount = float(data['adjustment_amount'])
-            if amount == 0:
-                raise ValueError("Amount must be non-zero")
-        except (ValueError, TypeError):
+        # Validate adjustment_amount is not zero
+        if data['adjustment_amount'] == 0:
             return jsonify({
                 "error": "Invalid adjustment amount",
-                "message": "Adjustment amount must be a non-zero number",
+                "message": "Adjustment amount cannot be zero",
                 "status": "validation_error"
             }), 400
 
-        # Ensure appropriate adjustment table exists
-        if data['adjustment_type'] == 'client':
-            create_table_query = """
-                CREATE TABLE IF NOT EXISTS client_adjustments (
-                    id SERIAL PRIMARY KEY,
-                    company_id INTEGER NOT NULL,
-                    customer_id INTEGER NOT NULL,
-                    date_of_service DATE NOT NULL,
-                    particular_of_service TEXT NOT NULL,
-                    adjustment_amount DECIMAL(15,2) NOT NULL CHECK (adjustment_amount != 0),
-                    on_account_of TEXT,
-                    remark TEXT,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (company_id) REFERENCES company_details(id),
-                    FOREIGN KEY (customer_id) REFERENCES b2bcustomersdetails(id)
-                )
-            """
-        else:  # vendor
-            create_table_query = """
-                CREATE TABLE IF NOT EXISTS vendor_adjustments (
-                    id SERIAL PRIMARY KEY,
-                    company_id INTEGER NOT NULL,
-                    vendor_id INTEGER NOT NULL,
-                    date_of_service DATE NOT NULL,
-                    particular_of_service TEXT NOT NULL,
-                    adjustment_amount DECIMAL(15,2) NOT NULL CHECK (adjustment_amount != 0),
-                    on_account_of TEXT,
-                    remark TEXT,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (company_id) REFERENCES company_details(id),
-                    FOREIGN KEY (vendor_id) REFERENCES vendors(id)
-                )
-            """
-        execute_query(create_table_query, fetch=False)
+        query = f"""
+            INSERT INTO {table_name} (
+                {insert_fields}
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+            RETURNING id
+        """
 
-        # Insert adjustment entry into appropriate table
-        if data['adjustment_type'] == 'client':
-            insert_query = """
-                INSERT INTO client_adjustments (
-                    company_id, customer_id, date_of_service, particular_of_service,
-                    adjustment_amount, on_account_of, remark
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s)
-                RETURNING id
-            """
-            params = (
-                data['company_id'],
-                data['customer_id'],
-                data['date_of_service'],
-                data['particular_of_service'],
-                amount,
-                data.get('on_account_of'),
-                data.get('remark')
-            )
-        else:  # vendor
-            insert_query = """
-                INSERT INTO vendor_adjustments (
-                    company_id, vendor_id, date_of_service, particular_of_service,
-                    adjustment_amount, on_account_of, remark
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s)
-                RETURNING id
-            """
-            params = (
-                data['company_id'],
-                data['vendor_id'],
-                data['date_of_service'],
-                data['particular_of_service'],
-                amount,
-                data.get('on_account_of'),
-                data.get('remark')
-            )
-
-        result = execute_query(insert_query, params)
+        result = execute_query(query, params)
 
         if result:
             adjustment_id = result[0]['id']
-            logger.info(f"[ADJUSTMENT] Created adjustment entry ID: {adjustment_id}, Type: {data['adjustment_type']}, Amount: {amount}")
+            logger.info(f"[{adjustment_type.upper()}_ADJUSTMENT] Created {adjustment_type} adjustment entry ID: {adjustment_id}")
+
+            # Generate and save adjustment invoice PDF to database
+            try:
+                # Generate the adjustment invoice PDF
+                pdf_base64 = generate_adjustment_invoice_pdf(data, adjustment_id)
+
+                if pdf_base64:
+                    # Save to invoice_images table
+                    invoice_no = f"ADJ-{adjustment_id}"
+                    save_response = save_invoice_image_helper({
+                        'invoice_no': invoice_no,
+                        'image_data': pdf_base64,
+                        'image_type': 'pdf',
+                        'file_name': f"{adjustment_type.title()}_Adjustment_{invoice_no}.pdf",
+                        'voucher_type': 'Adjustment'
+                    })
+
+                    if save_response.get('status') != 'success':
+                        logger.warning(f"[ADJUSTMENT_INVOICE] Failed to save adjustment invoice for ID: {adjustment_id}: {save_response}")
+                else:
+                    logger.warning(f"[ADJUSTMENT_INVOICE] Failed to generate PDF for adjustment ID: {adjustment_id}")
+
+            except Exception as pdf_e:
+                logger.error(f"[ADJUSTMENT_INVOICE] Failed to generate/save adjustment invoice PDF for ID {adjustment_id}: {pdf_e}")
+                # Don't fail adjustment creation if PDF generation fails
+
             return jsonify({
                 "status": "success",
                 "data": {"adjustment_id": adjustment_id},
-                "message": f"Adjustment entry created successfully with ID: {adjustment_id}"
+                "message": f"{adjustment_type.title()} adjustment entry created successfully with ID: {adjustment_id}"
             }), 201
         else:
             return jsonify({
-                "error": "Failed to create adjustment",
+                "error": "Failed to create record",
                 "message": "No ID returned from insert operation",
                 "status": "error"
             }), 500
 
     except Exception as e:
-        logger.error(f"[ADJUSTMENT] Failed to create adjustment entry: {e}")
+        logger.error(f"[ADJUSTMENT] Failed to create adjustment: {e}")
         return jsonify({
             "error": str(e),
             "message": "Failed to create adjustment entry",
@@ -3002,27 +2312,8 @@ def create_adjustment():
 
 @bookkeeping_bp.route('/get-client-adjustment/<int:adjustment_id>', methods=['GET'])
 def get_client_adjustment(adjustment_id):
-    """Get a specific client adjustment by ID for invoice generation"""
+    """Get a specific client adjustment entry by ID"""
     try:
-        # Ensure client_adjustments table exists
-        create_client_adjustments_query = """
-            CREATE TABLE IF NOT EXISTS client_adjustments (
-                id SERIAL PRIMARY KEY,
-                company_id INTEGER NOT NULL,
-                customer_id INTEGER NOT NULL,
-                date_of_service DATE NOT NULL,
-                particular_of_service TEXT NOT NULL,
-                adjustment_amount DECIMAL(15,2) NOT NULL CHECK (adjustment_amount != 0),
-                on_account_of TEXT,
-                remark TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (company_id) REFERENCES company_details(id),
-                FOREIGN KEY (customer_id) REFERENCES b2bcustomersdetails(id)
-            )
-        """
-        execute_query(create_client_adjustments_query, fetch=False)
-
         query = """
             SELECT
                 ca.id,
@@ -3038,7 +2329,7 @@ def get_client_adjustment(adjustment_id):
                 cd.company_gst_number as company_gst,
                 cd.company_address,
                 NULL as company_state_code,
-                b2b.company_name as customer_company_name,
+                b2b.company_name as customer_name,
                 b2b.gst_number as customer_gst,
                 b2b.address as customer_address,
                 b2b.state_code as customer_state_code
@@ -3066,7 +2357,7 @@ def get_client_adjustment(adjustment_id):
                 'company_gst': adjustment['company_gst'],
                 'company_address': adjustment['company_address'],
                 'company_state_code': adjustment['company_state_code'],
-                'customer_name': adjustment['customer_company_name'],
+                'customer_name': adjustment['customer_name'],
                 'customer_gst': adjustment['customer_gst'],
                 'customer_address': adjustment['customer_address'],
                 'customer_state_code': adjustment['customer_state_code']
@@ -3095,27 +2386,502 @@ def get_client_adjustment(adjustment_id):
 
 @bookkeeping_bp.route('/get-vendor-adjustment/<int:adjustment_id>', methods=['GET'])
 def get_vendor_adjustment(adjustment_id):
-    """Get a specific vendor adjustment by ID for invoice generation"""
+    """Get a specific vendor adjustment entry by ID"""
     try:
-        # Ensure vendor_adjustments table exists
-        create_vendor_adjustments_query = """
-            CREATE TABLE IF NOT EXISTS vendor_adjustments (
-                id SERIAL PRIMARY KEY,
-                company_id INTEGER NOT NULL,
-                vendor_id INTEGER NOT NULL,
-                date_of_service DATE NOT NULL,
-                particular_of_service TEXT NOT NULL,
-                adjustment_amount DECIMAL(15,2) NOT NULL CHECK (adjustment_amount != 0),
-                on_account_of TEXT,
-                remark TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (company_id) REFERENCES company_details(id),
-                FOREIGN KEY (vendor_id) REFERENCES vendors(id)
-            )
+        query = """
+            SELECT
+                va.id,
+                va.company_id,
+                va.vendor_id,
+                va.date_of_service,
+                va.particular_of_service,
+                va.adjustment_amount,
+                va.on_account_of,
+                va.remark,
+                va.created_at,
+                cd.company_name,
+                cd.company_gst_number as company_gst,
+                cd.company_address,
+                NULL as company_state_code,
+                v.vendor_name,
+                v.gst_number as vendor_gst,
+                v.address as vendor_address,
+                v.state as vendor_state_code
+            FROM vendor_adjustments va
+            JOIN company_details cd ON va.company_id = cd.id
+            JOIN vendors v ON va.vendor_id = v.id
+            WHERE va.id = %s
         """
-        execute_query(create_vendor_adjustments_query, fetch=False)
 
+        results = execute_query(query, (adjustment_id,))
+
+        if results and len(results) > 0:
+            adjustment = results[0]
+            adjustment_data = {
+                'id': adjustment['id'],
+                'company_id': adjustment['company_id'],
+                'vendor_id': adjustment['vendor_id'],
+                'date_of_service': str(adjustment['date_of_service']) if adjustment['date_of_service'] else None,
+                'particular_of_service': adjustment['particular_of_service'],
+                'adjustment_amount': float(adjustment['adjustment_amount']) if adjustment['adjustment_amount'] else 0,
+                'on_account_of': adjustment['on_account_of'],
+                'remark': adjustment['remark'],
+                'created_at': str(adjustment['created_at']),
+                'company_name': adjustment['company_name'],
+                'company_gst': adjustment['company_gst'],
+                'company_address': adjustment['company_address'],
+                'company_state_code': adjustment['company_state_code'],
+                'vendor_name': adjustment['vendor_name'],
+                'vendor_gst': adjustment['vendor_gst'],
+                'vendor_address': adjustment['vendor_address'],
+                'vendor_state_code': adjustment['vendor_state_code']
+            }
+
+            logger.info(f"[VENDOR_ADJUSTMENT] Retrieved vendor adjustment ID: {adjustment_id}")
+            return jsonify({
+                "status": "success",
+                "data": adjustment_data,
+                "message": f"Retrieved vendor adjustment ID: {adjustment_id}"
+            }), 200
+        else:
+            return jsonify({
+                "error": "Vendor adjustment not found",
+                "message": f"No vendor adjustment found with ID: {adjustment_id}",
+                "status": "not_found"
+            }), 404
+
+    except Exception as e:
+        logger.error(f"[VENDOR_ADJUSTMENT] Failed to retrieve vendor adjustment ID {adjustment_id}: {e}")
+        return jsonify({
+            "error": str(e),
+            "message": "Failed to retrieve vendor adjustment",
+            "status": "error"
+        }), 500
+
+@bookkeeping_bp.route('/client-adjustments', methods=['POST'])
+def create_client_adjustment():
+    """Create a new client adjustment entry"""
+    try:
+        data = request.get_json()
+
+        required_fields = ['company_id', 'customer_id', 'date_of_service', 'particular_of_service', 'adjustment_amount']
+        for field in required_fields:
+            if field not in data:
+                return jsonify({
+                    "error": f"Missing required field: {field}",
+                    "message": f"Field '{field}' is required",
+                    "status": "validation_error"
+                }), 400
+
+        # Validate adjustment_amount is not zero
+        if data['adjustment_amount'] == 0:
+            return jsonify({
+                "error": "Invalid adjustment amount",
+                "message": "Adjustment amount cannot be zero",
+                "status": "validation_error"
+            }), 400
+
+        query = """
+            INSERT INTO client_adjustments (
+                company_id, customer_id, date_of_service, particular_of_service,
+                adjustment_amount, on_account_of, remark
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+            RETURNING id
+        """
+
+        result = execute_query(query, (
+            data['company_id'],
+            data['customer_id'],
+            data['date_of_service'],
+            data['particular_of_service'],
+            data['adjustment_amount'],
+            data.get('on_account_of'),
+            data.get('remark')
+        ))
+
+        if result:
+            adjustment_id = result[0]['id']
+            logger.info(f"[CLIENT_ADJUSTMENT] Created client adjustment entry ID: {adjustment_id}")
+
+            # Generate and save adjustment invoice PDF to database
+            try:
+                # Generate the adjustment invoice PDF
+                pdf_base64 = generate_adjustment_invoice_pdf(data, adjustment_id)
+
+                if pdf_base64:
+                    # Save to invoice_images table
+                    invoice_no = f"ADJ-{adjustment_id}"
+                    save_response = save_invoice_image_helper({
+                        'invoice_no': invoice_no,
+                        'image_data': pdf_base64,
+                        'image_type': 'pdf',
+                        'file_name': f"Client_Adjustment_{invoice_no}.pdf",
+                        'voucher_type': 'Adjustment'
+                    })
+
+                    if save_response.get('status') != 'success':
+                        logger.warning(f"[ADJUSTMENT_INVOICE] Failed to save adjustment invoice for ID: {adjustment_id}: {save_response}")
+                else:
+                    logger.warning(f"[ADJUSTMENT_INVOICE] Failed to generate PDF for adjustment ID: {adjustment_id}")
+
+            except Exception as pdf_e:
+                logger.error(f"[ADJUSTMENT_INVOICE] Failed to generate/save adjustment invoice PDF for ID {adjustment_id}: {pdf_e}")
+                # Don't fail adjustment creation if PDF generation fails
+
+            return jsonify({
+                "status": "success",
+                "data": {"adjustment_id": adjustment_id},
+                "message": f"Client adjustment entry created successfully with ID: {adjustment_id}"
+            }), 201
+        else:
+            return jsonify({
+                "error": "Failed to create record",
+                "message": "No ID returned from insert operation",
+                "status": "error"
+            }), 500
+
+    except Exception as e:
+        logger.error(f"[CLIENT_ADJUSTMENT] Failed to create client adjustment: {e}")
+        return jsonify({
+            "error": str(e),
+            "message": "Failed to create client adjustment entry",
+            "status": "error"
+        }), 500
+
+@bookkeeping_bp.route('/client-adjustments', methods=['GET'])
+def get_client_adjustments():
+    """Get client adjustment entries with optional filtering"""
+    try:
+        # Get query parameters
+        limit = request.args.get('limit', 50, type=int)
+        offset = request.args.get('offset', 0, type=int)
+
+        query = """
+            SELECT
+                ca.id,
+                ca.company_id,
+                ca.customer_id,
+                ca.date_of_service,
+                ca.particular_of_service,
+                ca.adjustment_amount,
+                ca.on_account_of,
+                ca.remark,
+                ca.created_at,
+                cd.company_name,
+                cd.company_gst_number as company_gst,
+                cd.company_address,
+                NULL as company_state_code,
+                b2b.company_name as customer_name,
+                b2b.gst_number as customer_gst,
+                b2b.address as customer_address,
+                b2b.state_code as customer_state_code
+            FROM client_adjustments ca
+            JOIN company_details cd ON ca.company_id = cd.id
+            JOIN b2bcustomersdetails b2b ON ca.customer_id = b2b.id
+            ORDER BY ca.created_at DESC
+            LIMIT %s OFFSET %s
+        """
+        params = (limit, offset)
+
+        results = execute_query(query, params)
+
+        if results:
+            adjustments = []
+            for row in results:
+                adjustments.append({
+                    'id': row['id'],
+                    'company_id': row['company_id'],
+                    'customer_id': row['customer_id'],
+                    'date_of_service': str(row['date_of_service']) if row['date_of_service'] else None,
+                    'particular_of_service': row['particular_of_service'],
+                    'adjustment_amount': float(row['adjustment_amount']) if row['adjustment_amount'] else 0,
+                    'on_account_of': row['on_account_of'],
+                    'remark': row['remark'],
+                    'created_at': str(row['created_at']),
+                    'company_name': row['company_name'],
+                    'company_gst': row['company_gst'],
+                    'company_address': row['company_address'],
+                    'company_state_code': row['company_state_code'],
+                    'customer_name': row['customer_name'],
+                    'customer_gst': row['customer_gst'],
+                    'customer_address': row['customer_address'],
+                    'customer_state_code': row['customer_state_code']
+                })
+
+            logger.info(f"[CLIENT_ADJUSTMENT] Retrieved {len(adjustments)} client adjustment entries")
+            return jsonify({
+                "status": "success",
+                "data": adjustments,
+                "message": f"Retrieved {len(adjustments)} client adjustment entries successfully",
+                "total": len(adjustments)
+            }), 200
+        else:
+            return jsonify({
+                "status": "success",
+                "data": [],
+                "message": "No client adjustment entries found",
+                "total": 0
+            }), 200
+
+    except Exception as e:
+        logger.error(f"[CLIENT_ADJUSTMENT] Failed to retrieve client adjustments: {e}")
+        return jsonify({
+            "error": str(e),
+            "message": "Failed to retrieve client adjustment entries",
+            "status": "error"
+        }), 500
+
+@bookkeeping_bp.route('/client-adjustments/<int:adjustment_id>', methods=['GET'])
+def get_client_adjustment_by_id(adjustment_id):
+    """Get a specific client adjustment entry by ID"""
+    try:
+        query = """
+            SELECT
+                ca.id,
+                ca.company_id,
+                ca.customer_id,
+                ca.date_of_service,
+                ca.particular_of_service,
+                ca.adjustment_amount,
+                ca.on_account_of,
+                ca.remark,
+                ca.created_at,
+                cd.company_name,
+                cd.company_gst_number as company_gst,
+                cd.company_address,
+                NULL as company_state_code,
+                b2b.company_name as customer_name,
+                b2b.gst_number as customer_gst,
+                b2b.address as customer_address,
+                b2b.state_code as customer_state_code
+            FROM client_adjustments ca
+            JOIN company_details cd ON ca.company_id = cd.id
+            JOIN b2bcustomersdetails b2b ON ca.customer_id = b2b.id
+            WHERE ca.id = %s
+        """
+
+        results = execute_query(query, (adjustment_id,))
+
+        if results and len(results) > 0:
+            adjustment = results[0]
+            adjustment_data = {
+                'id': adjustment['id'],
+                'company_id': adjustment['company_id'],
+                'customer_id': adjustment['customer_id'],
+                'date_of_service': str(adjustment['date_of_service']) if adjustment['date_of_service'] else None,
+                'particular_of_service': adjustment['particular_of_service'],
+                'adjustment_amount': float(adjustment['adjustment_amount']) if adjustment['adjustment_amount'] else 0,
+                'on_account_of': adjustment['on_account_of'],
+                'remark': adjustment['remark'],
+                'created_at': str(adjustment['created_at']),
+                'company_name': adjustment['company_name'],
+                'company_gst': adjustment['company_gst'],
+                'company_address': adjustment['company_address'],
+                'company_state_code': adjustment['company_state_code'],
+                'customer_name': adjustment['customer_name'],
+                'customer_gst': adjustment['customer_gst'],
+                'customer_address': adjustment['customer_address'],
+                'customer_state_code': adjustment['customer_state_code']
+            }
+
+            logger.info(f"[CLIENT_ADJUSTMENT] Retrieved client adjustment ID: {adjustment_id}")
+            return jsonify({
+                "status": "success",
+                "data": adjustment_data,
+                "message": f"Retrieved client adjustment ID: {adjustment_id}"
+            }), 200
+        else:
+            return jsonify({
+                "error": "Client adjustment not found",
+                "message": f"No client adjustment found with ID: {adjustment_id}",
+                "status": "not_found"
+            }), 404
+
+    except Exception as e:
+        logger.error(f"[CLIENT_ADJUSTMENT] Failed to retrieve client adjustment ID {adjustment_id}: {e}")
+        return jsonify({
+            "error": str(e),
+            "message": "Failed to retrieve client adjustment",
+            "status": "error"
+        }), 500
+
+@bookkeeping_bp.route('/vendor-adjustments', methods=['POST'])
+def create_vendor_adjustment():
+    """Create a new vendor adjustment entry"""
+    try:
+        data = request.get_json()
+
+        required_fields = ['company_id', 'vendor_id', 'date_of_service', 'particular_of_service', 'adjustment_amount']
+        for field in required_fields:
+            if field not in data:
+                return jsonify({
+                    "error": f"Missing required field: {field}",
+                    "message": f"Field '{field}' is required",
+                    "status": "validation_error"
+                }), 400
+
+        # Validate adjustment_amount is not zero
+        if data['adjustment_amount'] == 0:
+            return jsonify({
+                "error": "Invalid adjustment amount",
+                "message": "Adjustment amount cannot be zero",
+                "status": "validation_error"
+            }), 400
+
+        query = """
+            INSERT INTO vendor_adjustments (
+                company_id, vendor_id, date_of_service, particular_of_service,
+                adjustment_amount, on_account_of, remark
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+            RETURNING id
+        """
+
+        result = execute_query(query, (
+            data['company_id'],
+            data['vendor_id'],
+            data['date_of_service'],
+            data['particular_of_service'],
+            data['adjustment_amount'],
+            data.get('on_account_of'),
+            data.get('remark')
+        ))
+
+        if result:
+            adjustment_id = result[0]['id']
+            logger.info(f"[VENDOR_ADJUSTMENT] Created vendor adjustment entry ID: {adjustment_id}")
+
+            # Generate and save adjustment invoice PDF to database
+            try:
+                # Generate the adjustment invoice PDF
+                pdf_base64 = generate_adjustment_invoice_pdf(data, adjustment_id)
+
+                if pdf_base64:
+                    # Save to invoice_images table
+                    invoice_no = f"ADJ-{adjustment_id}"
+                    save_response = save_invoice_image_helper({
+                        'invoice_no': invoice_no,
+                        'image_data': pdf_base64,
+                        'image_type': 'pdf',
+                        'file_name': f"Vendor_Adjustment_{invoice_no}.pdf",
+                        'voucher_type': 'Adjustment'
+                    })
+
+                    if save_response.get('status') != 'success':
+                        logger.warning(f"[ADJUSTMENT_INVOICE] Failed to save adjustment invoice for ID: {adjustment_id}: {save_response}")
+                else:
+                    logger.warning(f"[ADJUSTMENT_INVOICE] Failed to generate PDF for adjustment ID: {adjustment_id}")
+
+            except Exception as pdf_e:
+                logger.error(f"[ADJUSTMENT_INVOICE] Failed to generate/save adjustment invoice PDF for ID {adjustment_id}: {pdf_e}")
+                # Don't fail adjustment creation if PDF generation fails
+
+            return jsonify({
+                "status": "success",
+                "data": {"adjustment_id": adjustment_id},
+                "message": f"Vendor adjustment entry created successfully with ID: {adjustment_id}"
+            }), 201
+        else:
+            return jsonify({
+                "error": "Failed to create record",
+                "message": "No ID returned from insert operation",
+                "status": "error"
+            }), 500
+
+    except Exception as e:
+        logger.error(f"[VENDOR_ADJUSTMENT] Failed to create vendor adjustment: {e}")
+        return jsonify({
+            "error": str(e),
+            "message": "Failed to create vendor adjustment entry",
+            "status": "error"
+        }), 500
+
+@bookkeeping_bp.route('/vendor-adjustments', methods=['GET'])
+def get_vendor_adjustments():
+    """Get vendor adjustment entries with optional filtering"""
+    try:
+        # Get query parameters
+        limit = request.args.get('limit', 50, type=int)
+        offset = request.args.get('offset', 0, type=int)
+
+        query = """
+            SELECT
+                va.id,
+                va.company_id,
+                va.vendor_id,
+                va.date_of_service,
+                va.particular_of_service,
+                va.adjustment_amount,
+                va.on_account_of,
+                va.remark,
+                va.created_at,
+                cd.company_name,
+                cd.company_gst_number as company_gst,
+                cd.company_address,
+                NULL as company_state_code,
+                v.vendor_name,
+                v.gst_number as vendor_gst,
+                v.address as vendor_address,
+                v.state as vendor_state_code
+            FROM vendor_adjustments va
+            JOIN company_details cd ON va.company_id = cd.id
+            JOIN vendors v ON va.vendor_id = v.id
+            ORDER BY va.created_at DESC
+            LIMIT %s OFFSET %s
+        """
+        params = (limit, offset)
+
+        results = execute_query(query, params)
+
+        if results:
+            adjustments = []
+            for row in results:
+                adjustments.append({
+                    'id': row['id'],
+                    'company_id': row['company_id'],
+                    'vendor_id': row['vendor_id'],
+                    'date_of_service': str(row['date_of_service']) if row['date_of_service'] else None,
+                    'particular_of_service': row['particular_of_service'],
+                    'adjustment_amount': float(row['adjustment_amount']) if row['adjustment_amount'] else 0,
+                    'on_account_of': row['on_account_of'],
+                    'remark': row['remark'],
+                    'created_at': str(row['created_at']),
+                    'company_name': row['company_name'],
+                    'company_gst': row['company_gst'],
+                    'company_address': row['company_address'],
+                    'company_state_code': row['company_state_code'],
+                    'vendor_name': row['vendor_name'],
+                    'vendor_gst': row['vendor_gst'],
+                    'vendor_address': row['vendor_address'],
+                    'vendor_state_code': row['vendor_state_code']
+                })
+
+            logger.info(f"[VENDOR_ADJUSTMENT] Retrieved {len(adjustments)} vendor adjustment entries")
+            return jsonify({
+                "status": "success",
+                "data": adjustments,
+                "message": f"Retrieved {len(adjustments)} vendor adjustment entries successfully",
+                "total": len(adjustments)
+            }), 200
+        else:
+            return jsonify({
+                "status": "success",
+                "data": [],
+                "message": "No vendor adjustment entries found",
+                "total": 0
+            }), 200
+
+    except Exception as e:
+        logger.error(f"[VENDOR_ADJUSTMENT] Failed to retrieve vendor adjustments: {e}")
+        return jsonify({
+            "error": str(e),
+            "message": "Failed to retrieve vendor adjustment entries",
+            "status": "error"
+        }), 500
+
+@bookkeeping_bp.route('/vendor-adjustments/<int:adjustment_id>', methods=['GET'])
+def get_vendor_adjustment_by_id(adjustment_id):
+    """Get a specific vendor adjustment entry by ID"""
+    try:
         query = """
             SELECT
                 va.id,
@@ -3288,80 +3054,567 @@ def get_vendor_details(vendor_id):
             "status": "error"
         }), 500
 
-@bookkeeping_bp.route('/save-invoice-image', methods=['POST'])
-def save_invoice_image():
-    """Save invoice PDF image to database"""
+def generate_receipt_invoice_pdf(receipt_data, receipt_id):
+    """Generate a receipt invoice PDF that exactly matches the frontend ReceiptInvoicePreview.jsx layout"""
     try:
-        data = request.get_json()
+        logger.info(f"[RECEIPT_INVOICE] Starting PDF generation for receipt ID: {receipt_id}")
 
-        required_fields = ['invoice_no', 'image_data', 'image_type']
+        # Import required modules for PDF generation
+        import base64
+        from io import BytesIO
+        from reportlab.pdfgen import canvas
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+        from reportlab.lib import colors
+        from reportlab.lib.units import inch
+
+        # Get receipt details from the data passed
+        company_name = receipt_data.get('company_name', 'Company Name')
+        customer_name = receipt_data.get('customer_name', 'Customer Name')
+        transaction_date = str(receipt_data.get('transaction_date', ''))
+        payment_type = receipt_data.get('payment_type', '')
+        amount_received = float(receipt_data.get('amount_received', 0))
+        transaction_id = receipt_data.get('transaction_id', '-')
+        on_account_of = receipt_data.get('on_account_of', '-')
+        remark = receipt_data.get('remark', '-')
+
+        logger.info(f"[RECEIPT_INVOICE] Receipt details - company: {company_name}, customer: {customer_name}, amount: {amount_received}")
+
+        # Fetch additional company and customer details from database
+        company_data = {}
+        customer_data = {}
+
+        try:
+            # Get company details
+            if receipt_data.get('company_name'):
+                company_query = "SELECT company_name, company_gst_number, company_address FROM company_details WHERE company_name = %s LIMIT 1"
+                company_result = execute_query(company_query, (receipt_data.get('company_name'),))
+                if company_result:
+                    company_data = company_result[0]
+                    logger.info(f"[RECEIPT_INVOICE] Company data: {company_data}")
+
+            # Get customer details
+            if receipt_data.get('customer_name'):
+                customer_query = "SELECT company_name, gst_number, address, state_code FROM b2bcustomersdetails WHERE company_name = %s LIMIT 1"
+                customer_result = execute_query(customer_query, (receipt_data.get('customer_name'),))
+                if customer_result:
+                    customer_data = customer_result[0]
+                    logger.info(f"[RECEIPT_INVOICE] Customer data: {customer_data}")
+
+        except Exception as db_e:
+            logger.warning(f"[RECEIPT_INVOICE] Could not fetch company/customer details: {db_e}")
+
+        # Create PDF buffer
+        buffer = BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=A4)
+        styles = getSampleStyleSheet()
+
+        # Create custom styles
+        title_style = ParagraphStyle(
+            'Title',
+            parent=styles['Heading1'],
+            fontSize=30,  # text-3xl equivalent
+            spaceAfter=30,
+            alignment=1  # Center
+        )
+
+        normal_style = styles['Normal']
+        normal_style.fontSize = 9  # text-xs equivalent
+
+        # Build PDF content
+        content = []
+
+        # Title - exactly matching frontend
+        content.append(Paragraph("PAYMENT RECEIPT", title_style))
+        content.append(Spacer(1, 12))
+
+        # Main 2-column layout exactly matching frontend
+        # Left side: Company and Customer details
+        left_content = []
+
+        # Company Details Section
+        left_content.append(Paragraph(f"<b>{company_data.get('company_name', company_name)}</b>", normal_style))
+        if company_data.get('company_address'):
+            address_lines = company_data['company_address'].split('\n')
+            for line in address_lines:
+                if line.strip():
+                    left_content.append(Paragraph(line, normal_style))
+        left_content.append(Paragraph(f"<b>GSTIN/UIN:</b> {company_data.get('company_gst_number', 'GST Number')}", normal_style))
+        left_content.append(Paragraph("<b>State Name:</b> Maharashtra, <b>Code:</b> 27", normal_style))
+        left_content.append(Spacer(1, 8))
+
+        # Separator line
+        left_content.append(Paragraph("<b>Received From</b>", normal_style))
+        left_content.append(Paragraph(f"<b>{customer_data.get('company_name', customer_name)}</b>", normal_style))
+        if customer_data.get('address'):
+            address_lines = customer_data['address'].split('\n')
+            for line in address_lines:
+                if line.strip():
+                    left_content.append(Paragraph(line, normal_style))
+        if customer_data.get('gst_number'):
+            left_content.append(Paragraph(f"<b>GSTIN/UIN:</b> {customer_data['gst_number']}", normal_style))
+        if customer_data.get('state_code'):
+            left_content.append(Paragraph(f"<b>State Name:</b> Maharashtra, <b>Code:</b> {customer_data['state_code']}", normal_style))
+
+        # Right side: Receipt details in 2-column grid (exactly like frontend)
+        right_content = []
+
+        # Left column of receipt details
+        receipt_left_data = [
+            ["Receipt No.", str(receipt_id)],
+            ["Transaction ID", transaction_id or '-'],
+            ["On Account of", on_account_of or '-']
+        ]
+
+        # Right column of receipt details
+        receipt_right_data = [
+            ["Dated", transaction_date],
+            ["Payment Type", payment_type],
+            ["Remarks", remark or '-']
+        ]
+
+        # Create receipt details table (2 columns side by side)
+        receipt_details_data = []
+        for i in range(len(receipt_left_data)):
+            row = receipt_left_data[i] + [""] + receipt_right_data[i]  # Add spacer column
+            receipt_details_data.append(row)
+
+        receipt_table = Table(receipt_details_data, colWidths=[70, 80, 20, 70, 80])
+        receipt_table.setStyle(TableStyle([
+            ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
+            ('FONTSIZE', (0, 0), (-1, -1), 9),
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ]))
+
+        right_content.append(receipt_table)
+
+        # Create main 2-column layout
+        main_data = []
+
+        # Add title row
+        main_data.append([left_content[0], "", right_content[0]])  # Title and receipt table
+
+        # Add company details rows
+        for i in range(1, len(left_content)):
+            if i < len(left_content):
+                main_data.append([left_content[i], "", ""])
+            else:
+                main_data.append(["", "", ""])
+
+        main_table = Table(main_data, colWidths=[200, 50, 250])
+        main_table.setStyle(TableStyle([
+            ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
+            ('FONTSIZE', (0, 0), (-1, -1), 9),
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ]))
+
+        content.append(main_table)
+        content.append(Spacer(1, 20))
+
+        # Table with Sl No, Particulars, Amount - exactly matching frontend
+        table_data = [
+            ['Sl No.', 'Particulars', 'Amount'],
+            ['1', f'Payment Received{f"\nOn Account of: {on_account_of}" if on_account_of and on_account_of != '-' else ""}', f"₹{amount_received:,.2f}"],
+            ['', 'Net Amount Received', f"₹{amount_received:,.2f}"]
+        ]
+
+        particulars_table = Table(table_data, colWidths=[40, 300, 80])
+        particulars_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('ALIGN', (1, 1), (1, -1), 'LEFT'),
+            ('ALIGN', (2, 1), (2, -1), 'RIGHT'),
+            ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
+            ('FONTSIZE', (0, 0), (-1, -1), 9),
+            ('GRID', (0, 0), (-1, -1), 1, colors.black),
+            ('BACKGROUND', (0, -1), (-1, -1), colors.lightgrey),
+            ('SPAN', (0, -1), (1, -1)),  # Merge last row first two columns
+        ]))
+
+        content.append(particulars_table)
+        content.append(Spacer(1, 15))
+
+        # Amount in words section - exactly matching frontend format
+        def number_to_words(num):
+            ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine']
+            tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety']
+            teens = ['Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen']
+
+            def convert_less_than_thousand(n):
+                if n == 0: return ''
+                result = ''
+                if n >= 100:
+                    result += ones[n // 100] + ' Hundred '
+                    n %= 100
+                if n >= 20:
+                    result += tens[n // 10] + ' '
+                    n %= 10
+                elif n >= 10:
+                    result += teens[n - 10] + ' '
+                    return result.strip()
+                if n > 0 and n < 10:
+                    result += ones[n] + ' '
+                return result.strip()
+
+            def convert(n):
+                if n == 0: return 'Zero'
+                result = ''
+                crore = n // 10000000
+                lakh = (n % 10000000) // 100000
+                thousand = (n % 100000) // 1000
+                remainder = n % 1000
+
+                if crore > 0:
+                    result += convert_less_than_thousand(crore) + ' Crore '
+                if lakh > 0:
+                    result += convert_less_than_thousand(lakh) + ' Lakh '
+                if thousand > 0:
+                    result += convert_less_than_thousand(thousand) + ' Thousand '
+                if remainder > 0:
+                    result += convert_less_than_thousand(remainder)
+
+                return result.strip()
+
+            rupees = int(num)
+            paise = round((num - rupees) * 100)
+            result = 'INR ' + convert(rupees)
+            if paise > 0:
+                result += ' and ' + convert(paise) + ' Paise'
+            result += ' Only'
+            return result
+
+        words = number_to_words(amount_received)
+        content.append(Paragraph(f"<b>Received Amount:</b> ₹{amount_received:,.2f}", normal_style))
+        content.append(Paragraph(f"<b>Amount Received (in words)</b>", normal_style))
+        content.append(Paragraph(words, normal_style))
+        content.append(Spacer(1, 15))
+
+        # Remarks section (only if present and not default)
+        if remark and remark != '-' and remark.strip():
+            content.append(Paragraph(f"<b>Remarks:</b> {remark}", normal_style))
+            content.append(Spacer(1, 15))
+
+        # Bank's Details section - exactly matching frontend
+        content.append(Paragraph("<b>Company's Bank Details</b>", normal_style))
+        content.append(Paragraph(f"A/c Holder's Name: {company_data.get('company_name', company_name)}", normal_style))
+        content.append(Paragraph("Bank Name: Bank Name - Branch Code", normal_style))
+        content.append(Paragraph("A/c No.: 1234567890", normal_style))
+        content.append(Paragraph("Branch & IFS Code: Branch Name & IFSC0001234", normal_style))
+        content.append(Spacer(1, 20))
+
+        # Signatures section - exactly matching frontend 2-column layout
+        signature_data = [
+            ['Customer\'s Seal and Signature', '', f'for {company_data.get('company_name', company_name)}'],
+            ['', '', 'Authorised Signatory']
+        ]
+
+        signature_table = Table(signature_data, colWidths=[150, 100, 150])
+        signature_table.setStyle(TableStyle([
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
+            ('FONTSIZE', (0, 0), (-1, -1), 9),
+            ('LINEBELOW', (0, 0), (0, 0), 1, colors.black),
+            ('LINEBELOW', (2, 0), (2, 0), 1, colors.black),
+        ]))
+
+        content.append(Spacer(1, 30))
+        content.append(signature_table)
+
+        # Build PDF
+        doc.build(content)
+
+        # Get PDF data
+        pdf_data = buffer.getvalue()
+        buffer.close()
+
+        pdf_base64 = base64.b64encode(pdf_data).decode('utf-8')
+        logger.info(f"[RECEIPT_INVOICE] Successfully generated PDF using reportlab, size: {len(pdf_data)} bytes")
+        return pdf_base64
+
+    except Exception as e:
+        logger.error(f"[RECEIPT_INVOICE] Failed to generate receipt invoice PDF: {e}")
+        import traceback
+        logger.error(f"[RECEIPT_INVOICE] Traceback: {traceback.format_exc()}")
+        return None
+
+def generate_adjustment_invoice_pdf(adjustment_data, adjustment_id):
+    """Generate an adjustment invoice PDF using reportlab for reliability"""
+    try:
+        logger.info(f"[ADJUSTMENT_PDF] Starting PDF generation for adjustment ID: {adjustment_id}")
+
+        # Import required modules for PDF generation
+        import base64
+        from io import BytesIO
+        from reportlab.pdfgen import canvas
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+        from reportlab.lib import colors
+        from reportlab.lib.units import inch
+
+        # Get adjustment details
+        adjustment_type = adjustment_data.get('adjustment_type', 'client')
+        date_of_service = adjustment_data.get('date_of_service', '')
+        particular_of_service = adjustment_data.get('particular_of_service', '')
+        adjustment_amount = float(adjustment_data.get('adjustment_amount', 0))
+        on_account_of = adjustment_data.get('on_account_of', '')
+        remark = adjustment_data.get('remark', '')
+
+        logger.info(f"[ADJUSTMENT_PDF] Adjustment type: {adjustment_type}, amount: {adjustment_amount}")
+
+        # Get company and customer/vendor details based on adjustment type
+        if adjustment_type == 'client':
+            # Fetch company and customer details
+            try:
+                company_id = adjustment_data.get('company_id')
+                customer_id = adjustment_data.get('customer_id')
+                logger.info(f"[ADJUSTMENT_PDF] Client adjustment - company_id: {company_id}, customer_id: {customer_id}")
+
+                company_query = "SELECT company_name, company_gst_number, company_address FROM company_details WHERE id = %s"
+                company_result = execute_query(company_query, (company_id,))
+                company_data = company_result[0] if company_result else {}
+                logger.info(f"[ADJUSTMENT_PDF] Company data: {company_data}")
+
+                customer_query = "SELECT company_name, gst_number, address, state_code FROM b2bcustomersdetails WHERE id = %s"
+                customer_result = execute_query(customer_query, (customer_id,))
+                customer_data = customer_result[0] if customer_result else {}
+                logger.info(f"[ADJUSTMENT_PDF] Customer data: {customer_data}")
+            except Exception as db_e:
+                logger.warning(f"[ADJUSTMENT_PDF] Could not fetch company/customer details: {db_e}")
+                company_data = {}
+                customer_data = {}
+        else:  # vendor adjustment
+            try:
+                company_id = adjustment_data.get('company_id')
+                vendor_id = adjustment_data.get('vendor_id')
+                logger.info(f"[ADJUSTMENT_PDF] Vendor adjustment - company_id: {company_id}, vendor_id: {vendor_id}")
+
+                company_query = "SELECT company_name, company_gst_number, company_address FROM company_details WHERE id = %s"
+                company_result = execute_query(company_query, (company_id,))
+                company_data = company_result[0] if company_result else {}
+                logger.info(f"[ADJUSTMENT_PDF] Company data: {company_data}")
+
+                vendor_query = "SELECT vendor_name, gst_number, address, state FROM vendors WHERE id = %s"
+                vendor_result = execute_query(vendor_query, (vendor_id,))
+                customer_data = vendor_result[0] if vendor_result else {}
+                if customer_data:
+                    customer_data['company_name'] = customer_data.pop('vendor_name', '')
+                    customer_data['state_code'] = customer_data.pop('state', '')
+                logger.info(f"[ADJUSTMENT_PDF] Vendor data: {customer_data}")
+            except Exception as db_e:
+                logger.warning(f"[ADJUSTMENT_PDF] Could not fetch company/vendor details: {db_e}")
+                company_data = {}
+                customer_data = {}
+
+        # Create PDF buffer
+        buffer = BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=A4)
+        styles = getSampleStyleSheet()
+
+        # Create custom styles
+        title_style = ParagraphStyle(
+            'Title',
+            parent=styles['Heading1'],
+            fontSize=24,
+            spaceAfter=30,
+            alignment=1  # Center
+        )
+
+        normal_style = styles['Normal']
+        normal_style.fontSize = 10
+
+        # Build PDF content
+        content = []
+
+        # Title
+        invoice_title = "CLIENT ADJUSTMENT INVOICE" if adjustment_type == 'client' else "VENDOR ADJUSTMENT INVOICE"
+        content.append(Paragraph(invoice_title, title_style))
+        content.append(Paragraph(f"Adjustment Entry #{adjustment_id}", styles['Heading3']))
+        content.append(Spacer(1, 12))
+
+        # Company and Customer/Vendor details
+        company_info = [
+            ['Company:', company_data.get('company_name', 'Company Name')],
+            ['Address:', company_data.get('company_address', 'Company Address')],
+            ['GST:', company_data.get('company_gst_number', 'GST Number')],
+            ['', ''],
+            [f"{adjustment_type.title()}:", customer_data.get('company_name', f"{adjustment_type.title()} Name")],
+            ['Address:', customer_data.get('address', f"{adjustment_type.title()} Address")],
+            ['GST:', customer_data.get('gst_number', 'GST Number')],
+        ]
+
+        details_info = [
+            ['Adjustment No:', f'ADJ-{adjustment_id}'],
+            ['Date:', date_of_service],
+            ['Type:', f"{adjustment_type.title()} Adjustment"],
+        ]
+
+        if on_account_of:
+            details_info.append(['On Account of:', on_account_of])
+
+        # Create tables
+        company_table = Table(company_info, colWidths=[80, 300])
+        company_table.setStyle(TableStyle([
+            ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
+            ('FONTSIZE', (0, 0), (-1, -1), 9),
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ]))
+
+        details_table = Table(details_info, colWidths=[80, 300])
+        details_table.setStyle(TableStyle([
+            ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
+            ('FONTSIZE', (0, 0), (-1, -1), 9),
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ]))
+
+        content.append(company_table)
+        content.append(Spacer(1, 20))
+        content.append(details_table)
+        content.append(Spacer(1, 20))
+
+        # Particulars table
+        particulars_data = [
+            ['Sl No.', 'Particulars', 'Amount'],
+            ['1', particular_of_service, f"{'+' if adjustment_amount >= 0 else ''}₹{abs(adjustment_amount):,.2f}"],
+            ['', 'Adjustment Amount', f"{'+' if adjustment_amount >= 0 else ''}₹{abs(adjustment_amount):,.2f}"]
+        ]
+
+        particulars_table = Table(particulars_data, colWidths=[50, 350, 100])
+        particulars_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('ALIGN', (1, 1), (1, -1), 'LEFT'),
+            ('ALIGN', (2, 1), (2, -1), 'RIGHT'),
+            ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
+            ('FONTSIZE', (0, 0), (-1, -1), 9),
+            ('GRID', (0, 0), (-1, -1), 1, colors.black),
+            ('BACKGROUND', (0, -1), (-1, -1), colors.lightgrey),
+        ]))
+
+        content.append(particulars_table)
+        content.append(Spacer(1, 20))
+
+        # Remarks
+        if remark:
+            content.append(Paragraph(f"<b>Remarks:</b> {remark}", normal_style))
+            content.append(Spacer(1, 10))
+
+        # Signatures
+        signature_data = [
+            [f"{adjustment_type.title()}'s Seal and Signature", '', f'for {company_data.get('company_name', 'Company Name')}'],
+            ['', '', 'Authorised Signatory']
+        ]
+
+        signature_table = Table(signature_data, colWidths=[200, 100, 200])
+        signature_table.setStyle(TableStyle([
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
+            ('FONTSIZE', (0, 0), (-1, -1), 9),
+            ('LINEBELOW', (0, 0), (0, 0), 1, colors.black),
+            ('LINEBELOW', (2, 0), (2, 0), 1, colors.black),
+        ]))
+
+        content.append(Spacer(1, 40))
+        content.append(signature_table)
+
+        # Build PDF
+        doc.build(content)
+
+        # Get PDF data
+        pdf_data = buffer.getvalue()
+        buffer.close()
+
+        pdf_base64 = base64.b64encode(pdf_data).decode('utf-8')
+        logger.info(f"[ADJUSTMENT_PDF] Successfully generated PDF using reportlab, size: {len(pdf_data)} bytes")
+        return pdf_base64
+
+    except Exception as e:
+        logger.error(f"[ADJUSTMENT_INVOICE] Failed to generate adjustment invoice PDF: {e}")
+        import traceback
+        logger.error(f"[ADJUSTMENT_INVOICE] Traceback: {traceback.format_exc()}")
+        return None
+
+def save_invoice_image_helper(data):
+    """Helper function to save invoice image to database"""
+    try:
+        required_fields = ['invoice_no', 'image_data']
         for field in required_fields:
             if field not in data:
-                return jsonify({
-                    "error": f"Missing required field: {field}",
-                    "message": f"Field '{field}' is required",
-                    "status": "validation_error"
-                }), 400
+                return {
+                    "status": "error",
+                    "message": f"Field '{field}' is required"
+                }
 
         # Decode base64 image data
         import base64
         try:
             image_binary = base64.b64decode(data['image_data'])
         except Exception as decode_error:
-            return jsonify({
-                "error": "Invalid image data",
-                "message": f"Failed to decode base64 image data: {str(decode_error)}",
-                "status": "validation_error"
-            }), 400
+            return {
+                "status": "error",
+                "message": f"Failed to decode base64 image data: {str(decode_error)}"
+            }
 
         # Insert into invoice_images table
         query = """
             INSERT INTO invoice_images (
-                invoice_no, image_data, image_type, file_name, file_size
-            ) VALUES (%s, %s, %s, %s, %s)
+                invoice_no, image_data, image_type, file_name, file_size, voucher_type
+            ) VALUES (%s, %s, %s, %s, %s, %s)
             ON CONFLICT (invoice_no)
             DO UPDATE SET
                 image_data = EXCLUDED.image_data,
                 image_type = EXCLUDED.image_type,
                 file_name = EXCLUDED.file_name,
                 file_size = EXCLUDED.file_size,
+                voucher_type = EXCLUDED.voucher_type,
                 generated_at = CURRENT_TIMESTAMP
             RETURNING id
         """
 
-        file_name = data.get('file_name', f"Tax_Invoice_{data['invoice_no']}.pdf")
+        file_name = data.get('file_name', f"Invoice_{data['invoice_no']}.pdf")
         file_size = len(image_binary)
+        voucher_type = data.get('voucher_type', 'Sales')
 
         result = execute_query(query, (
             data['invoice_no'],
             image_binary,
             data.get('image_type', 'pdf'),
             file_name,
-            file_size
+            file_size,
+            voucher_type
         ))
 
         if result:
             image_id = result[0]['id']
-            logger.info(f"[INVOICE_IMAGE] Saved invoice image for invoice: {data['invoice_no']}, size: {file_size} bytes")
-            return jsonify({
+            return {
                 "status": "success",
                 "data": {"image_id": image_id, "file_size": file_size},
                 "message": f"Invoice image saved successfully for invoice: {data['invoice_no']}"
-            }), 201
+            }
         else:
-            return jsonify({
-                "error": "Failed to save image",
-                "message": "No ID returned from insert operation",
-                "status": "error"
-            }), 500
+            return {
+                "status": "error",
+                "message": "No ID returned from insert operation"
+            }
 
     except Exception as e:
         logger.error(f"[INVOICE_IMAGE] Failed to save invoice image: {e}")
-        return jsonify({
-            "error": str(e),
-            "message": "Failed to save invoice image",
-            "status": "error"
-        }), 500
+        return {
+            "status": "error",
+            "message": f"Failed to save invoice image: {str(e)}"
+        }
+
+@bookkeeping_bp.route('/save-invoice-image', methods=['POST'])
+def save_invoice_image():
+    """Save invoice PDF image to database"""
+    result = save_invoice_image_helper(request.get_json())
+    if result['status'] == 'success':
+        return jsonify(result), 201
+    else:
+        return jsonify(result), 500
 
 @bookkeeping_bp.route('/certificate/update-certificate-status', methods=['POST'])
 def update_certificate_status():
@@ -3442,52 +3695,212 @@ def update_certificate_status():
             "status": "error"
         }), 500
 
-@bookkeeping_bp.route('/get-invoice-image/<path:invoice_no>', methods=['GET'])
-def get_invoice_image(invoice_no):
-    """Retrieve invoice image by invoice number"""
+@bookkeeping_bp.route('/vendor-payment-entry', methods=['POST'])
+def create_vendor_payment_entry():
+    """Create a new vendor payment entry"""
     try:
+        data = request.get_json()
+
+        required_fields = ['companyId', 'vendorId', 'dateOfPayment', 'transactionId', 'amount']
+        for field in required_fields:
+            if field not in data:
+                return jsonify({
+                    "error": f"Missing required field: {field}",
+                    "message": f"Field '{field}' is required",
+                    "status": "validation_error"
+                }), 400
+
+        # Validate amount is positive
+        if data['amount'] <= 0:
+            return jsonify({
+                "error": "Invalid amount",
+                "message": "Payment amount must be greater than 0",
+                "status": "validation_error"
+            }), 400
+
         query = """
-            SELECT id, invoice_no, image_data, image_type, file_name, file_size, generated_at
-            FROM invoice_images
-            WHERE invoice_no = %s
+            INSERT INTO vendor_payments (
+                vendor_id, company_id, payment_date, transaction_id, amount, on_account_of, remark
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+            RETURNING id
         """
 
-        results = execute_query(query, (invoice_no,))
+        result = execute_query(query, (
+            data['vendorId'],
+            data['companyId'],
+            data['dateOfPayment'],
+            data['transactionId'],
+            data['amount'],
+            data.get('onAccountOf'),
+            data.get('remark')
+        ))
 
-        if results and len(results) > 0:
-            image_record = results[0]
+        if result:
+            payment_id = result[0]['id']
+            logger.info(f"[VENDOR_PAYMENT] Created vendor payment entry ID: {payment_id} for vendor: {data['vendorId']}")
 
-            # Convert binary data to base64 for JSON response
-            import base64
-            image_base64 = base64.b64encode(image_record['image_data']).decode('utf-8')
+            # After creating vendor payment, insert into Bank Ledger table
+            try:
+                # Get vendor details for bank ledger insertion
+                vendor_query = "SELECT vendor_name FROM vendors WHERE id = %s"
+                vendor_result = execute_query(vendor_query, (data['vendorId'],))
 
-            image_data = {
-                'id': image_record['id'],
-                'invoice_no': image_record['invoice_no'],
-                'image_data': image_base64,
-                'image_type': image_record['image_type'],
-                'file_name': image_record['file_name'],
-                'file_size': image_record['file_size'],
-                'generated_at': str(image_record['generated_at']) if image_record['generated_at'] else None
-            }
+                if vendor_result and len(vendor_result) > 0:
+                    vendor_name = vendor_result[0]['vendor_name']
 
-            logger.info(f"[INVOICE_IMAGE] Retrieved invoice image for invoice: {invoice_no}")
+                    bank_ledger_query = """
+                        INSERT INTO bank_ledger (
+                            payment_date, transaction_id, vendor_id, company_id, vendor_name,
+                            amount, remark, transaction_type
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    """
+
+                    bank_remark = f"Payment to {vendor_name} - {data.get('transactionId', '')}"
+
+                    execute_query(bank_ledger_query, (
+                        data['dateOfPayment'],  # payment_date
+                        data['transactionId'],  # transaction_id
+                        data['vendorId'],  # vendor_id
+                        data['companyId'],  # company_id
+                        vendor_name,  # vendor_name
+                        data['amount'],  # amount
+                        bank_remark,  # remark
+                        'payment'  # transaction_type
+                    ), fetch=False)
+
+                    logger.info(f"[BANK_LEDGER] Auto-inserted bank ledger entry for vendor payment ID: {payment_id}, transaction: {data['transactionId']}")
+                else:
+                    logger.warning(f"[BANK_LEDGER] No vendor found with ID: {data['vendorId']}, skipping bank ledger insertion")
+
+            except Exception as bank_e:
+                logger.error(f"[BANK_LEDGER] Failed to auto-insert bank ledger entry for vendor payment ID {payment_id}: {bank_e}")
+                # Don't fail the payment creation if bank ledger insertion fails
+
             return jsonify({
                 "status": "success",
-                "data": image_data,
-                "message": f"Retrieved invoice image for invoice: {invoice_no}"
+                "data": {"payment_id": payment_id},
+                "message": f"Vendor payment entry created successfully with ID: {payment_id}"
+            }), 201
+        else:
+            return jsonify({
+                "error": "Failed to create record",
+                "message": "No ID returned from insert operation",
+                "status": "error"
+            }), 500
+
+    except Exception as e:
+        logger.error(f"[VENDOR_PAYMENT] Failed to create vendor payment entry: {e}")
+        return jsonify({
+            "error": str(e),
+            "message": "Failed to create vendor payment entry",
+            "status": "error"
+        }), 500
+
+@bookkeeping_bp.route('/vendor-service-entry', methods=['POST'])
+def create_vendor_service_entry():
+    """Create a new vendor service entry"""
+    try:
+        data = request.get_json()
+
+        required_fields = ['companyId', 'vendorId', 'dateOfService', 'particularOfService', 'feesToBePaid']
+        for field in required_fields:
+            if field not in data:
+                return jsonify({
+                    "error": f"Missing required field: {field}",
+                    "message": f"Field '{field}' is required",
+                    "status": "validation_error"
+                }), 400
+
+        # Validate feesToBePaid is positive
+        if data['feesToBePaid'] <= 0:
+            return jsonify({
+                "error": "Invalid amount",
+                "message": "Fees to be paid must be greater than 0",
+                "status": "validation_error"
+            }), 400
+
+        query = """
+            INSERT INTO vendor_services (
+                vendor_id, company_id, service_date, particulars, amount, on_account_of, remark
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+            RETURNING id
+        """
+
+        result = execute_query(query, (
+            data['vendorId'],
+            data['companyId'],
+            data['dateOfService'],
+            data['particularOfService'],
+            data['feesToBePaid'],
+            data.get('onAccountOf'),
+            data.get('remark')
+        ))
+
+        if result:
+            service_id = result[0]['id']
+            logger.info(f"[VENDOR_SERVICE] Created vendor service entry ID: {service_id} for vendor: {data['vendorId']}")
+
+            return jsonify({
+                "status": "success",
+                "data": {"service_id": service_id},
+                "message": f"Vendor service entry created successfully with ID: {service_id}"
+            }), 201
+        else:
+            return jsonify({
+                "error": "Failed to create record",
+                "message": "No ID returned from insert operation",
+                "status": "error"
+            }), 500
+
+    except Exception as e:
+        logger.error(f"[VENDOR_SERVICE] Failed to create vendor service entry: {e}")
+        return jsonify({
+            "error": str(e),
+            "message": "Failed to create vendor service entry",
+            "status": "error"
+        }), 500
+
+@bookkeeping_bp.route('/receipt-amount-received/<int:receipt_id>', methods=['GET'])
+def get_receipt_amount_received_by_id(receipt_id):
+    """Get a specific receipt amount received record by ID"""
+    try:
+        query = "SELECT * FROM ReceiptAmountReceived WHERE receipt_amount_id = %s"
+        results = execute_query(query, (receipt_id,))
+
+        if results and len(results) > 0:
+            receipt = results[0]
+            receipt_data = {
+                'receipt_amount_id': receipt['receipt_amount_id'],
+                'amount_received': float(receipt['amount_received']) if receipt['amount_received'] else 0,
+                'payment_type': receipt['payment_type'],
+                'transaction_date': str(receipt['transaction_date']) if receipt['transaction_date'] else None,
+                'remark': receipt['remark'],
+                'account_no': receipt['account_no'],
+                'company_name': receipt['company_name'],
+                'tds_percentage': float(receipt['tds_amount']) if receipt['tds_amount'] else 0,
+                'gst': float(receipt['gst_amount']) if receipt['gst_amount'] else 0,
+                'customer_name': receipt['customer_name'],
+                'transaction_id': receipt['transaction_id'],
+                'on_account_of': receipt['on_account_of'],
+                'created_at': str(receipt['created_at'])
+            }
+
+            logger.info(f"[RECEIPT] Retrieved receipt amount received record ID: {receipt_id}")
+            return jsonify({
+                "status": "success",
+                "data": receipt_data,
+                "message": f"Retrieved receipt amount received record ID: {receipt_id}"
             }), 200
         else:
             return jsonify({
-                "error": "Invoice image not found",
-                "message": f"No invoice image found for invoice number: {invoice_no}",
-                "status": "not_found"
+                "error": "Receipt not found",
+                "message": f"No receipt amount received record found with ID: {receipt_id}"
             }), 404
 
     except Exception as e:
-        logger.error(f"[INVOICE_IMAGE] Failed to retrieve invoice image for {invoice_no}: {e}")
+        logger.error(f"[RECEIPT] Failed to retrieve receipt amount received ID {receipt_id}: {e}")
         return jsonify({
             "error": str(e),
-            "message": "Failed to retrieve invoice image",
+            "message": "Failed to retrieve receipt amount received record",
             "status": "error"
         }), 500

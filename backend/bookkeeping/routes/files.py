@@ -3,6 +3,7 @@ Bookkeeping routes for file management
 """
 from flask import Blueprint, request, jsonify, send_file
 import os
+from database.db_connection import execute_query
 
 from shared.config import Config
 from shared.utils import (
@@ -175,20 +176,20 @@ def get_storage_stats():
             "total_size_mb": 0,
             "total_files": 0
         }
-        
+
         folders = {
             "images": Config.IMAGES_FOLDER,
             "json": Config.JSON_FOLDER,
             "pdfs": Config.PDFS_FOLDER
         }
-        
+
         for folder_name, folder_path in folders.items():
             folder_stats = {
                 "file_count": 0,
                 "size_mb": 0,
                 "files": []
             }
-            
+
             if os.path.exists(folder_path):
                 for filename in os.listdir(folder_path):
                     file_path = os.path.join(folder_path, filename)
@@ -198,19 +199,121 @@ def get_storage_stats():
                             folder_stats["files"].append(file_info)
                             folder_stats["file_count"] += 1
                             folder_stats["size_mb"] += file_info["size_mb"]
-            
+
             stats["folders"][folder_name] = folder_stats
             stats["total_files"] += folder_stats["file_count"]
             stats["total_size_mb"] += folder_stats["size_mb"]
-        
+
         # Round total size
         stats["total_size_mb"] = round(stats["total_size_mb"], 2)
-        
+
         return create_success_response(
             "Storage statistics retrieved successfully",
             data=stats
         )
-        
+
     except Exception as e:
         return create_error_response(f"Failed to get storage stats: {str(e)}", 500)
+
+@files_bp.route('/save-invoice-image', methods=['POST'])
+def save_invoice_image():
+    """Save invoice PDF image to database"""
+    try:
+        data = request.get_json()
+
+        required_fields = ['invoice_no', 'image_data']
+        for field in required_fields:
+            if field not in data:
+                return create_error_response(f"Missing required field: {field}", 400)
+
+        # Decode base64 image data
+        import base64
+        try:
+            image_binary = base64.b64decode(data['image_data'])
+        except Exception as decode_error:
+            return create_error_response(f"Invalid image data: {str(decode_error)}", 400)
+
+        # Insert into invoice_images table
+        query = """
+            INSERT INTO invoice_images (
+                invoice_no, image_data, image_type, file_name, file_size, voucher_type
+            ) VALUES (%s, %s, %s, %s, %s, %s)
+            ON CONFLICT (invoice_no)
+            DO UPDATE SET
+                image_data = EXCLUDED.image_data,
+                image_type = EXCLUDED.image_type,
+                file_name = EXCLUDED.file_name,
+                file_size = EXCLUDED.file_size,
+                voucher_type = EXCLUDED.voucher_type,
+                generated_at = CURRENT_TIMESTAMP
+            RETURNING id
+        """
+
+        file_name = data.get('file_name', f"Invoice_{data['invoice_no']}.pdf")
+        file_size = len(image_binary)
+        voucher_type = data.get('voucher_type', 'Sales')
+
+        result = execute_query(query, (
+            data['invoice_no'],
+            image_binary,
+            data.get('image_type', 'pdf'),
+            file_name,
+            file_size,
+            voucher_type
+        ))
+
+        if result:
+            image_id = result[0]['id']
+            return create_success_response(
+                f"Invoice image saved successfully for invoice: {data['invoice_no']}",
+                data={"image_id": image_id, "file_size": file_size}
+            )
+        else:
+            return create_error_response("Failed to save image", 500)
+
+    except Exception as e:
+        return create_error_response(f"Failed to save invoice image: {str(e)}", 500)
+
+@files_bp.route('/get-invoice-image/<path:invoice_no>', methods=['GET'])
+def get_invoice_image(invoice_no):
+    """Retrieve invoice image by invoice number"""
+    try:
+        query = """
+            SELECT id, invoice_no, image_data, image_type, file_name, file_size, generated_at, voucher_type
+            FROM invoice_images
+            WHERE invoice_no = %s
+        """
+
+        results = execute_query(query, (invoice_no,))
+
+        if results and len(results) > 0:
+            image_record = results[0]
+
+            # Convert binary data to base64 for JSON response
+            import base64
+            image_base64 = base64.b64encode(image_record['image_data']).decode('utf-8')
+
+            image_data = {
+                'id': image_record['id'],
+                'invoice_no': image_record['invoice_no'],
+                'image_data': image_base64,
+                'image_type': image_record['image_type'],
+                'file_name': image_record['file_name'],
+                'file_size': image_record['file_size'],
+                'generated_at': str(image_record['generated_at']) if image_record['generated_at'] else None,
+                'voucher_type': image_record['voucher_type']
+            }
+
+            return create_success_response(
+                f"Retrieved invoice image for invoice: {invoice_no}",
+                data=image_data
+            )
+        else:
+            return create_error_response(
+                f"No invoice image found for invoice number: {invoice_no}",
+                404
+            )
+
+    except Exception as e:
+        return create_error_response(f"Failed to retrieve invoice image: {str(e)}", 500)
 

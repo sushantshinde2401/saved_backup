@@ -32,7 +32,7 @@ export const API_ENDPOINTS = {
   GET_COMPANY_LEDGER: 'http://localhost:5000/api/bookkeeping/company-ledger',
   GET_BANK_LEDGER: 'http://localhost:5000/api/bookkeeping/bank-ledger-report',
   GET_EXPENSE_LEDGER: 'http://localhost:5000/api/bookkeeping/expense-ledger',
-  GET_INVOICE_IMAGE: 'http://localhost:5000/api/bookkeeping/get-invoice-image',
+  GET_INVOICE_IMAGE: 'http://localhost:5000/api/files/get-invoice-image',
   // Delete endpoints
   DELETE_VENDOR_LEDGER: 'http://localhost:5000/api/bookkeeping/vendor-ledger',
   DELETE_VENDOR_SERVICE: 'http://localhost:5000/api/bookkeeping/vendor-service',

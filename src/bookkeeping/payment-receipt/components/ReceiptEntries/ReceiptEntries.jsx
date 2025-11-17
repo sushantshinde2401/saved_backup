@@ -218,6 +218,17 @@ function ReceiptEntries() {
       const result = await createReceiptAmountReceived(receiptData);
       setSavedReceiptData(result.data);
       toast.success('Receipt data saved successfully!');
+
+      // Automatically navigate to preview to generate and save the PDF
+      navigate('/bookkeeping/receipt-invoice-preview', {
+        state: {
+          receiptData: {
+            ...formData,
+            savedReceiptData: result.data
+          }
+        }
+      });
+
       return result.data;
     } catch (error) {
       console.error('Error saving receipt data:', error);
@@ -272,6 +283,17 @@ function ReceiptEntries() {
 
   return (
     <div className="min-h-screen bg-gray-100">
+      {/* Loading Overlay */}
+      {isUploadingReceipt && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-lg p-8 text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+            <h2 className="text-xl font-bold text-gray-800 mb-2">Uploading Receipt Data...</h2>
+            <p className="text-gray-600">Please wait while we save your receipt data and generate the invoice.</p>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="bg-white shadow-sm border-b">
         <div className="max-w-7xl mx-auto px-4 py-6">

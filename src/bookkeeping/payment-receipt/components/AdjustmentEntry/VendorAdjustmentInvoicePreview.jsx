@@ -35,6 +35,13 @@ function VendorAdjustmentInvoicePreview() {
     }
   }, [adjustmentData]);
 
+  // Auto-save invoice to database when all data is loaded
+  useEffect(() => {
+    if (adjustmentData && companyData && vendorData && !loading) {
+      autoSaveInvoice();
+    }
+  }, [adjustmentData, companyData, vendorData, loading]);
+
   const fetchAdjustmentDetails = async () => {
     try {
       // Fetch adjustment details from the new endpoint
@@ -62,11 +69,7 @@ function VendorAdjustmentInvoicePreview() {
     }
   };
 
-  const handlePrint = () => {
-    window.print();
-  };
-
-  const handleDownload = () => {
+  const autoSaveInvoice = async () => {
     const element = document.querySelector('.adjustment-invoice-content');
     if (element) {
       const clonedElement = element.cloneNode(true);
@@ -91,7 +94,149 @@ function VendorAdjustmentInvoicePreview() {
           compress: true
         }
       };
-      html2pdf().set(opt).from(clonedElement).save();
+
+      try {
+        // Generate PDF blob for saving to database
+        const pdfBlob = await html2pdf().set(opt).from(clonedElement).outputPdf('blob');
+
+        // Convert blob to base64
+        const reader = new FileReader();
+        reader.onloadend = async () => {
+          const base64Data = reader.result.split(',')[1]; // Remove data:application/pdf;base64, prefix
+
+          // Save to database
+          try {
+            const invoiceNo = `ADJ-${adjustmentData?.id || 'N/A'}`;
+            const response = await fetch('http://localhost:5000/api/files/save-invoice-image', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                invoice_no: invoiceNo,
+                image_data: base64Data,
+                image_type: 'pdf',
+                file_name: `Vendor_Adjustment_Invoice_${invoiceNo}.pdf`,
+                voucher_type: 'Adjustment'
+              }),
+            });
+
+            if (response.ok) {
+              console.log('Vendor adjustment invoice automatically saved to database successfully');
+            } else {
+              console.error('Failed to auto-save vendor adjustment invoice to database');
+            }
+          } catch (saveError) {
+            console.error('Error auto-saving vendor adjustment invoice to database:', saveError);
+          }
+        };
+        reader.readAsDataURL(pdfBlob);
+
+      } catch (error) {
+        console.error('Error generating PDF for auto-save:', error);
+      }
+    }
+  };
+
+  const handlePrint = () => {
+    window.print();
+  };
+
+  const handleDownload = async () => {
+    try {
+      const invoiceNo = `ADJ-${adjustmentData?.id || 'N/A'}`;
+
+      // First try to get the already generated PDF from database
+      const response = await fetch(`http://localhost:5000/api/files/get-invoice-image/${invoiceNo}`);
+
+      if (response.ok) {
+        const result = await response.json();
+        if (result.status === 'success' && result.data?.image_data) {
+          // Convert base64 to blob and download
+          const base64Data = result.data.image_data;
+          const byteCharacters = atob(base64Data);
+          const byteNumbers = new Array(byteCharacters.length);
+          for (let i = 0; i < byteCharacters.length; i++) {
+            byteNumbers[i] = byteCharacters.charCodeAt(i);
+          }
+          const byteArray = new Uint8Array(byteNumbers);
+          const blob = new Blob([byteArray], { type: 'application/pdf' });
+
+          // Create download link
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = url;
+          link.download = result.data.file_name || `Vendor_Adjustment_Invoice_${invoiceNo}.pdf`;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          URL.revokeObjectURL(url);
+
+          console.log('Downloaded existing vendor adjustment invoice from database');
+          return;
+        }
+      }
+
+      // Fallback: Generate new PDF if not found in database
+      console.log('Vendor adjustment invoice not found in database, generating new PDF');
+      const element = document.querySelector('.adjustment-invoice-content');
+      if (element) {
+        const clonedElement = element.cloneNode(true);
+        clonedElement.style.boxShadow = 'none';
+        clonedElement.style.width = '100%';
+        clonedElement.style.maxWidth = 'none';
+
+        const opt = {
+          margin: 0.5,
+          filename: `Vendor_Adjustment_Invoice_${adjustmentData?.id || 'N/A'}.pdf`,
+          image: { type: 'jpeg', quality: 1.0 },
+          html2canvas: {
+            scale: 3,
+            useCORS: true,
+            letterRendering: true,
+            allowTaint: false
+          },
+          jsPDF: {
+            unit: 'in',
+            format: 'a4',
+            orientation: 'portrait',
+            compress: true
+          }
+        };
+
+        // Generate and download PDF
+        html2pdf().set(opt).from(clonedElement).save();
+      }
+    } catch (error) {
+      console.error('Error downloading PDF:', error);
+      // Fallback: Generate new PDF
+      const element = document.querySelector('.adjustment-invoice-content');
+      if (element) {
+        const clonedElement = element.cloneNode(true);
+        clonedElement.style.boxShadow = 'none';
+        clonedElement.style.width = '100%';
+        clonedElement.style.maxWidth = 'none';
+
+        const opt = {
+          margin: 0.5,
+          filename: `Vendor_Adjustment_Invoice_${adjustmentData?.id || 'N/A'}.pdf`,
+          image: { type: 'jpeg', quality: 1.0 },
+          html2canvas: {
+            scale: 3,
+            useCORS: true,
+            letterRendering: true,
+            allowTaint: false
+          },
+          jsPDF: {
+            unit: 'in',
+            format: 'a4',
+            orientation: 'portrait',
+            compress: true
+          }
+        };
+
+        html2pdf().set(opt).from(clonedElement).save();
+      }
     }
   };
 
