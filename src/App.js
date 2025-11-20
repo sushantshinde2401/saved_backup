@@ -8,10 +8,7 @@ import UploadDocx from './operations/pages/UploadDocx';
 import CandidateDetail from './operations/pages/CandidateDetail';
 import CourseSelection from './operations/pages/CourseSelection';
 import CoursePreview from "./operations/pages/CoursePreview";
-import DualCertificate from './operations/pages/certificates/DualCertificate';
-import DualCertificate2 from './operations/pages/certificates/DualCertificate2';
-import DualCertificate3 from './operations/pages/certificates/DualCertificate3';
-import DualCertificate4 from './operations/pages/certificates/DualCertificate4';
+import DynamicCertificate from './operations/pages/certificates/DynamicCertificate';
 
 // Bookkeeping Section
 import BookkeepingDashboard from './bookkeeping/dashboard/components/BookkeepingDashboard';
@@ -50,11 +47,7 @@ function App() {
         <Route path="/upload-docx" element={<UploadDocx />} />
         <Route path="/candidate-details" element={<CandidateDetail />} />
         <Route path="/course-selection" element={<CourseSelection />} />
-        <Route path="/course-preview" element={<CoursePreview />} />
-        <Route path="/certificate-form" element={<DualCertificate />} />
-        <Route path="/dual-certificate-2" element={<DualCertificate2 />} />
-        <Route path="/dual-certificate-3" element={<DualCertificate3 />} />
-        <Route path="/dual-certificate-4" element={<DualCertificate4 />} />
+        <Route path="/certificate/:certificateType" element={<DynamicCertificate />} />
 
         {/* Bookkeeping Section */}
         <Route path="/bookkeeping" element={<BookkeepingDashboard />} />

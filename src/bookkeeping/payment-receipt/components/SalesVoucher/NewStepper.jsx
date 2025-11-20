@@ -718,29 +718,30 @@ function NewStepper() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-indigo-900">
       {/* Header */}
-      <div className="bg-white/10 backdrop-blur-sm border-b border-white/20 p-4">
-      <div className="flex items-center justify-between max-w-7xl mx-auto">
-        <div className="flex items-center gap-4">
-          <button
-            onClick={() => navigate('/bookkeeping/payment-receipt')}
-            className="flex items-center gap-2 px-4 py-2 bg-white/20 hover:bg-white/30 rounded-lg transition-colors text-white"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            Back to Payment/Receipt Entries
-          </button>
-          <button
-            onClick={clearData}
-            title="Clear all data and reset stepper"
-            className="flex items-center gap-2 px-4 py-2 bg-red-500/20 hover:bg-red-600/30 rounded-lg transition-colors text-white"
-          >
-            <Trash2 className="w-4 h-4" />
-            Clear Data
-          </button>
-          <div className="flex items-center gap-3">
-              <FileText className="w-8 h-8 text-green-300" />
+      <div className="bg-white shadow-sm border-b p-3 sm:p-4 sticky top-0 z-40">
+        <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between max-w-7xl mx-auto gap-4">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-4 w-full lg:w-auto">
+            <button
+              onClick={() => navigate('/bookkeeping/payment-receipt')}
+              className="flex items-center gap-2 px-3 sm:px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors text-gray-800 text-sm"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              <span className="hidden sm:inline">Back to Payment/Receipt Entries</span>
+              <span className="sm:hidden">Back</span>
+            </button>
+            <button
+              onClick={clearData}
+              title="Clear all data and reset stepper"
+              className="flex items-center gap-2 px-3 sm:px-4 py-2 bg-red-500 hover:bg-red-600 rounded-lg transition-colors text-white text-sm"
+            >
+              <Trash2 className="w-4 h-4" />
+              <span className="hidden sm:inline">Clear Data</span>
+            </button>
+            <div className="flex items-center gap-2 sm:gap-3">
+              <FileText className="w-6 h-6 sm:w-8 sm:h-8 text-blue-600" />
               <div>
-                <h1 className="text-2xl font-bold text-white">New Invoice Stepper</h1>
-                <p className="text-green-200 text-sm">Create invoice with 7-step process</p>
+                <h1 className="text-lg sm:text-2xl font-bold text-gray-800">New Invoice Stepper</h1>
+                <p className="text-gray-600 text-xs sm:text-sm">Create invoice with 7-step process</p>
               </div>
             </div>
           </div>
@@ -748,7 +749,7 @@ function NewStepper() {
       </div>
 
       {/* Main Content */}
-      <div className="w-full p-6">
+      <div className="w-full max-w-7xl mx-auto p-4 sm:p-6">
         <div className="bg-white/95 backdrop-blur-sm rounded-2xl shadow-xl overflow-hidden">
           {/* Progress Header */}
           <div className="bg-gradient-to-r from-green-600 to-green-700 p-6">
@@ -758,30 +759,30 @@ function NewStepper() {
             </div>
 
             {/* Progress Steps */}
-            <div className="flex items-center space-x-4 overflow-x-auto">
+            <div className="flex items-center space-x-2 sm:space-x-4 overflow-x-auto pb-2">
               {steps.map((step, index) => (
                 <React.Fragment key={step.id}>
                   <motion.div
-                    className={`flex items-center space-x-2 cursor-pointer ${state.currentStep >= step.id ? 'text-white' : 'text-green-200'} hover:text-white transition-colors`}
+                    className={`flex items-center space-x-1 sm:space-x-2 cursor-pointer ${state.currentStep >= step.id ? 'text-white' : 'text-green-200'} hover:text-white transition-colors flex-shrink-0`}
                     initial={{ opacity: 0, x: -20 }}
                     animate={{ opacity: 1, x: 0 }}
                     transition={{ delay: index * 0.1 }}
                     onClick={() => goToStep(step.id)}
                   >
-                    <div className={`p-2 rounded-full transition-all duration-200 ${state.currentStep >= step.id ? 'bg-white text-green-600 hover:bg-green-100' : 'bg-green-500 text-green-100 hover:bg-green-400'}`}>
+                    <div className={`p-1.5 sm:p-2 rounded-full transition-all duration-200 ${state.currentStep >= step.id ? 'bg-white text-green-600 hover:bg-green-100' : 'bg-green-500 text-green-100 hover:bg-green-400'}`}>
                       {state.currentStep > step.id ? (
-                        <CheckCircle className="w-5 h-5" />
+                        <CheckCircle className="w-4 h-4 sm:w-5 sm:h-5" />
                       ) : (
-                        <step.icon className="w-5 h-5" />
+                        <step.icon className="w-4 h-4 sm:w-5 sm:h-5" />
                       )}
                     </div>
-                    <div className="hidden sm:block">
-                      <p className="font-semibold text-sm">{step.title}</p>
+                    <div className="hidden md:block">
+                      <p className="font-semibold text-xs sm:text-sm">{step.title}</p>
                       <p className="text-xs opacity-75">{step.description}</p>
                     </div>
                   </motion.div>
                   {index < steps.length - 1 && (
-                    <ChevronRight className={`w-5 h-5 ${state.currentStep > step.id ? 'text-white' : 'text-green-300'}`} />
+                    <ChevronRight className={`w-4 h-4 sm:w-5 sm:h-5 flex-shrink-0 ${state.currentStep > step.id ? 'text-white' : 'text-green-300'}`} />
                   )}
                 </React.Fragment>
               ))}
@@ -789,7 +790,7 @@ function NewStepper() {
           </div>
 
           {/* Form Content */}
-          <div className="p-8">
+          <div className="p-4 sm:p-6 lg:p-8">
             <AnimatePresence mode="wait">
               {state.currentStep === 1 && (
                 <motion.div key="step1" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} transition={{ duration: 0.3 }}>
@@ -853,11 +854,11 @@ function NewStepper() {
             </AnimatePresence>
 
             {/* Navigation Buttons */}
-            <div className="flex justify-between items-center mt-12 pt-8 border-t border-gray-200">
+            <div className="flex flex-col sm:flex-row justify-between items-center mt-8 sm:mt-12 pt-6 sm:pt-8 border-t border-gray-200 gap-4">
               <button
                 onClick={prevStep}
                 disabled={state.currentStep === 1}
-                className={`px-8 py-3 rounded-xl font-semibold transition-all ${
+                className={`w-full sm:w-auto px-6 sm:px-8 py-3 rounded-xl font-semibold transition-all ${
                   state.currentStep === 1
                     ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
                     : 'bg-gray-600 hover:bg-gray-700 text-white'
@@ -866,7 +867,7 @@ function NewStepper() {
                 Previous
               </button>
 
-              <div className="flex gap-4">
+              <div className="flex gap-4 w-full sm:w-auto">
                 {state.currentStep < 6 ? (
                   <button
                     onClick={() => {
@@ -877,14 +878,14 @@ function NewStepper() {
                       }
                       nextStep();
                     }}
-                    className="px-8 py-3 bg-green-600 hover:bg-green-700 text-white rounded-xl font-semibold transition-all"
+                    className="flex-1 sm:flex-none px-6 sm:px-8 py-3 bg-green-600 hover:bg-green-700 text-white rounded-xl font-semibold transition-all"
                   >
                     Next Step
                   </button>
                 ) : (
                   <button
                     onClick={() => navigate('/bookkeeping/payment-receipt')}
-                    className="px-8 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-semibold transition-all"
+                    className="flex-1 sm:flex-none px-6 sm:px-8 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-semibold transition-all"
                   >
                     Back to Payment/Receipt Entries
                   </button>

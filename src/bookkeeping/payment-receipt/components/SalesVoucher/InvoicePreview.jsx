@@ -263,8 +263,13 @@ function InvoicePreview() {
   };
 
   const handleDownload = async () => {
-    const element = document.querySelector('.invoice-content');
-    if (element) {
+    try {
+      const element = document.querySelector('.invoice-content');
+      if (!element) {
+        console.error('Invoice content element not found');
+        return;
+      }
+
       // Clone the element to apply print styles
       const clonedElement = element.cloneNode(true);
 
@@ -291,16 +296,16 @@ function InvoicePreview() {
         }
       };
 
-      try {
-        // Generate PDF blob
-        const pdfBlob = await html2pdf().set(opt).from(clonedElement).outputPdf('blob');
+      // Generate PDF blob with error handling
+      const pdfBlob = await html2pdf().set(opt).from(clonedElement).outputPdf('blob');
 
-        // Convert blob to base64
-        const reader = new FileReader();
-        reader.onloadend = () => {
+      // Convert blob to base64
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        try {
           const base64Data = reader.result.split(',')[1]; // Remove data:application/pdf;base64, prefix
 
-          // Save to backend
+          // Save to backend with proper error handling
           fetch('http://127.0.0.1:5000/api/bookkeeping/save-invoice-image', {
             method: 'POST',
             headers: {
@@ -313,7 +318,12 @@ function InvoicePreview() {
               file_name: `Tax_Invoice_${data?.invoiceNo || 'N/A'}.pdf`
             })
           })
-          .then(response => response.json())
+          .then(response => {
+            if (!response.ok) {
+              throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            return response.json();
+          })
           .then(result => {
             if (result.status === 'success') {
               console.log('Invoice PDF saved to database successfully');
@@ -323,17 +333,55 @@ function InvoicePreview() {
           })
           .catch(error => {
             console.error('Error saving invoice PDF to database:', error);
+            // Don't throw here to prevent unhandled promise rejections
           });
-        };
-        reader.readAsDataURL(pdfBlob);
+        } catch (readerError) {
+          console.error('Error processing PDF blob:', readerError);
+        }
+      };
 
-        // Also save the PDF file locally
-        html2pdf().set(opt).from(clonedElement).save();
+      reader.onerror = (error) => {
+        console.error('FileReader error:', error);
+      };
 
-      } catch (error) {
-        console.error('Error generating PDF:', error);
-        // Fallback to just saving locally
-        html2pdf().set(opt).from(clonedElement).save();
+      reader.readAsDataURL(pdfBlob);
+
+      // Also save the PDF file locally
+      html2pdf().set(opt).from(clonedElement).save();
+
+    } catch (error) {
+      console.error('Error generating PDF:', error);
+      // Fallback to just saving locally if PDF generation fails
+      try {
+        const element = document.querySelector('.invoice-content');
+        if (element) {
+          const clonedElement = element.cloneNode(true);
+          clonedElement.style.boxShadow = 'none';
+          clonedElement.style.width = '100%';
+          clonedElement.style.maxWidth = 'none';
+
+          const opt = {
+            margin: 0.5,
+            filename: `Tax_Invoice_${data?.invoiceNo || 'N/A'}.pdf`,
+            image: { type: 'jpeg', quality: 1.0 },
+            html2canvas: {
+              scale: 3,
+              useCORS: true,
+              letterRendering: true,
+              allowTaint: false
+            },
+            jsPDF: {
+              unit: 'in',
+              format: 'a4',
+              orientation: 'portrait',
+              compress: true
+            }
+          };
+
+          html2pdf().set(opt).from(clonedElement).save();
+        }
+      } catch (fallbackError) {
+        console.error('Fallback PDF generation also failed:', fallbackError);
       }
     }
   };

@@ -150,6 +150,10 @@ def save_right_pdf():
 
         pdf_path = f"{Config.PDFS_FOLDER}/{filename}"
         print(f"[PDF SAVE] Saving right PDF to: {pdf_path}")
+
+        # Ensure the directory exists
+        os.makedirs(os.path.dirname(pdf_path), exist_ok=True)
+
         pdf_file.save(pdf_path)
         print(f"[PDF SAVE] Successfully saved right PDF: {pdf_path} ({os.path.getsize(pdf_path)} bytes)")
         print(f"[SUCCESS] Right PDF saved locally: {pdf_path}")

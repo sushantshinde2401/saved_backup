@@ -1,16 +1,16 @@
 import React, { useState, useEffect } from "react";
 import "../../App.css";
 import { useNavigate } from "react-router-dom";
+import certificateMap from "../../shared/utils/certificateMap";
+import OperationsNavbar from "../../shared/components/OperationsNavbar";
 import {
   Info,
-  ArrowLeftCircle,
   ArrowRight,
   BookOpen,
   Plus,
   Trash2,
   ChevronDown,
-  GraduationCap,
-  LogOut
+  GraduationCap
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -35,6 +35,10 @@ function CourseSelection() {
     { code: "STSDSD", name: "STSDSD - Verification Certificate", hasPage: true },
     { code: "BOSIET", name: "BOSIET - Safety Training Certificate", hasPage: true },
     { code: "H2S", name: "H2S - Safety Training Certificate", hasPage: true },
+    { code: "BTM", name: "BTM - Training Certificate", hasPage: true },
+    { code: "FHFS", name: "FH&FS - Training Certificate", hasPage: true },
+    { code: "HLO", name: "HLO - Training Certificate", hasPage: true },
+    { code: "LCHS", name: "LCHS - Training Certificate", hasPage: true },
     { code: "HUET", name: "HUET - Helicopter Underwater Escape Training", hasPage: false },
     { code: "FOET", name: "FOET - Further Offshore Emergency Training", hasPage: false },
     { code: "MIST", name: "MIST - Minimum Industry Safety Training", hasPage: false },
@@ -84,7 +88,8 @@ function CourseSelection() {
     setValidationError("");
     localStorage.setItem("courses", JSON.stringify(courses));
     console.log(`[COURSE] Saved ${courses.length} courses:`, courses);
-    navigate("/course-preview");
+    // Navigate directly to the first selected certificate
+    navigate(certificateMap[courses[0]]);
   };
 
 
@@ -117,8 +122,12 @@ function CourseSelection() {
     console.log("CourseSelection: courses state:", courses);
 
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 relative overflow-hidden">
-      {/* Animated Background Elements */}
+      <div className="min-h-screen">
+        {/* Operations Navbar - positioned outside relative container */}
+        <OperationsNavbar />
+
+        <div className="bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 relative overflow-hidden min-h-screen">
+          {/* Animated Background Elements */}
       <div className="absolute inset-0 overflow-hidden">
         <div className="absolute -top-40 -right-40 w-80 h-80 bg-blue-500 rounded-full mix-blend-multiply filter blur-xl opacity-20 animate-pulse"></div>
         <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-purple-500 rounded-full mix-blend-multiply filter blur-xl opacity-20 animate-pulse animation-delay-2000"></div>
@@ -127,34 +136,6 @@ function CourseSelection() {
 
       {/* Grid Pattern Overlay */}
       <div className="absolute inset-0 bg-grid-pattern opacity-5"></div>
-
-      {/* Enhanced Floating Action Buttons */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4 }}
-        className="fixed bottom-6 right-6 flex gap-3 z-50"
-      >
-        <motion.button
-          onClick={() => navigate("/")}
-          whileHover={{ scale: 1.05, y: -2 }}
-          whileTap={{ scale: 0.95 }}
-          className="group relative bg-gradient-to-r from-red-500 to-pink-500 hover:from-red-600 hover:to-pink-600 text-white p-3 rounded-full shadow-2xl transition-all duration-300"
-        >
-          <div className="absolute inset-0 bg-gradient-to-r from-red-400 to-pink-400 rounded-full blur opacity-30 group-hover:opacity-50 transition-opacity duration-300"></div>
-          <LogOut size={20} className="relative z-10" />
-        </motion.button>
-
-        <motion.button
-          onClick={() => navigate("/candidate-details")}
-          whileHover={{ scale: 1.05, y: -2 }}
-          whileTap={{ scale: 0.95 }}
-          className="group relative bg-gradient-to-r from-gray-600 to-gray-700 hover:from-gray-700 hover:to-gray-800 text-white p-3 rounded-full shadow-2xl transition-all duration-300"
-        >
-          <div className="absolute inset-0 bg-gradient-to-r from-gray-500 to-gray-600 rounded-full blur opacity-30 group-hover:opacity-50 transition-opacity duration-300"></div>
-          <ArrowLeftCircle size={20} className="relative z-10" />
-        </motion.button>
-      </motion.div>
 
 
       <div className="relative z-10 flex flex-col items-center justify-start min-h-screen p-6 py-12">
@@ -179,7 +160,7 @@ function CourseSelection() {
               Course Selection
             </h1>
             <p className="text-gray-600 text-lg max-w-2xl mx-auto">
-              Choose from 10 maritime courses using the dropdown menu below, then proceed to course preview
+              Choose from 14 maritime courses using the dropdown menu below, then proceed to course preview
             </p>
           </motion.div>
 
@@ -412,8 +393,8 @@ function CourseSelection() {
             className="text-center mt-16"
           >
             <div className="mb-6">
-              <h3 className="text-xl font-bold text-white mb-2">Step 3: Proceed to Course Preview</h3>
-              <p className="text-blue-200">Save your selection and continue to the course preview page</p>
+              <h3 className="text-xl font-bold text-white mb-2">Step 3: Proceed to Certificate</h3>
+              <p className="text-blue-200">Save your selection and continue to the certificate page</p>
             </div>
             <motion.button
               onClick={handleSave}
@@ -423,7 +404,7 @@ function CourseSelection() {
             >
               <div className="absolute inset-0 bg-gradient-to-r from-green-400 to-blue-400 rounded-full blur opacity-30 group-hover:opacity-50 transition-opacity duration-300"></div>
               <ArrowRight className="w-5 h-5 relative z-10" />
-              <span className="relative z-10">Save & Continue to Course Preview</span>
+              <span className="relative z-10">Save & Continue to Certificate</span>
             </motion.button>
           </motion.div>
         </motion.div>
@@ -431,8 +412,9 @@ function CourseSelection() {
 
 
       </div>
-    </div>
-  );
+        </div>
+      </div>
+    );
   } catch (error) {
     console.error("CourseSelection rendering error:", error);
     return (

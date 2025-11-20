@@ -752,3 +752,99 @@ def download_image_by_id(image_id):
         print(f"[ERROR] Failed to download image {image_id}: {e}")
         return jsonify({"error": str(e)}), 500
         return jsonify({"error": str(e)}), 500
+
+@candidate_bp.route('/candidate-uploads', methods=['GET'])
+def get_candidate_uploads():
+    """
+    Get candidate uploads with filtering and search for certificate editor
+    Query params: candidate_id, candidate_name, search, limit, offset
+    """
+    try:
+        from database.db_connection import execute_query
+        import base64
+
+        candidate_id = request.args.get('candidate_id', type=int)
+        candidate_name = request.args.get('candidate_name', type=str)
+        search = request.args.get('search', type=str)
+        limit = request.args.get('limit', 50, type=int)
+        offset = request.args.get('offset', 0, type=int)
+
+        # Build query conditions
+        conditions = ["file_data IS NOT NULL"]
+        params = []
+
+        if candidate_id:
+            # Get candidate_name from candidates table
+            candidate_result = execute_query("SELECT candidate_name FROM candidates WHERE id = %s", (candidate_id,))
+            if candidate_result:
+                candidate_name = candidate_result[0]['candidate_name']
+
+        if candidate_name:
+            conditions.append("candidate_name = %s")
+            params.append(candidate_name)
+
+        if search:
+            conditions.append("(file_name ILIKE %s OR file_type ILIKE %s)")
+            params.extend([f"%{search}%", f"%{search}%"])
+
+        where_clause = " AND ".join(conditions)
+
+        # Get total count
+        count_query = f"SELECT COUNT(*) as total FROM candidate_uploads WHERE {where_clause}"
+        count_result = execute_query(count_query, params)
+        total = count_result[0]['total'] if count_result else 0
+
+        # Get images with pagination
+        query = f"""
+            SELECT id, candidate_name, file_name, file_type, mime_type, file_size, upload_time
+            FROM candidate_uploads
+            WHERE {where_clause}
+            ORDER BY upload_time DESC
+            LIMIT %s OFFSET %s
+        """
+        params.extend([limit, offset])
+
+        results = execute_query(query, params)
+
+        # Format results with base64 encoded thumbnails
+        images = []
+        for row in results:
+            try:
+                # Get full image data for base64 encoding
+                image_data = execute_query("SELECT file_data FROM candidate_uploads WHERE id = %s", (row['id'],))
+                if image_data:
+                    file_data = image_data[0]['file_data']
+                    # Encode to base64
+                    base64_data = base64.b64encode(file_data).decode('utf-8')
+                    data_url = f"data:{row['mime_type'] or 'application/octet-stream'};base64,{base64_data}"
+
+                    images.append({
+                        'id': row['id'],
+                        'candidate_name': row['candidate_name'],
+                        'file_name': row['file_name'],
+                        'file_type': row['file_type'],
+                        'mime_type': row['mime_type'],
+                        'file_size': row['file_size'],
+                        'upload_time': row['upload_time'].isoformat() if row['upload_time'] else None,
+                        'data_url': data_url
+                    })
+            except Exception as img_error:
+                print(f"[WARNING] Failed to encode image {row['id']}: {img_error}")
+                continue
+
+        return jsonify({
+            "status": "success",
+            "data": images,
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+            "message": f"Retrieved {len(images)} images"
+        }), 200
+
+    except Exception as e:
+        print(f"[ERROR] Failed to get candidate uploads: {e}")
+        return jsonify({
+            "error": str(e),
+            "message": "Failed to retrieve candidate uploads",
+            "status": "error"
+        }), 500

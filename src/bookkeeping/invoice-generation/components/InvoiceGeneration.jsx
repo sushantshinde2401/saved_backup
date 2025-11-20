@@ -734,28 +734,28 @@ function InvoiceGeneration() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-indigo-900">
       {/* Header */}
-      <div className="bg-white/10 backdrop-blur-sm border-b border-white/20 p-4">
+      <div className="bg-white shadow-sm border-b p-4 sticky top-0 z-40">
         <div className="flex items-center justify-between max-w-7xl mx-auto">
           <div className="flex items-center gap-4">
             <button
               onClick={() => navigate('/bookkeeping')}
-              className="flex items-center gap-2 px-4 py-2 bg-white/20 hover:bg-white/30 rounded-lg transition-colors text-white"
+              className="flex items-center gap-2 px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors text-gray-800"
             >
               <ArrowLeft className="w-4 h-4" />
               Back to Bookkeeping
             </button>
             <div className="flex items-center gap-3">
-              <FileText className="w-8 h-8 text-green-300" />
+              <FileText className="w-8 h-8 text-blue-600" />
               <div>
-                <h1 className="text-2xl font-bold text-white">Invoice Generation</h1>
-                <p className="text-green-200 text-sm">Create professional invoices</p>
+                <h1 className="text-2xl font-bold text-gray-800">Invoice Generation</h1>
+                <p className="text-gray-600 text-sm">Create professional invoices</p>
               </div>
             </div>
           </div>
           <div className="flex items-center gap-3">
             <button
               onClick={handleClearData}
-              className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
+              className="flex items-center gap-2 px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg transition-colors"
               title="Clear all entered data"
             >
               <X className="w-4 h-4" />

@@ -8,13 +8,12 @@ import {
   FileImage,
   IdCard,
   FileCheck,
-  LogOut,
-  ArrowRightCircle,
   CheckCircle,
   AlertCircle,
   Loader2,
 } from "lucide-react";
 import { motion } from "framer-motion";
+import OperationsNavbar from "../../shared/components/OperationsNavbar";
 
 function UploadDocx() {
   const navigate = useNavigate();
@@ -159,8 +158,12 @@ function UploadDocx() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 relative overflow-hidden">
-      {/* Animated Background Elements */}
+    <div className="min-h-screen">
+      {/* Operations Navbar - positioned outside relative container */}
+      <OperationsNavbar />
+
+      <div className="bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 relative overflow-hidden min-h-screen">
+        {/* Animated Background Elements */}
       <div className="absolute inset-0 overflow-hidden">
         <div className="absolute -top-40 -right-40 w-80 h-80 bg-blue-500 rounded-full mix-blend-multiply filter blur-xl opacity-20 animate-pulse"></div>
         <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-purple-500 rounded-full mix-blend-multiply filter blur-xl opacity-20 animate-pulse animation-delay-2000"></div>
@@ -169,31 +172,6 @@ function UploadDocx() {
 
       {/* Grid Pattern Overlay */}
       <div className="absolute inset-0 bg-grid-pattern opacity-5"></div>
-
-      {/* Enhanced Floating Buttons */}
-      <div className="fixed bottom-6 right-6 z-50 flex gap-3">
-        <motion.button
-          onClick={() => navigate("/")}
-          disabled={isUploading}
-          whileHover={{ scale: 1.05, y: -2 }}
-          whileTap={{ scale: 0.95 }}
-          className="group relative bg-gradient-to-r from-red-500 to-pink-500 hover:from-red-600 hover:to-pink-600 text-white p-3 rounded-full shadow-2xl transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          <div className="absolute inset-0 bg-gradient-to-r from-red-400 to-pink-400 rounded-full blur opacity-30 group-hover:opacity-50 transition-opacity duration-300"></div>
-          <LogOut size={20} className="relative z-10" />
-        </motion.button>
-
-        <motion.button
-          onClick={() => navigate("/candidate-details")}
-          disabled={isUploading}
-          whileHover={{ scale: 1.05, y: -2 }}
-          whileTap={{ scale: 0.95 }}
-          className="group relative bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600 text-white p-3 rounded-full shadow-2xl transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          <div className="absolute inset-0 bg-gradient-to-r from-blue-400 to-cyan-400 rounded-full blur opacity-30 group-hover:opacity-50 transition-opacity duration-300"></div>
-          <ArrowRightCircle size={20} className="relative z-10" />
-        </motion.button>
-      </div>
 
       {/* Enhanced Upload Progress Overlay */}
       {isUploading && (
@@ -573,6 +551,7 @@ function UploadDocx() {
           </motion.form>
         </div>
       </motion.div>
+      </div>
     </div>
   );
 }
