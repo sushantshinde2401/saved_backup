@@ -6,7 +6,7 @@ import sys
 import base64
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from config import Config
-from database.db_connection import execute_query
+from database import execute_query
 from hooks.post_data_insert import update_master_table_after_certificate_insert
 from utils.file_ops import sanitize_folder_name
 
@@ -55,8 +55,15 @@ def save_certificate_data():
         passport = sanitize_folder_name(data.get('passport', '').strip())
         client_name = data.get('clientName')
         certificate_name = data.get('certificateName')
+        certificate_number = data.get('certificateNumber')
+        start_date = data.get('startDate')  # New field
+        end_date = data.get('endDate')      # New field
+        issue_date = data.get('endDate')    # Same as end_date
         verification_image_data = data.get('verificationImageData')
         certificate_image_data = data.get('certificateImageData')
+
+        # Log received date data
+        print(f"[CERTIFICATE DATES] Received - startDate: {start_date}, endDate: {end_date}, issueDate: {issue_date}")
 
         if not all([first_name, last_name, passport, certificate_name]):
             return jsonify({"error": "Missing required fields: firstName, lastName, passport, certificateName"}), 400
@@ -117,8 +124,8 @@ def save_certificate_data():
         # Insert into certificate_selections table
         insert_query = """
             INSERT INTO certificate_selections
-            (candidate_id, candidate_name, client_name, certificate_name, verification_image, certificate_image)
-            VALUES (%s, %s, %s, %s, %s, %s)
+            (candidate_id, candidate_name, client_name, certificate_name, certificate_number, start_date, end_date, issue_date, verification_image, certificate_image)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
         """
 
@@ -127,6 +134,10 @@ def save_certificate_data():
             candidate_name_db,
             client_name,
             certificate_name,
+            certificate_number,
+            start_date,
+            end_date,
+            issue_date,
             verification_image_bytes,
             certificate_image_bytes
         ), fetch=True)
@@ -235,6 +246,30 @@ def get_certificate_selections_for_receipt():
             "data": aggregated_list,
             "total": len(aggregated_list),
             "total_certificates": len(result)
+        }), 200
+
+    except Exception as e:
+        # Silently handle errors to prevent terminal output
+        return jsonify({"error": str(e)}), 500
+
+
+
+
+@certificate_bp.route('/last-sequence', methods=['GET'])
+def get_last_sequence():
+    """Get the last sequential number for certificate numbering"""
+    try:
+        query = """
+            SELECT COALESCE(MAX(CAST(RIGHT(certificate_number, 4) AS INTEGER)), 0) as last_sequence
+            FROM certificate_selections
+            WHERE certificate_number IS NOT NULL AND LENGTH(certificate_number) = 15
+        """
+        result = execute_query(query, fetch=True)
+        last_sequence = result[0]['last_sequence'] if result else 0
+
+        return jsonify({
+            "status": "success",
+            "lastSequence": last_sequence
         }), 200
 
     except Exception as e:

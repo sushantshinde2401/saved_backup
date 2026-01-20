@@ -25,7 +25,7 @@ function BookkeepingDashboard() {
     },
     {
       icon: FileText,
-      title: "INVOICE",
+      title: "PROFORMA INVOICE",
       subtitle: "GENERATION",
       description: "Create and manage invoices",
       gradient: "from-emerald-500 to-teal-500",

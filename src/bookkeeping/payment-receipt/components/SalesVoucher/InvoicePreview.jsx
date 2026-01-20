@@ -2,18 +2,14 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   ArrowLeft,
-  Download,
-  Printer,
   FileText,
   Building,
   User,
   Calculator,
   Banknote,
   Trash2,
-  Edit3,
-  X
+  Edit3
 } from 'lucide-react';
-import html2pdf from 'html2pdf.js';
 import axios from 'axios';
 
 function InvoicePreview() {
@@ -65,7 +61,7 @@ function InvoicePreview() {
         referenceNo: data.referenceNo || '',
         otherReferences: data.otherReferences || '',
         dispatchDocNo: data.dispatchDocNo || '',
-        deliveryNoteDate: data.deliveryNoteDate || '',
+        deliveryNoteDate: (data.deliveryNoteDate && data.deliveryNoteDate !== data.invoiceDate) ? data.deliveryNoteDate : '',
         dispatchedThrough: data.dispatchThrough || '',
         destination: data.destination || '',
         modeOfPayment: data.modeOfPayment || '',
@@ -118,47 +114,24 @@ function InvoicePreview() {
 
   // Group selected courses by candidate name
   const formatSelectedCourses = () => {
+    // Only use resolved courses if there are actually selected courses in current formData
+    const currentSelectedCourses = formData?.selectedCourses || [];
+    let coursesToUse = [];
 
-    // Priority: resolved courses from saved data, then try to resolve from availableCertificates
-    let coursesToUse = data?.selected_courses_resolved || [];
-
-    // If no resolved courses, try to resolve from IDs using availableCertificates or API data
-    if (coursesToUse.length === 0) {
-      const courseIds = data?.selectedCourses || formData?.selectedCourses || [];
-
-      if (courseIds.length > 0) {
-        const availableCerts = data?.availableCertificates || [];
-        if (availableCerts.length > 0) {
-          coursesToUse = courseIds.map(id => {
-            const cert = availableCerts.find(c => c.id === id);
-            return cert ? {
-              certificate_name: cert.certificate_name,
-              candidate_name: cert.candidate_name,
-              candidate_id: cert.candidate_id
-            } : null;
-          }).filter(Boolean);
-        } else if (Object.keys(certificateNames).length > 0) {
-          // Use API fetched data
-          coursesToUse = courseIds.map(id => {
-            const certData = certificateNames[id];
-            if (certData) {
-              return {
-                certificate_name: certData.certificate_name,
-                candidate_name: certData.candidate_name,
-                candidate_id: id
-              };
-            }
-            return null;
-          }).filter(Boolean);
-        } else {
-          // No certificates found - return empty array
-          coursesToUse = [];
-        }
-      }
+    if (currentSelectedCourses.length > 0) {
+      // Priority: resolved courses from saved data, then try to resolve from availableCertificates
+      coursesToUse = data?.selected_courses_resolved || [];
     }
 
+    console.log('[INVOICE_PREVIEW] currentSelectedCourses:', currentSelectedCourses);
+    console.log('[INVOICE_PREVIEW] data?.selected_courses_resolved:', data?.selected_courses_resolved);
+    console.log('[INVOICE_PREVIEW] coursesToUse:', coursesToUse);
+
+    // No fallback resolution - only use pre-resolved courses if current selections exist
+
     if (!coursesToUse || coursesToUse.length === 0) {
-      return loadingNames ? 'Loading certificate names...' : 'No certificates found for selected courses';
+      console.log('[INVOICE_PREVIEW] No courses to display');
+      return ''; // No courses selected - display nothing
     }
 
     // Group by candidate and show candidate name with their certificates
@@ -258,133 +231,6 @@ function InvoicePreview() {
     return result;
   };
 
-  const handlePrint = () => {
-    window.print();
-  };
-
-  const handleDownload = async () => {
-    try {
-      const element = document.querySelector('.invoice-content');
-      if (!element) {
-        console.error('Invoice content element not found');
-        return;
-      }
-
-      // Clone the element to apply print styles
-      const clonedElement = element.cloneNode(true);
-
-      // Apply print styles to the cloned element
-      clonedElement.style.boxShadow = 'none';
-      clonedElement.style.width = '100%';
-      clonedElement.style.maxWidth = 'none';
-
-      const opt = {
-        margin: 0.5,
-        filename: `Tax_Invoice_${data?.invoiceNo || 'N/A'}.pdf`,
-        image: { type: 'jpeg', quality: 1.0 },
-        html2canvas: {
-          scale: 3,
-          useCORS: true,
-          letterRendering: true,
-          allowTaint: false
-        },
-        jsPDF: {
-          unit: 'in',
-          format: 'a4',
-          orientation: 'portrait',
-          compress: true
-        }
-      };
-
-      // Generate PDF blob with error handling
-      const pdfBlob = await html2pdf().set(opt).from(clonedElement).outputPdf('blob');
-
-      // Convert blob to base64
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        try {
-          const base64Data = reader.result.split(',')[1]; // Remove data:application/pdf;base64, prefix
-
-          // Save to backend with proper error handling
-          fetch('http://127.0.0.1:5000/api/bookkeeping/save-invoice-image', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              invoice_no: data?.invoiceNo || 'N/A',
-              image_data: base64Data,
-              image_type: 'pdf',
-              file_name: `Tax_Invoice_${data?.invoiceNo || 'N/A'}.pdf`
-            })
-          })
-          .then(response => {
-            if (!response.ok) {
-              throw new Error(`HTTP error! status: ${response.status}`);
-            }
-            return response.json();
-          })
-          .then(result => {
-            if (result.status === 'success') {
-              console.log('Invoice PDF saved to database successfully');
-            } else {
-              console.error('Failed to save invoice PDF to database:', result.message);
-            }
-          })
-          .catch(error => {
-            console.error('Error saving invoice PDF to database:', error);
-            // Don't throw here to prevent unhandled promise rejections
-          });
-        } catch (readerError) {
-          console.error('Error processing PDF blob:', readerError);
-        }
-      };
-
-      reader.onerror = (error) => {
-        console.error('FileReader error:', error);
-      };
-
-      reader.readAsDataURL(pdfBlob);
-
-      // Also save the PDF file locally
-      html2pdf().set(opt).from(clonedElement).save();
-
-    } catch (error) {
-      console.error('Error generating PDF:', error);
-      // Fallback to just saving locally if PDF generation fails
-      try {
-        const element = document.querySelector('.invoice-content');
-        if (element) {
-          const clonedElement = element.cloneNode(true);
-          clonedElement.style.boxShadow = 'none';
-          clonedElement.style.width = '100%';
-          clonedElement.style.maxWidth = 'none';
-
-          const opt = {
-            margin: 0.5,
-            filename: `Tax_Invoice_${data?.invoiceNo || 'N/A'}.pdf`,
-            image: { type: 'jpeg', quality: 1.0 },
-            html2canvas: {
-              scale: 3,
-              useCORS: true,
-              letterRendering: true,
-              allowTaint: false
-            },
-            jsPDF: {
-              unit: 'in',
-              format: 'a4',
-              orientation: 'portrait',
-              compress: true
-            }
-          };
-
-          html2pdf().set(opt).from(clonedElement).save();
-        }
-      } catch (fallbackError) {
-        console.error('Fallback PDF generation also failed:', fallbackError);
-      }
-    }
-  };
 
   const handleOptionalFieldChange = (field, value) => {
     const newFields = { ...optionalFields, [field]: value };
@@ -446,29 +292,6 @@ function InvoicePreview() {
                     <p className="text-gray-600 text-sm">Professional invoice layout</p>
                   </div>
                 </div>
-              </div>
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={handlePrint}
-                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                >
-                  <Printer className="w-4 h-4" />
-                  Print
-                </button>
-                <button
-                  onClick={handleDownload}
-                  className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
-                >
-                  <Download className="w-4 h-4" />
-                  Download PDF
-                </button>
-                <button
-                  onClick={() => navigate('/bookkeeping/payment-receipt')}
-                  className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
-                >
-                  <X className="w-4 h-4" />
-                  Close
-                </button>
               </div>
             </div>
           </div>
@@ -538,6 +361,7 @@ function InvoicePreview() {
                       <span className="text-gray-700">{data.invoiceNo}</span>
                     </div>
                     <OptionalField label="Delivery Note" field="deliveryNote" />
+                    <OptionalField label="Delivery Note Date" field="deliveryNoteDate" />
                     <OptionalField label="Reference No & Date" field="referenceNo" />
                     <OptionalField label="Buyer's Order No" field="buyerOrderNo" />
                     <OptionalField label="Dispatch Doc No" field="dispatchDocNo" />
@@ -782,6 +606,16 @@ function InvoicePreview() {
                     onChange={(e) => handleOptionalFieldChange('dispatchDocNo', e.target.value)}
                     className="bg-yellow-50 border border-yellow-300 rounded px-2 py-1 text-sm w-full"
                     placeholder="Enter dispatch document number"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Delivery Note Date</label>
+                  <input
+                    type="date"
+                    value={optionalFields.deliveryNoteDate}
+                    onChange={(e) => handleOptionalFieldChange('deliveryNoteDate', e.target.value)}
+                    className="bg-yellow-50 border border-yellow-300 rounded px-2 py-1 text-sm w-full"
+                    placeholder="Leave blank to use Date Received"
                   />
                 </div>
                 <div>

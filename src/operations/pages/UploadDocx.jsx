@@ -26,6 +26,7 @@ function UploadDocx() {
     passport_back_img: null,
     cdc_img: null,
     marksheet: null,
+    coc_img: null,
   });
 
   const [previews, setPreviews] = useState({});
@@ -483,6 +484,42 @@ function UploadDocx() {
                     className="mt-4"
                   >
                     <img src={previews.marksheet} alt="Marksheet preview" className="h-24 w-36 object-cover rounded-xl shadow-lg border-2 border-white" />
+                  </motion.div>
+                )}
+              </div>
+
+              {/* Coc No. Image Upload */}
+              <div className="group">
+                <label className="block font-semibold mb-3 flex items-center gap-3 text-gray-700">
+                  <div className="w-8 h-8 bg-gradient-to-r from-purple-500 to-indigo-500 rounded-full flex items-center justify-center">
+                    <FileCheck className="h-4 w-4 text-white" />
+                  </div>
+                  Coc No. Image
+                  <span className="text-gray-400 text-sm">(Optional)</span>
+                  {files.coc_img && <CheckCircle className="h-5 w-5 text-green-500" />}
+                </label>
+                <div className="relative">
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => handleFileChange('coc_img', e)}
+                    className="block w-full text-sm text-gray-700 bg-white border-2 border-gray-200 rounded-xl cursor-pointer focus:outline-none focus:border-purple-500 transition-colors duration-200 p-3 hover:border-purple-300"
+                    disabled={isUploading}
+                  />
+                </div>
+                {errors.coc_img && (
+                  <p className="text-red-500 text-sm mt-2 flex items-center gap-1">
+                    <AlertCircle className="h-4 w-4" />
+                    {errors.coc_img}
+                  </p>
+                )}
+                {previews.coc_img && (
+                  <motion.div
+                    initial={{ scale: 0.8, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    className="mt-4"
+                  >
+                    <img src={previews.coc_img} alt="Coc No. preview" className="h-24 w-36 object-cover rounded-xl shadow-lg border-2 border-white" />
                   </motion.div>
                 )}
               </div>

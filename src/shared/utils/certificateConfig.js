@@ -1,6 +1,10 @@
 export const VERIFICATION_FIELDS = {
-  fullName: { x: 310, y: 158, fontSize: 16 },
-  passport: { x: 310, y: 210, fontSize: 16 }
+  fullName: { x: 342, y: 170, fontSize: 16 },
+  passport: { x: 368, y: 215, fontSize: 16 },
+  issueDate: { x: 370, y: 308, fontSize: 16 },
+  courseAttended: { x: 315, y: 355, fontSize: 16 },
+  expirationDate: { x: 370, y: 400, fontSize: 16 },
+  certificateNumber: { x: 340, y: 260, fontSize: 16 }
 };
 
 export const CERTIFICATE_FIELDS = {
@@ -8,7 +12,16 @@ export const CERTIFICATE_FIELDS = {
   passport: { x: 310, y: 210, fontSize: 16 },
   nationality: { x: 120, y: 280, fontSize: 16 },
   dob: { x: 340, y: 280, fontSize: 16 },
-  cdcNo: { x: 80, y: 320, fontSize: 16 }
+  cdcNo: { x: 280, y: 320, fontSize: 16 },
+  indosNo: { x: 125, y: 405, fontSize: 16 },
+  cocNo: { x: 80, y: 430, fontSize: 16 },
+  countryOfIssue: { x: 230, y: 430, fontSize: 16 },
+  grade: { x: 340, y: 440, fontSize: 16 },
+  idNo: { x: 480, y: 440, fontSize: 16 },
+  issueDate: { x: 197, y: 565, fontSize: 16 },
+  courseAttended: { x: 235, y: 503, fontSize: 16 },
+  expirationDate: { x: 420, y: 565, fontSize: 16 },
+  certificateNumber: { x: 288, y: 313, fontSize: 16 }
 };
 
 export function generateCertificateFields(startDate, endDate, expiryYears) {
@@ -70,6 +83,8 @@ export const CERTIFICATE_CONFIG = {
     dimensions: { width: 595, height: 842 },
     verificationFields: VERIFICATION_FIELDS,
     certificateFields: CERTIFICATE_FIELDS,
+    instituteCode: "01",
+    certificateCode: "205",
     generateName: (data) => `BST_${data.date || 'NO_DATE'}_${data.passport || 'NO_PASSPORT'}`
   },
   STSDSD: {
@@ -78,6 +93,8 @@ export const CERTIFICATE_CONFIG = {
     dimensions: { width: 595, height: 842 },
     verificationFields: VERIFICATION_FIELDS,
     certificateFields: CERTIFICATE_FIELDS,
+    instituteCode: "01",
+    certificateCode: "205",
     generateName: (data) => `STSDSD_${data.date || 'NO_DATE'}_${data.passport || 'NO_PASSPORT'}`
   },
   H2S: {
@@ -86,6 +103,8 @@ export const CERTIFICATE_CONFIG = {
     dimensions: { width: 595, height: 842 },
     verificationFields: VERIFICATION_FIELDS,
     certificateFields: CERTIFICATE_FIELDS,
+    instituteCode: "01",
+    certificateCode: "205",
     generateName: (data) => `H2S_${data.date || 'NO_DATE'}_${data.passport || 'NO_PASSPORT'}`
   },
   BOSIET: {
@@ -94,6 +113,8 @@ export const CERTIFICATE_CONFIG = {
     dimensions: { width: 595, height: 842 },
     verificationFields: VERIFICATION_FIELDS,
     certificateFields: CERTIFICATE_FIELDS,
+    instituteCode: "01",
+    certificateCode: "205",
     generateName: (data) => `BOSIET_${data.date || 'NO_DATE'}_${data.passport || 'NO_PASSPORT'}`
   },
   BTM: {
@@ -102,6 +123,8 @@ export const CERTIFICATE_CONFIG = {
     dimensions: { width: 595, height: 842 },
     verificationFields: VERIFICATION_FIELDS,
     certificateFields: CERTIFICATE_FIELDS,
+    instituteCode: "01",
+    certificateCode: "205",
     generateName: (data) => `BTM_${data.date || 'NO_DATE'}_${data.passport || 'NO_PASSPORT'}`
   },
   FHFS: {
@@ -110,6 +133,8 @@ export const CERTIFICATE_CONFIG = {
     dimensions: { width: 595, height: 842 },
     verificationFields: VERIFICATION_FIELDS,
     certificateFields: CERTIFICATE_FIELDS,
+    instituteCode: "01",
+    certificateCode: "205",
     generateName: (data) => `FHFS_${data.date || 'NO_DATE'}_${data.passport || 'NO_PASSPORT'}`
   },
   HLO: {
@@ -118,6 +143,8 @@ export const CERTIFICATE_CONFIG = {
     dimensions: { width: 595, height: 842 },
     verificationFields: VERIFICATION_FIELDS,
     certificateFields: CERTIFICATE_FIELDS,
+    instituteCode: "01",
+    certificateCode: "205",
     generateName: (data) => `HLO_${data.date || 'NO_DATE'}_${data.passport || 'NO_PASSPORT'}`
   },
   LCHS: {
@@ -126,6 +153,8 @@ export const CERTIFICATE_CONFIG = {
     dimensions: { width: 595, height: 842 },
     verificationFields: VERIFICATION_FIELDS,
     certificateFields: CERTIFICATE_FIELDS,
+    instituteCode: "01",
+    certificateCode: "205",
     generateName: (data) => `LCHS_${data.date || 'NO_DATE'}_${data.passport || 'NO_PASSPORT'}`
   }
 };

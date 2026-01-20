@@ -49,10 +49,7 @@ operations/
 │   ├── CourseSelection.jsx  # Course selection interface
 │   ├── CoursePreview.js     # Course preview & management
 │   └── certificates/        # Certificate generation
-│       ├── DualCertificate.jsx   # STCW certificates
-│       ├── DualCertificate2.jsx  # MODU certificates
-│       ├── DualCertificate3.jsx  # H2S certificates
-│       └── DualCertificate4.jsx  # BOSIET certificates
+│       └── DynamicCertificate.jsx # Unified certificate generation
 ├── services/                # API service calls
 └── README.md               # Operations documentation
 ```

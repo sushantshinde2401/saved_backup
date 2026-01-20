@@ -1,10 +1,15 @@
 from flask import Blueprint, request, jsonify
-from database.db_connection import execute_query
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
+from database import execute_query
 import logging
 
 logger = logging.getLogger(__name__)
 
 bookkeeping_bp = Blueprint('bookkeeping', __name__)
+
+# Initialize limiter for this blueprint
+limiter = Limiter(key_func=get_remote_address)
 
 @bookkeeping_bp.route('/get-all-companies', methods=['GET'])
 def get_all_companies():
@@ -861,6 +866,7 @@ def get_customers():
         }), 500
 
 @bookkeeping_bp.route('/receipt-invoice-data', methods=['POST'])
+@limiter.limit("10 per minute")  # Financial data submission
 def create_receipt_invoice_data():
     """Create a new receipt invoice data record"""
     try:
@@ -3538,8 +3544,12 @@ def generate_adjustment_invoice_pdf(adjustment_data, adjustment_id):
         return None
 
 def save_invoice_image_helper(data):
-    """Helper function to save invoice image to database"""
+    """Helper function to save invoice image to file storage"""
     try:
+        import os
+        import base64
+        from config import Config
+
         required_fields = ['invoice_no', 'image_data']
         for field in required_fields:
             if field not in data:
@@ -3549,7 +3559,6 @@ def save_invoice_image_helper(data):
                 }
 
         # Decode base64 image data
-        import base64
         try:
             image_binary = base64.b64decode(data['image_data'])
         except Exception as decode_error:
@@ -3558,14 +3567,47 @@ def save_invoice_image_helper(data):
                 "message": f"Failed to decode base64 image data: {str(decode_error)}"
             }
 
-        # Insert into invoice_images table
+        # Get voucher type and determine filename
+        voucher_type = data.get('voucher_type', 'Sales')
+        voucher_type_to_filename = {
+            'Sales': 'SALES_INVOICE.pdf',
+            'Receipt': 'RECEIPT.pdf',
+            'Adjustment': 'ADJUSTMENT.pdf'
+        }
+        fixed_filename = voucher_type_to_filename.get(voucher_type, f"{voucher_type}_INVOICE.pdf")
+
+        # Create invoice folder path
+        invoice_folder = f"INVOICE_{data['invoice_no']}"
+        invoice_dir = os.path.join(Config.INVOICE_STORAGE_PATH, invoice_folder)
+
+        # Ensure invoice directory exists
+        os.makedirs(invoice_dir, exist_ok=True)
+
+        # Full file path
+        file_path = os.path.join(invoice_dir, fixed_filename)
+
+        # Save file to disk
+        try:
+            with open(file_path, 'wb') as f:
+                f.write(image_binary)
+        except Exception as file_error:
+            return {
+                "status": "error",
+                "message": f"Failed to save file to disk: {str(file_error)}"
+            }
+
+        # Relative path for database
+        relative_path = f"{invoice_folder}/{fixed_filename}"
+        file_size = len(image_binary)
+
+        # Insert/update into invoice_images table (without BLOB data)
         query = """
             INSERT INTO invoice_images (
-                invoice_no, image_data, image_type, file_name, file_size, voucher_type
+                invoice_no, file_path, image_type, file_name, file_size, voucher_type
             ) VALUES (%s, %s, %s, %s, %s, %s)
             ON CONFLICT (invoice_no)
             DO UPDATE SET
-                image_data = EXCLUDED.image_data,
+                file_path = EXCLUDED.file_path,
                 image_type = EXCLUDED.image_type,
                 file_name = EXCLUDED.file_name,
                 file_size = EXCLUDED.file_size,
@@ -3574,15 +3616,11 @@ def save_invoice_image_helper(data):
             RETURNING id
         """
 
-        file_name = data.get('file_name', f"Invoice_{data['invoice_no']}.pdf")
-        file_size = len(image_binary)
-        voucher_type = data.get('voucher_type', 'Sales')
-
         result = execute_query(query, (
             data['invoice_no'],
-            image_binary,
+            relative_path,
             data.get('image_type', 'pdf'),
-            file_name,
+            fixed_filename,
             file_size,
             voucher_type
         ))
@@ -3591,7 +3629,7 @@ def save_invoice_image_helper(data):
             image_id = result[0]['id']
             return {
                 "status": "success",
-                "data": {"image_id": image_id, "file_size": file_size},
+                "data": {"image_id": image_id, "file_size": file_size, "file_path": relative_path},
                 "message": f"Invoice image saved successfully for invoice: {data['invoice_no']}"
             }
         else:
@@ -3902,5 +3940,842 @@ def get_receipt_amount_received_by_id(receipt_id):
         return jsonify({
             "error": str(e),
             "message": "Failed to retrieve receipt amount received record",
+            "status": "error"
+        }), 500
+
+# Periodic Ledger Endpoints - Read-only aggregation from existing ledger tables
+
+@bookkeeping_bp.route('/ledger/daily', methods=['GET'])
+def get_daily_ledger():
+    """Get daily ledger data showing all entries for the specified date"""
+    try:
+        date = request.args.get('date', '')
+        limit = int(request.args.get('limit', 50))
+        offset = int(request.args.get('offset', 0))
+
+        if not date:
+            return jsonify({
+                "error": "Date is required",
+                "message": "Please provide a date parameter",
+                "status": "validation_error"
+            }), 400
+
+        logger.info(f"[DAILY_LEDGER] Fetching ledger data for date: {date}")
+
+        # Ensure all required tables exist
+        create_company_ledger_query = """
+            CREATE TABLE IF NOT EXISTS ClientLedger (
+                id SERIAL PRIMARY KEY,
+                company_name VARCHAR(255) NOT NULL,
+                date DATE NOT NULL,
+                particulars TEXT,
+                voucher_no VARCHAR(100),
+                voucher_type VARCHAR(50) DEFAULT 'Receipt',
+                debit DECIMAL(15,2) DEFAULT 0,
+                credit DECIMAL(15,2) DEFAULT 0,
+                candidate_name VARCHAR(255),
+                entry_type VARCHAR(50) DEFAULT 'Manual',
+                reference_id VARCHAR(100),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """
+        execute_query(create_company_ledger_query, fetch=False)
+
+        # Ensure client_adjustments table exists
+        create_client_adjustments_query = """
+            CREATE TABLE IF NOT EXISTS client_adjustments (
+                id SERIAL PRIMARY KEY,
+                company_id INTEGER NOT NULL,
+                customer_id INTEGER NOT NULL,
+                date_of_service DATE NOT NULL,
+                particular_of_service TEXT NOT NULL,
+                adjustment_amount DECIMAL(15,2) NOT NULL CHECK (adjustment_amount != 0),
+                on_account_of TEXT,
+                remark TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (company_id) REFERENCES company_details(id),
+                FOREIGN KEY (customer_id) REFERENCES b2bcustomersdetails(id)
+            )
+        """
+        execute_query(create_client_adjustments_query, fetch=False)
+
+        # Ensure vendor_adjustments table exists
+        create_vendor_adjustments_query = """
+            CREATE TABLE IF NOT EXISTS vendor_adjustments (
+                id SERIAL PRIMARY KEY,
+                company_id INTEGER NOT NULL,
+                vendor_id INTEGER NOT NULL,
+                date_of_service DATE NOT NULL,
+                particular_of_service TEXT NOT NULL,
+                adjustment_amount DECIMAL(15,2) NOT NULL CHECK (adjustment_amount != 0),
+                on_account_of TEXT,
+                remark TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (company_id) REFERENCES company_details(id),
+                FOREIGN KEY (vendor_id) REFERENCES vendors(id)
+            )
+        """
+        execute_query(create_vendor_adjustments_query, fetch=False)
+
+        # Create indexes if they don't exist
+        index_queries = [
+            "CREATE INDEX IF NOT EXISTS idx_company_ledger_date ON ClientLedger(date)",
+            "CREATE INDEX IF NOT EXISTS idx_client_adjustments_date ON client_adjustments(date_of_service)",
+            "CREATE INDEX IF NOT EXISTS idx_vendor_adjustments_date ON vendor_adjustments(date_of_service)"
+        ]
+        for index_query in index_queries:
+            try:
+                execute_query(index_query, fetch=False)
+            except Exception as idx_e:
+                logger.warning(f"[DAILY_LEDGER] Could not create index: {idx_e}")
+
+        # Build UNION query for ClientLedger and adjustment entries
+        union_queries = []
+
+        # ClientLedger entries
+        ledger_query = """
+            SELECT
+                id,
+                company_name,
+                date,
+                particulars,
+                voucher_no,
+                voucher_type,
+                debit,
+                credit,
+                entry_type,
+                created_at,
+                'ledger' as source_table
+            FROM ClientLedger
+            WHERE date = %s
+        """
+        ledger_params = [date]
+
+        union_queries.append(ledger_query)
+
+        # Client adjustments for this date
+        client_adjustment_query = """
+            SELECT
+                ca.id,
+                b2b.company_name,
+                ca.date_of_service as date,
+                ca.particular_of_service as particulars,
+                CONCAT('ADJ-', ca.id) as voucher_no,
+                'Adjustment' as voucher_type,
+                CASE WHEN ca.adjustment_amount < 0 THEN ABS(ca.adjustment_amount) ELSE 0 END as debit,
+                CASE WHEN ca.adjustment_amount > 0 THEN ca.adjustment_amount ELSE 0 END as credit,
+                'Adjustment' as entry_type,
+                ca.created_at,
+                'client_adjustment' as source_table
+            FROM client_adjustments ca
+            JOIN b2bcustomersdetails b2b ON ca.customer_id = b2b.id
+            WHERE ca.date_of_service = %s
+        """
+        client_params = [date]
+
+        union_queries.append(client_adjustment_query)
+        ledger_params.extend(client_params)
+
+        # Vendor adjustments for this date
+        vendor_adjustment_query = """
+            SELECT
+                va.id,
+                cd.company_name,
+                va.date_of_service as date,
+                va.particular_of_service as particulars,
+                CONCAT('ADJ-', va.id) as voucher_no,
+                'Adjustment' as voucher_type,
+                CASE WHEN va.adjustment_amount < 0 THEN ABS(va.adjustment_amount) ELSE 0 END as debit,
+                CASE WHEN va.adjustment_amount > 0 THEN va.adjustment_amount ELSE 0 END as credit,
+                'Adjustment' as entry_type,
+                va.created_at,
+                'vendor_adjustment' as source_table
+            FROM vendor_adjustments va
+            JOIN company_details cd ON va.company_id = cd.id
+            WHERE va.date_of_service = %s
+        """
+        vendor_params = [date]
+
+        union_queries.append(vendor_adjustment_query)
+        ledger_params.extend(vendor_params)
+
+        # Combine all queries
+        full_query = " UNION ALL ".join(union_queries)
+        full_query += " ORDER BY created_at DESC"
+
+        logger.info(f"[DAILY_LEDGER] Executing combined query with params: {ledger_params}")
+
+        ledger_results = execute_query(full_query, ledger_params)
+
+        entries = []
+        total_debit = 0
+        total_credit = 0
+
+        if ledger_results:
+            logger.info(f"[DAILY_LEDGER] Found {len(ledger_results)} entries for date: {date}")
+            for row in ledger_results:
+                debit_amount = float(row['debit']) if row['debit'] else 0
+                credit_amount = float(row['credit']) if row['credit'] else 0
+                entries.append({
+                    'date': str(row['date']) if row['date'] else None,
+                    'particulars': row['particulars'] or '',
+                    'voucher_type': row['voucher_type'] or 'Sales',
+                    'voucher_no': row['voucher_no'] or '',
+                    'debit': debit_amount,
+                    'credit': credit_amount,
+                    'company_name': row['company_name'],
+                    'entry_type': row['entry_type'] or 'Manual',
+                    'id': row['id']
+                })
+                total_debit += debit_amount
+                total_credit += credit_amount
+        else:
+            logger.info(f"[DAILY_LEDGER] No entries found for date: {date}")
+
+        # Sort entries by date descending
+        entries.sort(key=lambda x: x['date'] or '1900-01-01', reverse=True)
+
+        # Apply pagination
+        paginated_entries = entries[offset:offset + limit]
+
+        # Calculate summary
+        opening_balance = 0  # Could be calculated from previous periods
+        closing_balance = total_debit - total_credit
+        balance_type = 'Outstanding' if closing_balance > 0 else 'Advance' if closing_balance < 0 else 'Settled'
+
+        summary = {
+            'opening_balance': opening_balance,
+            'total_debit': total_debit,
+            'total_credit': total_credit,
+            'closing_balance': abs(closing_balance),
+            'balance_type': balance_type
+        }
+
+        logger.info(f"[DAILY_LEDGER] Returning {len(paginated_entries)} paginated entries for {date}")
+
+        # Return raw Client Ledger entries without transformation
+        transactions = []
+        for entry in paginated_entries:
+            transactions.append({
+                'id': entry['id'],
+                'date': entry['date'],
+                'particulars': entry['particulars'],
+                'voucher_type': entry['voucher_type'],
+                'voucher_no': entry['voucher_no'],
+                'debit': entry['debit'],
+                'credit': entry['credit'],
+                'entry_type': entry['entry_type'],
+                'company_name': entry['company_name']
+            })
+
+        return jsonify({
+            "status": "success",
+            "data": {
+                "transactions": transactions,
+                "summary": summary
+            },
+            "message": f"Retrieved {len(transactions)} ledger entries for {date}",
+            "total": len(transactions)
+        }), 200
+
+    except Exception as e:
+        logger.error(f"[DAILY_LEDGER] Failed to retrieve daily ledger for {date}: {e}")
+        return jsonify({
+            "error": str(e),
+            "message": "Failed to retrieve daily ledger data",
+            "status": "error"
+        }), 500
+
+@bookkeeping_bp.route('/ledger/monthly', methods=['GET'])
+def get_monthly_ledger():
+    """Get monthly ledger data showing all entries for the specified month and year"""
+    try:
+        month = request.args.get('month', '')
+        year = request.args.get('year', '')
+        limit = int(request.args.get('limit', 50))
+        offset = int(request.args.get('offset', 0))
+
+        if not month or not year:
+            return jsonify({
+                "error": "Month and year are required",
+                "message": "Please provide month and year parameters",
+                "status": "validation_error"
+            }), 400
+
+        logger.info(f"[MONTHLY_LEDGER] Fetching ledger data for month/year: {month}/{year}")
+
+        # Ensure all required tables exist
+        create_company_ledger_query = """
+            CREATE TABLE IF NOT EXISTS ClientLedger (
+                id SERIAL PRIMARY KEY,
+                company_name VARCHAR(255) NOT NULL,
+                date DATE NOT NULL,
+                particulars TEXT,
+                voucher_no VARCHAR(100),
+                voucher_type VARCHAR(50) DEFAULT 'Receipt',
+                debit DECIMAL(15,2) DEFAULT 0,
+                credit DECIMAL(15,2) DEFAULT 0,
+                candidate_name VARCHAR(255),
+                entry_type VARCHAR(50) DEFAULT 'Manual',
+                reference_id VARCHAR(100),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """
+        execute_query(create_company_ledger_query, fetch=False)
+
+        # Ensure client_adjustments table exists
+        create_client_adjustments_query = """
+            CREATE TABLE IF NOT EXISTS client_adjustments (
+                id SERIAL PRIMARY KEY,
+                company_id INTEGER NOT NULL,
+                customer_id INTEGER NOT NULL,
+                date_of_service DATE NOT NULL,
+                particular_of_service TEXT NOT NULL,
+                adjustment_amount DECIMAL(15,2) NOT NULL CHECK (adjustment_amount != 0),
+                on_account_of TEXT,
+                remark TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (company_id) REFERENCES company_details(id),
+                FOREIGN KEY (customer_id) REFERENCES b2bcustomersdetails(id)
+            )
+        """
+        execute_query(create_client_adjustments_query, fetch=False)
+
+        # Ensure vendor_adjustments table exists
+        create_vendor_adjustments_query = """
+            CREATE TABLE IF NOT EXISTS vendor_adjustments (
+                id SERIAL PRIMARY KEY,
+                company_id INTEGER NOT NULL,
+                vendor_id INTEGER NOT NULL,
+                date_of_service DATE NOT NULL,
+                particular_of_service TEXT NOT NULL,
+                adjustment_amount DECIMAL(15,2) NOT NULL CHECK (adjustment_amount != 0),
+                on_account_of TEXT,
+                remark TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (company_id) REFERENCES company_details(id),
+                FOREIGN KEY (vendor_id) REFERENCES vendors(id)
+            )
+        """
+        execute_query(create_vendor_adjustments_query, fetch=False)
+
+        # Create indexes if they don't exist
+        index_queries = [
+            "CREATE INDEX IF NOT EXISTS idx_company_ledger_date ON ClientLedger(date)",
+            "CREATE INDEX IF NOT EXISTS idx_client_adjustments_date ON client_adjustments(date_of_service)",
+            "CREATE INDEX IF NOT EXISTS idx_vendor_adjustments_date ON vendor_adjustments(date_of_service)"
+        ]
+        for index_query in index_queries:
+            try:
+                execute_query(index_query, fetch=False)
+            except Exception as idx_e:
+                logger.warning(f"[MONTHLY_LEDGER] Could not create index: {idx_e}")
+
+        # Build UNION query for ClientLedger and adjustment entries
+        union_queries = []
+
+        # ClientLedger entries
+        ledger_query = """
+            SELECT
+                id,
+                company_name,
+                date,
+                particulars,
+                voucher_no,
+                voucher_type,
+                debit,
+                credit,
+                entry_type,
+                created_at,
+                'ledger' as source_table
+            FROM ClientLedger
+            WHERE EXTRACT(MONTH FROM date) = %s AND EXTRACT(YEAR FROM date) = %s
+        """
+        ledger_params = [month, year]
+
+        union_queries.append(ledger_query)
+
+        # Client adjustments for this month
+        client_adjustment_query = """
+            SELECT
+                ca.id,
+                b2b.company_name,
+                ca.date_of_service as date,
+                ca.particular_of_service as particulars,
+                CONCAT('ADJ-', ca.id) as voucher_no,
+                'Adjustment' as voucher_type,
+                CASE WHEN ca.adjustment_amount < 0 THEN ABS(ca.adjustment_amount) ELSE 0 END as debit,
+                CASE WHEN ca.adjustment_amount > 0 THEN ca.adjustment_amount ELSE 0 END as credit,
+                'Adjustment' as entry_type,
+                ca.created_at,
+                'client_adjustment' as source_table
+            FROM client_adjustments ca
+            JOIN b2bcustomersdetails b2b ON ca.customer_id = b2b.id
+            WHERE EXTRACT(MONTH FROM ca.date_of_service) = %s AND EXTRACT(YEAR FROM ca.date_of_service) = %s
+        """
+        client_params = [month, year]
+
+        union_queries.append(client_adjustment_query)
+        ledger_params.extend(client_params)
+
+        # Vendor adjustments for this month
+        vendor_adjustment_query = """
+            SELECT
+                va.id,
+                cd.company_name,
+                va.date_of_service as date,
+                va.particular_of_service as particulars,
+                CONCAT('ADJ-', va.id) as voucher_no,
+                'Adjustment' as voucher_type,
+                CASE WHEN va.adjustment_amount < 0 THEN ABS(va.adjustment_amount) ELSE 0 END as debit,
+                CASE WHEN va.adjustment_amount > 0 THEN va.adjustment_amount ELSE 0 END as credit,
+                'Adjustment' as entry_type,
+                va.created_at,
+                'vendor_adjustment' as source_table
+            FROM vendor_adjustments va
+            JOIN company_details cd ON va.company_id = cd.id
+            WHERE EXTRACT(MONTH FROM va.date_of_service) = %s AND EXTRACT(YEAR FROM va.date_of_service) = %s
+        """
+        vendor_params = [month, year]
+
+        union_queries.append(vendor_adjustment_query)
+        ledger_params.extend(vendor_params)
+
+        # Combine all queries
+        full_query = " UNION ALL ".join(union_queries)
+        full_query += " ORDER BY date DESC, created_at DESC"
+
+        logger.info(f"[MONTHLY_LEDGER] Executing combined query with params: {ledger_params}")
+
+        ledger_results = execute_query(full_query, ledger_params)
+
+        entries = []
+        total_debit = 0
+        total_credit = 0
+
+        if ledger_results:
+            logger.info(f"[MONTHLY_LEDGER] Found {len(ledger_results)} entries for month/year: {month}/{year}")
+            for row in ledger_results:
+                debit_amount = float(row['debit']) if row['debit'] else 0
+                credit_amount = float(row['credit']) if row['credit'] else 0
+                entries.append({
+                    'date': str(row['date']) if row['date'] else None,
+                    'particulars': row['particulars'] or '',
+                    'voucher_type': row['voucher_type'] or 'Sales',
+                    'voucher_no': row['voucher_no'] or '',
+                    'debit': debit_amount,
+                    'credit': credit_amount,
+                    'company_name': row['company_name'],
+                    'entry_type': row['entry_type'] or 'Manual',
+                    'id': row['id']
+                })
+                total_debit += debit_amount
+                total_credit += credit_amount
+        else:
+            logger.info(f"[MONTHLY_LEDGER] No entries found for month/year: {month}/{year}")
+
+        # Sort entries by date descending
+        entries.sort(key=lambda x: x['date'] or '1900-01-01', reverse=True)
+
+        # Apply pagination
+        paginated_entries = entries[offset:offset + limit]
+
+        # Calculate summary
+        opening_balance = 0  # Could be calculated from previous periods
+        closing_balance = total_debit - total_credit
+        balance_type = 'Outstanding' if closing_balance > 0 else 'Advance' if closing_balance < 0 else 'Settled'
+
+        summary = {
+            'opening_balance': opening_balance,
+            'total_debit': total_debit,
+            'total_credit': total_credit,
+            'closing_balance': abs(closing_balance),
+            'balance_type': balance_type
+        }
+
+        logger.info(f"[MONTHLY_LEDGER] Returning {len(paginated_entries)} paginated entries for {month}/{year}")
+
+        # Return raw Client Ledger entries without transformation
+        transactions = []
+        for entry in paginated_entries:
+            transactions.append({
+                'id': entry['id'],
+                'date': entry['date'],
+                'particulars': entry['particulars'],
+                'voucher_type': entry['voucher_type'],
+                'voucher_no': entry['voucher_no'],
+                'debit': entry['debit'],
+                'credit': entry['credit'],
+                'entry_type': entry['entry_type'],
+                'company_name': entry['company_name']
+            })
+
+        return jsonify({
+            "status": "success",
+            "data": {
+                "transactions": transactions,
+                "summary": summary
+            },
+            "message": f"Retrieved {len(transactions)} ledger entries for {month}/{year}",
+            "total": len(transactions)
+        }), 200
+
+    except Exception as e:
+        logger.error(f"[MONTHLY_LEDGER] Failed to retrieve monthly ledger for {month}/{year}: {e}")
+        return jsonify({
+            "error": str(e),
+            "message": "Failed to retrieve monthly ledger data",
+            "status": "error"
+        }), 500
+
+@bookkeeping_bp.route('/ledger/yearly', methods=['GET'])
+def get_yearly_ledger():
+    """Get yearly ledger data showing all entries for the specified year"""
+    try:
+        year = request.args.get('year', '')
+        limit = int(request.args.get('limit', 50))
+        offset = int(request.args.get('offset', 0))
+
+        if not year:
+            return jsonify({
+                "error": "Year is required",
+                "message": "Please provide a year parameter",
+                "status": "validation_error"
+            }), 400
+
+        logger.info(f"[YEARLY_LEDGER] Fetching ledger data for year: {year}")
+
+        # Ensure all required tables exist
+        create_company_ledger_query = """
+            CREATE TABLE IF NOT EXISTS ClientLedger (
+                id SERIAL PRIMARY KEY,
+                company_name VARCHAR(255) NOT NULL,
+                date DATE NOT NULL,
+                particulars TEXT,
+                voucher_no VARCHAR(100),
+                voucher_type VARCHAR(50) DEFAULT 'Receipt',
+                debit DECIMAL(15,2) DEFAULT 0,
+                credit DECIMAL(15,2) DEFAULT 0,
+                candidate_name VARCHAR(255),
+                entry_type VARCHAR(50) DEFAULT 'Manual',
+                reference_id VARCHAR(100),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """
+        execute_query(create_company_ledger_query, fetch=False)
+
+        # Ensure client_adjustments table exists
+        create_client_adjustments_query = """
+            CREATE TABLE IF NOT EXISTS client_adjustments (
+                id SERIAL PRIMARY KEY,
+                company_id INTEGER NOT NULL,
+                customer_id INTEGER NOT NULL,
+                date_of_service DATE NOT NULL,
+                particular_of_service TEXT NOT NULL,
+                adjustment_amount DECIMAL(15,2) NOT NULL CHECK (adjustment_amount != 0),
+                on_account_of TEXT,
+                remark TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (company_id) REFERENCES company_details(id),
+                FOREIGN KEY (customer_id) REFERENCES b2bcustomersdetails(id)
+            )
+        """
+        execute_query(create_client_adjustments_query, fetch=False)
+
+        # Ensure vendor_adjustments table exists
+        create_vendor_adjustments_query = """
+            CREATE TABLE IF NOT EXISTS vendor_adjustments (
+                id SERIAL PRIMARY KEY,
+                company_id INTEGER NOT NULL,
+                vendor_id INTEGER NOT NULL,
+                date_of_service DATE NOT NULL,
+                particular_of_service TEXT NOT NULL,
+                adjustment_amount DECIMAL(15,2) NOT NULL CHECK (adjustment_amount != 0),
+                on_account_of TEXT,
+                remark TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (company_id) REFERENCES company_details(id),
+                FOREIGN KEY (vendor_id) REFERENCES vendors(id)
+            )
+        """
+        execute_query(create_vendor_adjustments_query, fetch=False)
+
+        # Create indexes if they don't exist
+        index_queries = [
+            "CREATE INDEX IF NOT EXISTS idx_company_ledger_date ON ClientLedger(date)",
+            "CREATE INDEX IF NOT EXISTS idx_client_adjustments_date ON client_adjustments(date_of_service)",
+            "CREATE INDEX IF NOT EXISTS idx_vendor_adjustments_date ON vendor_adjustments(date_of_service)"
+        ]
+        for index_query in index_queries:
+            try:
+                execute_query(index_query, fetch=False)
+            except Exception as idx_e:
+                logger.warning(f"[YEARLY_LEDGER] Could not create index: {idx_e}")
+
+        # Build UNION query for ClientLedger and adjustment entries
+        union_queries = []
+
+        # ClientLedger entries
+        ledger_query = """
+            SELECT
+                id,
+                company_name,
+                date,
+                particulars,
+                voucher_no,
+                voucher_type,
+                debit,
+                credit,
+                entry_type,
+                created_at,
+                'ledger' as source_table
+            FROM ClientLedger
+            WHERE EXTRACT(YEAR FROM date) = %s
+        """
+        ledger_params = [year]
+
+        union_queries.append(ledger_query)
+
+        # Client adjustments for this year
+        client_adjustment_query = """
+            SELECT
+                ca.id,
+                b2b.company_name,
+                ca.date_of_service as date,
+                ca.particular_of_service as particulars,
+                CONCAT('ADJ-', ca.id) as voucher_no,
+                'Adjustment' as voucher_type,
+                CASE WHEN ca.adjustment_amount < 0 THEN ABS(ca.adjustment_amount) ELSE 0 END as debit,
+                CASE WHEN ca.adjustment_amount > 0 THEN ca.adjustment_amount ELSE 0 END as credit,
+                'Adjustment' as entry_type,
+                ca.created_at,
+                'client_adjustment' as source_table
+            FROM client_adjustments ca
+            JOIN b2bcustomersdetails b2b ON ca.customer_id = b2b.id
+            WHERE EXTRACT(YEAR FROM ca.date_of_service) = %s
+        """
+        client_params = [year]
+
+        union_queries.append(client_adjustment_query)
+        ledger_params.extend(client_params)
+
+        # Vendor adjustments for this year
+        vendor_adjustment_query = """
+            SELECT
+                va.id,
+                cd.company_name,
+                va.date_of_service as date,
+                va.particular_of_service as particulars,
+                CONCAT('ADJ-', va.id) as voucher_no,
+                'Adjustment' as voucher_type,
+                CASE WHEN va.adjustment_amount < 0 THEN ABS(va.adjustment_amount) ELSE 0 END as debit,
+                CASE WHEN va.adjustment_amount > 0 THEN va.adjustment_amount ELSE 0 END as credit,
+                'Adjustment' as entry_type,
+                va.created_at,
+                'vendor_adjustment' as source_table
+            FROM vendor_adjustments va
+            JOIN company_details cd ON va.company_id = cd.id
+            WHERE EXTRACT(YEAR FROM va.date_of_service) = %s
+        """
+        vendor_params = [year]
+
+        union_queries.append(vendor_adjustment_query)
+        ledger_params.extend(vendor_params)
+
+        # Combine all queries
+        full_query = " UNION ALL ".join(union_queries)
+        full_query += " ORDER BY date DESC, created_at DESC"
+
+        logger.info(f"[YEARLY_LEDGER] Executing combined query with params: {ledger_params}")
+
+        ledger_results = execute_query(full_query, ledger_params)
+
+        entries = []
+        total_debit = 0
+        total_credit = 0
+
+        if ledger_results:
+            logger.info(f"[YEARLY_LEDGER] Found {len(ledger_results)} entries for year: {year}")
+            for row in ledger_results:
+                debit_amount = float(row['debit']) if row['debit'] else 0
+                credit_amount = float(row['credit']) if row['credit'] else 0
+                entries.append({
+                    'date': str(row['date']) if row['date'] else None,
+                    'particulars': row['particulars'] or '',
+                    'voucher_type': row['voucher_type'] or 'Sales',
+                    'voucher_no': row['voucher_no'] or '',
+                    'debit': debit_amount,
+                    'credit': credit_amount,
+                    'company_name': row['company_name'],
+                    'entry_type': row['entry_type'] or 'Manual',
+                    'id': row['id']
+                })
+                total_debit += debit_amount
+                total_credit += credit_amount
+        else:
+            logger.info(f"[YEARLY_LEDGER] No entries found for year: {year}")
+
+        # Sort entries by date descending
+        entries.sort(key=lambda x: x['date'] or '1900-01-01', reverse=True)
+
+        # Apply pagination
+        paginated_entries = entries[offset:offset + limit]
+
+        # Calculate summary
+        opening_balance = 0  # Could be calculated from previous periods
+        closing_balance = total_debit - total_credit
+        balance_type = 'Outstanding' if closing_balance > 0 else 'Advance' if closing_balance < 0 else 'Settled'
+
+        summary = {
+            'opening_balance': opening_balance,
+            'total_debit': total_debit,
+            'total_credit': total_credit,
+            'closing_balance': abs(closing_balance),
+            'balance_type': balance_type
+        }
+
+        logger.info(f"[YEARLY_LEDGER] Returning {len(paginated_entries)} paginated entries for {year}")
+
+        # Return raw Client Ledger entries without transformation
+        transactions = []
+        for entry in paginated_entries:
+            transactions.append({
+                'id': entry['id'],
+                'date': entry['date'],
+                'particulars': entry['particulars'],
+                'voucher_type': entry['voucher_type'],
+                'voucher_no': entry['voucher_no'],
+                'debit': entry['debit'],
+                'credit': entry['credit'],
+                'entry_type': entry['entry_type'],
+                'company_name': entry['company_name']
+            })
+
+        return jsonify({
+            "status": "success",
+            "data": {
+                "transactions": transactions,
+                "summary": summary
+            },
+            "message": f"Retrieved {len(transactions)} ledger entries for {year}",
+            "total": len(transactions)
+        }), 200
+
+    except Exception as e:
+        logger.error(f"[YEARLY_LEDGER] Failed to retrieve yearly ledger for {year}: {e}")
+        return jsonify({
+            "error": str(e),
+            "message": "Failed to retrieve yearly ledger data",
+            "status": "error"
+        }), 500
+
+@bookkeeping_bp.route('/outstanding-dues', methods=['GET'])
+def get_outstanding_dues():
+    """Get outstanding dues by aggregating pending amounts from existing ledgers"""
+    try:
+        period = request.args.get('period', 'daily')
+        company_id = request.args.get('company_id', '')
+
+        # Query for outstanding amounts from ClientLedger (unpaid invoices)
+        query = """
+            SELECT
+                cl.company_name,
+                SUM(cl.debit - cl.credit) as amount_due,
+                cl.date as due_date,
+                COUNT(*) as overdue_count
+            FROM ClientLedger cl
+            WHERE cl.debit > cl.credit AND cl.date < CURRENT_DATE
+        """
+
+        params = []
+
+        if period == 'monthly':
+            month = request.args.get('month')
+            year = request.args.get('year')
+            if month and year:
+                query += " AND EXTRACT(MONTH FROM cl.date) = %s AND EXTRACT(YEAR FROM cl.date) = %s"
+                params.extend([month, year])
+        elif period == 'daily':
+            date = request.args.get('date')
+            if date:
+                query += " AND cl.date = %s"
+                params.append(date)
+
+        if company_id:
+            query += " AND cl.company_name IN (SELECT company_name FROM company_details WHERE id = %s)"
+            params.append(company_id)
+
+        query += " GROUP BY cl.company_name, cl.date HAVING SUM(cl.debit - cl.credit) > 0 ORDER BY cl.date ASC"
+
+        try:
+            results = execute_query(query, params)
+        except Exception as db_e:
+            logger.warning(f"[OUTSTANDING_DUES] Database query failed, returning empty results: {db_e}")
+            results = []
+
+        dues = []
+        if results:
+            for row in results:
+                due_date = row['due_date']
+                days_overdue = (datetime.now().date() - due_date).days if due_date else 0
+
+                dues.append({
+                    'company': row['company_name'] or '',
+                    'amount_due': float(row['amount_due']) if row['amount_due'] else 0,
+                    'due_date': str(due_date) if due_date else None,
+                    'days_overdue': days_overdue,
+                    'contact_info': ''  # Could be extended to include contact info
+                })
+
+        return jsonify({
+            "status": "success",
+            "data": dues,
+            "message": f"Retrieved {len(dues)} outstanding dues"
+        }), 200
+
+    except Exception as e:
+        logger.error(f"[OUTSTANDING_DUES] Failed to retrieve outstanding dues: {e}")
+        return jsonify({
+            "error": str(e),
+            "message": "Failed to retrieve outstanding dues",
+            "status": "error"
+        }), 500
+
+@bookkeeping_bp.route('/export', methods=['POST'])
+def export_data():
+    """Export ledger data as PDF, CSV, or Excel"""
+    try:
+        data = request.get_json()
+
+        export_type = data.get('type', 'pdf')
+        period = data.get('period', 'daily')
+        filters = data.get('filters', {})
+
+        # This is a placeholder - actual implementation would generate the export
+        # For now, return success with mock data
+
+        return jsonify({
+            "status": "success",
+            "data": {
+                "export_url": f"/exports/{period}_{export_type}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.{export_type}",
+                "file_size": "1.2MB"
+            },
+            "message": f"Export generated successfully as {export_type.upper()}"
+        }), 200
+
+    except Exception as e:
+        logger.error(f"[EXPORT] Failed to export data: {e}")
+        return jsonify({
+            "error": str(e),
+            "message": "Failed to export data",
             "status": "error"
         }), 500

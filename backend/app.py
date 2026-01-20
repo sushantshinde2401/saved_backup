@@ -1,14 +1,34 @@
 from flask import Flask
 from flask_cors import CORS
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 from datetime import datetime
 from config import Config
 from routes import register_blueprints
+from database import init_db  # Neon PostgreSQL database
 import os
 import sys
 import subprocess
 
 # Initialize Flask app
 app = Flask(__name__)
+
+# Initialize Neon PostgreSQL database
+try:
+    init_db(app)
+    print("✅ [DATABASE] Neon PostgreSQL initialized successfully")
+except Exception as e:
+    print(f"❌ [DATABASE] Failed to initialize Neon PostgreSQL: {e}")
+    sys.exit(1)
+
+# Initialize rate limiter
+limiter = Limiter(
+    app=app,
+    key_func=get_remote_address,
+    default_limits=["200 per day", "200 per hour"],  # Global limits - increased for development
+    storage_uri="memory://",  # In-memory storage (use Redis for production)
+)
+print("✅ [RATE LIMITER] Flask-Limiter initialized successfully")
 
 # Configure CORS
 CORS(app, origins=["http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:3001", "http://127.0.0.1:3001"],

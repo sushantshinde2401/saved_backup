@@ -3,6 +3,7 @@ import pytesseract
 from dotenv import load_dotenv
 from flask_cors import CORS
 from openai import OpenAI
+from urllib.parse import urlparse
 
 # Define the base directory for the backend
 backend_dir = os.path.dirname(os.path.abspath(__file__))
@@ -41,6 +42,10 @@ class Config:
     ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'pdf', 'doc', 'docx'}
     MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
 
+    # File storage configuration
+    BASE_STORAGE_PATH = os.getenv("BASE_STORAGE_PATH", os.path.join(backend_dir, "storage", "candidates"))
+    INVOICE_STORAGE_PATH = os.getenv("INVOICE_STORAGE_PATH", os.path.join(backend_dir, "storage", "invoices"))
+
     # Google Drive config
     SERVICE_ACCOUNT_FILE = os.path.join(backend_dir, os.getenv("GOOGLE_DRIVE_SERVICE_ACCOUNT_FILE", "service-account.json"))
     SCOPES = [os.getenv("GOOGLE_DRIVE_SCOPES", "https://www.googleapis.com/auth/drive.file")]
@@ -55,14 +60,30 @@ class Config:
     # Toggle to enable/disable OCR-related endpoints (useful while working on manual entry)
     ENABLE_OCR = os.getenv("ENABLE_OCR", "false").lower() == "true"
 
-    # PostgreSQL Database config
+    # Application Configuration
+    BASE_URL = os.getenv("BASE_URL", "http://localhost:5000")
+
+    # PostgreSQL Database config (Neon-compatible)
     DB_HOST = os.getenv("DB_HOST", "localhost")
     DB_PORT = int(os.getenv("DB_PORT", "5432"))
     DB_NAME = os.getenv("DB_NAME", "candidate_db")
     DB_USER = os.getenv("DB_USER", "postgres")
     DB_PASSWORD = os.getenv("DB_PASSWORD", "")
-    DB_SSL_MODE = os.getenv("DB_SSL_MODE", "prefer")
+    # Neon requires SSL - set to 'require' for production
+    DB_SSL_MODE = os.getenv("DB_SSL_MODE", "require")
     DB_CONNECTION_TIMEOUT = int(os.getenv("DB_CONNECTION_TIMEOUT", "30"))
+
+    @staticmethod
+    def validate_base_url():
+        """Validate that BASE_URL is a proper URL format"""
+        try:
+            parsed = urlparse(Config.BASE_URL)
+            if not parsed.scheme or not parsed.netloc:
+                raise ValueError(f"Invalid BASE_URL format: {Config.BASE_URL}. Must be a valid URL (e.g., http://localhost:5000)")
+            print(f"[OK] BASE_URL validated: {Config.BASE_URL}")
+        except Exception as e:
+            print(f"[ERROR] BASE_URL validation failed: {e}")
+            raise
 
 # Initialize OpenAI client
 def init_openai_client():
@@ -105,8 +126,15 @@ openai_client = init_openai_client()
 # Create directories if they don't exist
 def create_directories():
     """Create all necessary directories"""
-    for folder in [Config.UPLOAD_FOLDER, Config.IMAGES_FOLDER, Config.JSON_FOLDER, Config.PDFS_FOLDER, Config.TEMP_FOLDER]:
+    for folder in [Config.UPLOAD_FOLDER, Config.IMAGES_FOLDER, Config.JSON_FOLDER, Config.PDFS_FOLDER, Config.TEMP_FOLDER, Config.BASE_STORAGE_PATH, Config.INVOICE_STORAGE_PATH]:
         os.makedirs(folder, exist_ok=True)
 
 # Initialize directories on import
 create_directories()
+
+# Validate BASE_URL on import
+try:
+    Config.validate_base_url()
+except Exception as e:
+    print(f"[CRITICAL] BASE_URL validation failed on startup: {e}")
+    # Don't raise here to allow the app to start, but log the error

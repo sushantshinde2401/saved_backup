@@ -751,8 +751,8 @@ def organize_candidate_files(candidate_data, session_id):
 
 ```
 1. Document Upload → 2. OCR Processing → 3. Form Completion → 
-4. Data Submission → 5. Course Selection → 6. Certificate Generation → 
-7. PDF Creation → 8. Drive Upload → 9. QR Code Generation
+4. Data Submission → 5. Course Selection → 6. Certificate Generation →
+7. PDF Creation → 8. Drive Upload → 9. QR Code Generation (Verification Portal)
 ```
 
 ### 5.2 Step-by-Step Process

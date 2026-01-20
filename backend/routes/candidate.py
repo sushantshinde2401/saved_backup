@@ -1,4 +1,6 @@
 from flask import Blueprint, request, jsonify
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 from datetime import datetime
 import json
 import os
@@ -6,11 +8,16 @@ import sys
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from config import Config
 from utils.file_ops import sanitize_folder_name, create_unique_candidate_folder, move_files_to_candidate_folder
-from database.db_connection import insert_candidate_upload, get_candidate_data as get_candidate_data_from_db, get_candidate_by_id, search_candidates_by_json_field, save_candidate_with_files
+from database import execute_query, get_candidate_by_name, save_candidate, Candidate
+from database.db_connection import DatabaseConnection
 
 candidate_bp = Blueprint('candidate', __name__)
 
+# Initialize limiter for this blueprint
+limiter = Limiter(key_func=get_remote_address)
+
 @candidate_bp.route('/save-candidate-data', methods=['POST'])
+@limiter.limit("5 per minute", override_defaults=False)  # Stricter limit for data submission
 def save_candidate_data():
     """Save candidate form data and images atomically to database"""
     conn = None
@@ -57,7 +64,6 @@ def save_candidate_data():
         candidate_name = f"{first_name} {last_name}_{passport_no}"
 
         # Check if candidate name already exists
-        from database.db_connection import execute_query
         existing_candidate = execute_query(
             "SELECT id FROM candidates WHERE candidate_name = %s",
             (candidate_name,)
@@ -95,14 +101,51 @@ def save_candidate_data():
             return jsonify({"error": "No files found in session"}), 400
 
         # Start atomic transaction
-        from database.db_connection import DatabaseConnection, execute_query
+        # DatabaseConnection and execute_query are now imported at the top
         conn = DatabaseConnection.get_connection()
         conn.autocommit = False  # Start transaction
 
         try:
-            # Step 1: Insert images into candidate_uploads table
+            # Step 1: Insert candidate data FIRST to get candidate_id
+            candidate_query = """
+                INSERT INTO candidates (
+                    candidate_name, session_id, json_data, ocr_data, last_updated
+                ) VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP)
+                ON CONFLICT (candidate_name)
+                DO UPDATE SET
+                    session_id = EXCLUDED.session_id,
+                    json_data = EXCLUDED.json_data,
+                    ocr_data = EXCLUDED.ocr_data,
+                    last_updated = CURRENT_TIMESTAMP
+                RETURNING id
+            """
+
+            import json
+            candidate_result = execute_query(candidate_query, (
+                candidate_name, session_id, json.dumps(data),
+                json.dumps(ocr_data) if ocr_data else None
+            ), fetch=True)
+
+            if not candidate_result:
+                raise Exception("Failed to insert candidate record")
+
+            candidate_id = candidate_result[0]['id']
+            print(f"[DB] ✅ Inserted candidate {candidate_name} with ID: {candidate_id}")
+
+            # Step 2: Insert images into candidate_uploads table using candidate_id
             image_ids = []
             files_processed = 0
+
+            # Mapping from field keys to image_type names
+            field_to_type = {
+                'photo': 'photo',
+                'signature': 'signature',
+                'passport_front_img': 'passport_front',
+                'passport_back_img': 'passport_back',
+                'cdc_img': 'cdc',
+                'marksheet': 'marksheet',
+                'coc_img': 'coc'
+            }
 
             # First, handle payment screenshot if payment status is PAID
             if payment_status == 'PAID' and payment_screenshot_path:
@@ -119,24 +162,23 @@ def save_candidate_data():
                 if not mime_type:
                     mime_type = 'application/octet-stream'
 
-                # Insert payment screenshot
-                query = """
-                    INSERT INTO candidate_uploads (
-                        candidate_name, session_id, file_name, file_type, file_data,
-                        mime_type, file_size, upload_time
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
-                    RETURNING id
-                """
-
-                result = execute_query(query, (
-                    candidate_name, session_id, payment_proof, file_type, file_data,
-                    mime_type, file_size
-                ), fetch=True)
+                # Insert payment screenshot using candidate_id
+                from database.db_connection import insert_image_blob  # Keep for now
+                result = insert_image_blob(
+                    candidate_id=candidate_id,
+                    file_type=file_type,
+                    file_data=file_data,
+                    mime_type=mime_type,
+                    file_size=file_size,
+                    file_name=payment_proof,
+                    image_type='payment',
+                    candidate_name=candidate_name
+                )
 
                 if result:
-                    image_ids.append(result[0]['id'])
+                    image_ids.append(result)
                     files_processed += 1
-                    print(f"[DB] ✅ Inserted payment screenshot {payment_proof} with ID: {result[0]['id']}")
+                    print(f"[DB] ✅ Inserted payment screenshot {payment_proof} with ID: {result}")
 
             # Then process other images (no artificial limit)
             print(f"[DEBUG] Processing all remaining images from {len(temp_files)} total files")
@@ -166,53 +208,33 @@ def save_candidate_data():
                 if not mime_type:
                     mime_type = 'application/octet-stream'
 
-                # Insert image
-                query = """
-                    INSERT INTO candidate_uploads (
-                        candidate_name, session_id, file_name, file_type, file_data,
-                        mime_type, file_size, upload_time
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
-                    RETURNING id
-                """
+                # Determine image_type from filename prefix
+                file_key = filename.split('.')[0]
+                image_type = field_to_type.get(file_key, None)
 
-                result = execute_query(query, (
-                    candidate_name, session_id, filename, file_type, file_data,
-                    mime_type, file_size
-                ), fetch=True)
+                # Insert image using the new insert_image_blob function
+                from database.db_connection import insert_image_blob  # Keep this for now - will migrate later
+                result = insert_image_blob(
+                    candidate_id=candidate_id,
+                    file_type=file_type,
+                    file_data=file_data,
+                    mime_type=mime_type,
+                    file_size=file_size,
+                    file_name=filename,
+                    image_type=image_type,
+                    candidate_name=candidate_name
+                )
 
                 if result:
-                    image_ids.append(result[0]['id'])
+                    image_ids.append(result)
                     files_processed += 1
                     processed_additional += 1
-                    print(f"[DB] ✅ Inserted image {filename} with ID: {result[0]['id']}")
+                    print(f"[DB] ✅ Inserted image {filename} with image_type: {image_type}")
 
             print(f"[DEBUG] Processed {processed_additional} additional images. Total files_processed: {files_processed}")
             print(f"[DEBUG] Total images saved: {len(image_ids)} (should be {len(temp_files)} if no payment screenshot)")
 
-            # Step 2: Insert candidate data
-            candidate_query = """
-                INSERT INTO candidates (
-                    candidate_name, session_id, json_data, ocr_data, last_updated
-                ) VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP)
-                ON CONFLICT (candidate_name)
-                DO UPDATE SET
-                    session_id = EXCLUDED.session_id,
-                    json_data = EXCLUDED.json_data,
-                    ocr_data = EXCLUDED.ocr_data,
-                    last_updated = CURRENT_TIMESTAMP
-                RETURNING id
-            """
-
-            import json
-            candidate_result = execute_query(candidate_query, (
-                candidate_name, session_id, json.dumps(data),
-                json.dumps(ocr_data) if ocr_data else None
-            ), fetch=True)
-
-            if not candidate_result:
-                raise Exception("Failed to insert candidate record")
-
-            record_id = candidate_result[0]['id']
+            record_id = candidate_id
 
             # Commit transaction
             conn.commit()
@@ -281,8 +303,6 @@ def get_candidate_data(filename):
 def get_all_candidates():
     """Get all candidates with their images from separate tables"""
     try:
-        from database.db_connection import execute_query
-
         # Query to get all candidates
         query = """
             SELECT
@@ -306,17 +326,17 @@ def get_all_candidates():
         # Format the results
         result = []
         for record in candidates:
-            # Get images for this candidate's session
+            # Get images for this candidate
             files = []
-            if record['session_id']:
+            if record['id']:
                 images_query = """
-                    SELECT id, file_name, file_type, mime_type, file_size, upload_time
+                    SELECT id, file_name, file_type, mime_type, file_size, upload_time, image_type
                     FROM candidate_uploads
-                    WHERE session_id = %s AND file_data IS NOT NULL
+                    WHERE candidate_id = %s AND file_path IS NOT NULL AND file_path != ''
                     ORDER BY upload_time
-                    LIMIT 6
+                    LIMIT 7
                 """
-                images = execute_query(images_query, (record['session_id'],))
+                images = execute_query(images_query, (record['id'],))
                 for i, img in enumerate(images):
                     files.append({
                         'id': img['id'],
@@ -354,6 +374,7 @@ def get_all_candidates():
         }), 500
 
 @candidate_bp.route('/search-candidates', methods=['GET'])
+@limiter.limit("20 per minute")  # Moderate limit for search operations
 def search_candidates():
     """Search candidates by name, email, passport, or candidate_name"""
     try:
@@ -367,8 +388,6 @@ def search_candidates():
             }), 400
 
         # Search in candidates table
-        from database.db_connection import execute_query
-
         if search_field == 'candidate_name':
             query = """
                 SELECT id, candidate_name, session_id, json_data, created_at,
@@ -396,15 +415,15 @@ def search_candidates():
         formatted_results = []
         for record in results:
             files = []
-            if record['session_id']:
+            if record['id']:
                 images_query = """
-                    SELECT id, file_name, file_type, mime_type, file_size, upload_time
+                    SELECT id, file_name, file_type, mime_type, file_size, upload_time, image_type
                     FROM candidate_uploads
-                    WHERE session_id = %s AND file_data IS NOT NULL
+                    WHERE candidate_id = %s AND file_path IS NOT NULL AND file_path != ''
                     ORDER BY upload_time
-                    LIMIT 6
+                    LIMIT 7
                 """
-                images = execute_query(images_query, (record['session_id'],))
+                images = execute_query(images_query, (record['id'],))
                 for i, img in enumerate(images):
                     files.append({
                         'id': img['id'],
@@ -446,7 +465,7 @@ def search_candidates():
 def get_current_candidate_for_certificate():
     """Get current candidate data for certificate generation from consolidated candidates table"""
     try:
-        from database.db_connection import execute_query
+        # execute_query is now imported at the top
 
         # For now, get the most recently created candidate as "current"
         # In the future, we might add an is_current_candidate column to candidates table
@@ -519,7 +538,7 @@ def update_candidate_data():
         # Remove id from data to update
         update_data = {k: v for k, v in data.items() if k != 'id'}
 
-        from database.db_connection import execute_query
+        # execute_query is now imported at the top
 
         # Check if candidate exists
         existing = execute_query("SELECT id FROM candidates WHERE id = %s", (candidate_id,))
@@ -554,36 +573,44 @@ def get_candidate_image(candidate_id, image_num):
         from database.db_connection import execute_query
 
         # Validate image_num
-        if image_num < 1 or image_num > 6:
-            return jsonify({"error": "Invalid image number. Must be 1-6"}), 400
+        if image_num < 1 or image_num > 7:
+            return jsonify({"error": "Invalid image number. Must be 1-7"}), 400
 
-        # First get the session_id from candidates table
+        # Check if candidate exists
         candidate_result = execute_query("""
-            SELECT session_id FROM candidates WHERE id = %s
+            SELECT id FROM candidates WHERE id = %s
         """, (candidate_id,))
 
         if not candidate_result:
             return jsonify({"error": "Candidate not found"}), 404
 
-        session_id = candidate_result[0]['session_id']
-        if not session_id:
-            return jsonify({"error": "No images found for this candidate"}), 404
-
         # Get the image from candidate_uploads ordered by upload_time
         result = execute_query("""
-            SELECT file_data, file_name, mime_type
+            SELECT file_path, file_name, mime_type
             FROM candidate_uploads
-            WHERE session_id = %s AND file_data IS NOT NULL
+            WHERE candidate_id = %s AND file_path IS NOT NULL AND file_path != ''
             ORDER BY upload_time
             LIMIT 1 OFFSET %s
-        """, (session_id, image_num - 1))
+        """, (candidate_id, image_num - 1))
 
         if not result:
             return jsonify({"error": "Image not found"}), 404
 
-        file_data = result[0]['file_data']
+        file_path = result[0]['file_path']
         file_name = result[0]['file_name'] or f'candidate_{candidate_id}_image_{image_num}'
         mime_type = result[0]['mime_type'] or 'application/octet-stream'
+
+        # Load file from file system
+        from config import Config
+        full_file_path = os.path.join(Config.BASE_STORAGE_PATH, file_path)
+        if not os.path.exists(full_file_path):
+            return jsonify({"error": "Image file not found on disk"}), 404
+
+        try:
+            with open(full_file_path, 'rb') as f:
+                file_data = f.read()
+        except Exception as e:
+            return jsonify({"error": f"Error reading image file: {str(e)}"}), 500
 
         # Return the image with appropriate headers
         from flask import Response
@@ -619,9 +646,9 @@ def get_combined_candidate_data(candidate_name):
         uploads_query = """
             SELECT
                 id, candidate_name, file_name, file_type, mime_type,
-                file_size, upload_time, session_id
+                file_size, upload_time, image_type, candidate_id
             FROM candidate_uploads
-            WHERE candidate_name = %s AND file_data IS NOT NULL
+            WHERE candidate_name = %s AND file_path IS NOT NULL AND file_path != ''
             ORDER BY upload_time DESC
         """
         uploads_data = execute_query(uploads_query, (candidate_name,))
@@ -720,6 +747,47 @@ def get_unique_candidate_names():
             "message": "Failed to retrieve candidate names",
             "status": "error"
         }), 500
+
+@candidate_bp.route('/get-candidates-for-dropdown', methods=['GET'])
+def get_candidates_for_dropdown():
+    """
+    Get candidates with id, name, and passport for dropdown selection
+    """
+    try:
+        from database.db_connection import execute_query
+
+        query = """
+            SELECT id, candidate_name, TRIM(json_data->>'passport') as passport
+            FROM candidates
+            WHERE json_data->>'passport' IS NOT NULL AND TRIM(json_data->>'passport') != ''
+            ORDER BY candidate_name
+            LIMIT 1000
+        """
+        result = execute_query(query)
+
+        candidates = []
+        if result:
+            for row in result:
+                candidates.append({
+                    'id': row['id'],
+                    'candidate_name': row['candidate_name'],
+                    'passport': row['passport']
+                })
+
+        return jsonify({
+            "status": "success",
+            "data": candidates,
+            "total": len(candidates),
+            "message": f"Retrieved {len(candidates)} candidates for dropdown"
+        }), 200
+
+    except Exception as e:
+        print(f"[ERROR] Failed to get candidates for dropdown: {e}")
+        return jsonify({
+            "error": str(e),
+            "message": "Failed to retrieve candidates for dropdown",
+            "status": "error"
+        }), 500
 @candidate_bp.route('/download-image/<int:image_id>', methods=['GET'])
 def download_image_by_id(image_id):
     """
@@ -729,19 +797,31 @@ def download_image_by_id(image_id):
         from database.db_connection import execute_query
         from flask import Response
 
-        # Get image data from database
+        # Get image path from database
         result = execute_query("""
-            SELECT file_data, file_name, mime_type
+            SELECT file_path, file_name, mime_type
             FROM candidate_uploads
-            WHERE id = %s AND file_data IS NOT NULL
+            WHERE id = %s AND file_path IS NOT NULL AND file_path != ''
         """, (image_id,))
 
         if not result:
             return jsonify({"error": "Image not found"}), 404
 
-        file_data = result[0]['file_data']
+        file_path = result[0]['file_path']
         file_name = result[0]['file_name'] or f'image_{image_id}'
         mime_type = result[0]['mime_type'] or 'application/octet-stream'
+
+        # Load file from file system
+        from config import Config
+        full_file_path = os.path.join(Config.BASE_STORAGE_PATH, file_path)
+        if not os.path.exists(full_file_path):
+            return jsonify({"error": "Image file not found on disk"}), 404
+
+        try:
+            with open(full_file_path, 'rb') as f:
+                file_data = f.read()
+        except Exception as e:
+            return jsonify({"error": f"Error reading image file: {str(e)}"}), 500
 
         # Return the image with appropriate headers
         response = Response(file_data, mimetype=mime_type)
@@ -752,6 +832,53 @@ def download_image_by_id(image_id):
         print(f"[ERROR] Failed to download image {image_id}: {e}")
         return jsonify({"error": str(e)}), 500
         return jsonify({"error": str(e)}), 500
+
+@candidate_bp.route('/get-candidate-images/<int:candidate_id>', methods=['GET'])
+def get_candidate_images(candidate_id):
+    """
+    Get all images for a specific candidate by candidate_id
+    """
+    try:
+        from database.db_connection import get_candidate_images
+
+        images = get_candidate_images(candidate_id)
+
+        if not images:
+            return jsonify({
+                "status": "success",
+                "data": [],
+                "message": f"No images found for candidate {candidate_id}",
+                "total": 0
+            }), 200
+
+        # Format the results
+        formatted_images = []
+        for img in images:
+            formatted_images.append({
+                'file_name': img['file_name'],
+                'file_type': img['file_type'],
+                'mime_type': img['mime_type'],
+                'file_size': img['file_size'],
+                'image_type': img['image_type'],
+                'upload_time': img['upload_time'].isoformat() if img['upload_time'] else None,
+                'download_url': f"/candidate/download-image/{img['id']}",  # Assuming we have this endpoint
+                'file_path': img['file_path']  # Include file path for reference
+            })
+
+        return jsonify({
+            "status": "success",
+            "data": formatted_images,
+            "message": f"Retrieved {len(formatted_images)} images for candidate {candidate_id}",
+            "total": len(formatted_images)
+        }), 200
+
+    except Exception as e:
+        print(f"[ERROR] Failed to get candidate images for {candidate_id}: {e}")
+        return jsonify({
+            "error": str(e),
+            "message": "Failed to retrieve candidate images",
+            "status": "error"
+        }), 500
 
 @candidate_bp.route('/candidate-uploads', methods=['GET'])
 def get_candidate_uploads():
@@ -766,11 +893,11 @@ def get_candidate_uploads():
         candidate_id = request.args.get('candidate_id', type=int)
         candidate_name = request.args.get('candidate_name', type=str)
         search = request.args.get('search', type=str)
-        limit = request.args.get('limit', 50, type=int)
+        limit = min(request.args.get('limit', 20, type=int), 50)  # Default 20, max 50
         offset = request.args.get('offset', 0, type=int)
 
         # Build query conditions
-        conditions = ["file_data IS NOT NULL"]
+        conditions = ["file_path IS NOT NULL AND file_path != ''"]
         params = []
 
         if candidate_id:
@@ -796,7 +923,7 @@ def get_candidate_uploads():
 
         # Get images with pagination
         query = f"""
-            SELECT id, candidate_name, file_name, file_type, mime_type, file_size, upload_time
+            SELECT id, candidate_name, file_name, file_type, image_type, mime_type, file_size, upload_time
             FROM candidate_uploads
             WHERE {where_clause}
             ORDER BY upload_time DESC
@@ -806,31 +933,71 @@ def get_candidate_uploads():
 
         results = execute_query(query, params)
 
-        # Format results with base64 encoded thumbnails
+        # Format results with base64 encoded thumbnails for drag functionality
         images = []
         for row in results:
             try:
-                # Get full image data for base64 encoding
-                image_data = execute_query("SELECT file_data FROM candidate_uploads WHERE id = %s", (row['id'],))
-                if image_data:
-                    file_data = image_data[0]['file_data']
-                    # Encode to base64
-                    base64_data = base64.b64encode(file_data).decode('utf-8')
-                    data_url = f"data:{row['mime_type'] or 'application/octet-stream'};base64,{base64_data}"
+                # Get file path for loading image data
+                image_data = execute_query("SELECT file_path FROM candidate_uploads WHERE id = %s", (row['id'],))
+                if image_data and image_data[0]['file_path']:
+                    file_path = image_data[0]['file_path']
+                    from config import Config
+                    full_file_path = os.path.join(Config.BASE_STORAGE_PATH, file_path)
+                    if os.path.exists(full_file_path):
+                        with open(full_file_path, 'rb') as f:
+                            file_data = f.read()
+                        # Encode to base64
+                        base64_data = base64.b64encode(file_data).decode('utf-8')
+                        data_url = f"data:{row['mime_type'] or 'application/octet-stream'};base64,{base64_data}"
 
+                        images.append({
+                            'id': row['id'],
+                            'file_name': row['file_name'],
+                            'file_type': row['file_type'],
+                            'image_type': row['image_type'],
+                            'file_url': f"/candidate/download-image/{row['id']}",
+                            'data_url': data_url,  # For drag and drop functionality
+                            'mime_type': row['mime_type'],
+                            'file_size': row['file_size'],
+                            'upload_time': row['upload_time'].isoformat() if row['upload_time'] else None
+                        })
+                    else:
+                        # File not found, fallback without base64 data
+                        images.append({
+                            'id': row['id'],
+                            'file_name': row['file_name'],
+                            'file_type': row['file_type'],
+                            'image_type': row['image_type'],
+                            'file_url': f"/candidate/download-image/{row['id']}",
+                            'mime_type': row['mime_type'],
+                            'file_size': row['file_size'],
+                            'upload_time': row['upload_time'].isoformat() if row['upload_time'] else None
+                        })
+                else:
+                    # No file path, fallback without base64 data
                     images.append({
                         'id': row['id'],
-                        'candidate_name': row['candidate_name'],
                         'file_name': row['file_name'],
                         'file_type': row['file_type'],
+                        'image_type': row['image_type'],
+                        'file_url': f"/candidate/download-image/{row['id']}",
                         'mime_type': row['mime_type'],
                         'file_size': row['file_size'],
-                        'upload_time': row['upload_time'].isoformat() if row['upload_time'] else None,
-                        'data_url': data_url
+                        'upload_time': row['upload_time'].isoformat() if row['upload_time'] else None
                     })
             except Exception as img_error:
                 print(f"[WARNING] Failed to encode image {row['id']}: {img_error}")
-                continue
+                # Fallback without base64 data
+                images.append({
+                    'id': row['id'],
+                    'file_name': row['file_name'],
+                    'file_type': row['file_type'],
+                    'image_type': row['image_type'],
+                    'file_url': f"/candidate/download-image/{row['id']}",
+                    'mime_type': row['mime_type'],
+                    'file_size': row['file_size'],
+                    'upload_time': row['upload_time'].isoformat() if row['upload_time'] else None
+                })
 
         return jsonify({
             "status": "success",

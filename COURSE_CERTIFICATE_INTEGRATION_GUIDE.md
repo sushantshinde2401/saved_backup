@@ -79,10 +79,10 @@ const handleCourseClick = (course) => {
 #### **Course → Certificate Mapping**
 ```javascript
 const certificateMap = {
-  "STCW": "/certificate-form",      // → DualCertificate.jsx
-  "STSDSD": "/dual-certificate-2",  // → DualCertificate2.jsx
-  "H2S": "/dual-certificate-3",     // → DualCertificate3.jsx
-  "BOSIET": "/dual-certificate-4", // → DualCertificate4.jsx
+  "STCW": "/certificate/stcw",      // → DynamicCertificate.jsx
+  "STSDSD": "/certificate/stsdsd",  // → DynamicCertificate.jsx
+  "H2S": "/certificate/h2s",       // → DynamicCertificate.jsx
+  "BOSIET": "/certificate/bosiet", // → DynamicCertificate.jsx
 };
 ```
 
@@ -157,7 +157,7 @@ Each certificate page now displays:
 1. **Submit Candidate Information** (Upload Documents → Fill Form → Submit)
 2. **Select Courses** (Course Selection Page → Choose courses → Preview)
 3. **Generate Certificates** (Click course → Certificate page loads with candidate data)
-4. **Download/Share** (Generate PDF → Upload to Drive → Create QR codes)
+4. **Download/Share** (Generate PDF → Upload to Drive → Create QR codes for verification)
 
 ### **For Developers:**
 1. **Certificate pages automatically fetch current candidate data**

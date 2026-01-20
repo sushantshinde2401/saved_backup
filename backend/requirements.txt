@@ -1,5 +1,7 @@
 Flask==2.3.3
 Flask-CORS==4.0.0
+Flask-SQLAlchemy==3.1.1
+Flask-Limiter==3.5.0
 google-auth==2.23.3
 google-auth-oauthlib==1.1.0
 google-auth-httplib2==0.1.1
@@ -15,3 +17,7 @@ openai>=1.12.0
 psycopg2-binary==2.9.7
 reportlab==4.0.7
 weasyprint==61.2
+openpyxl==3.1.2
+PyPDF2==3.0.1
+python-dateutil==2.8.2
+pandas==2.0.3

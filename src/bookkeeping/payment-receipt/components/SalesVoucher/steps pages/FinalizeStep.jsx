@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Upload, FileText, CheckCircle, Save, BookOpen } from 'lucide-react';
 import { uploadToLedger } from '../../../../shared/utils/api';
 import { toast } from 'react-toastify';
@@ -9,6 +9,8 @@ function FinalizeStep({ formData, onUploadInvoiceData, savedInvoiceData, isUploa
   const [finalizationStatus, setFinalizationStatus] = useState(''); // 'invoice_uploaded', 'ledger_uploaded', 'completed'
   const [certificateSelections, setCertificateSelections] = useState([]);
   const [loadingCertificates, setLoadingCertificates] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const isProcessingRef = useRef(false);
 
   // Load certificate selections from database
   const loadCertificateSelections = async () => {
@@ -34,6 +36,13 @@ function FinalizeStep({ formData, onUploadInvoiceData, savedInvoiceData, isUploa
   useEffect(() => {
     loadCertificateSelections();
   }, []);
+
+  // Check if invoice data is already saved and set status accordingly
+  useEffect(() => {
+    if (savedInvoiceData) {
+      setFinalizationStatus('completed');
+    }
+  }, [savedInvoiceData]);
 
   const calculateFinalAmount = () => {
     const amount = parseFloat(formData.amountReceived) || 0;
@@ -215,7 +224,7 @@ function FinalizeStep({ formData, onUploadInvoiceData, savedInvoiceData, isUploa
           referenceNo: formData.referenceNo || '',
           otherReferences: formData.otherReferences || '',
           dispatchDocNo: formData.dispatchDocNo || '',
-          deliveryNoteDate: formData.deliveryNoteDate || '',
+          deliveryNoteDate: formData.deliveryNoteDate || formData.dateReceived || '',
           dispatchedThrough: formData.dispatchedThrough || '',
           destination: formData.destination || '',
           modeOfPayment: formData.modeOfPayment || '',
@@ -401,9 +410,8 @@ function FinalizeStep({ formData, onUploadInvoiceData, savedInvoiceData, isUploa
 
         // Apply exact styling to match InvoicePreview.jsx - center the content and prevent cutoff
         invoiceElement.style.width = '210mm';
-        invoiceElement.style.minHeight = '297mm';
         invoiceElement.style.maxWidth = '210mm'; // Prevent overflow
-        invoiceElement.style.padding = '20mm';
+        invoiceElement.style.padding = '10mm';
         invoiceElement.style.backgroundColor = 'white';
         invoiceElement.style.fontFamily = 'Arial, sans-serif';
         invoiceElement.style.fontSize = '12px';
@@ -416,20 +424,16 @@ function FinalizeStep({ formData, onUploadInvoiceData, savedInvoiceData, isUploa
 
         // Configure html2pdf options to match InvoicePreview.jsx exactly and prevent cutoff
         const opt = {
-          margin: 0.5,
+          margin: 0.19685, // 5mm in inches
           filename: `Tax_Invoice_${formData.invoiceNumber || 'N/A'}.pdf`,
           image: { type: 'jpeg', quality: 1.0 },
           html2canvas: {
-            scale: 3,
+            scale: 2.5,
             useCORS: true,
             letterRendering: true,
             allowTaint: false,
-            width: 794,  // A4 width in pixels at 96 DPI
-            height: 1123, // A4 height in pixels at 96 DPI
             scrollX: 0,
-            scrollY: 0,
-            windowWidth: 794,
-            windowHeight: 1123
+            scrollY: 0
           },
           jsPDF: {
             unit: 'in',
@@ -522,7 +526,7 @@ function FinalizeStep({ formData, onUploadInvoiceData, savedInvoiceData, isUploa
   };
 
   const handleFinalizeAndUpload = async () => {
-    if (isFinalizing) return;
+    if (isProcessingRef.current || isFinalizing) return;
 
     // Validate required fields before starting
     const errors = [];
@@ -538,6 +542,9 @@ function FinalizeStep({ formData, onUploadInvoiceData, savedInvoiceData, isUploa
       return;
     }
 
+    // Immediately set processing flags
+    isProcessingRef.current = true;
+    setIsProcessing(true);
     setIsFinalizing(true);
     setFinalizationStatus('');
 
@@ -549,6 +556,7 @@ function FinalizeStep({ formData, onUploadInvoiceData, savedInvoiceData, isUploa
         toast.success(`✓ Data uploaded successfully (Invoice: ${formData.invoiceNumber})`);
       } else {
         setFinalizationStatus('invoice_uploaded');
+        toast.info('Invoice data already uploaded');
       }
 
       // Step 2: Generate and Save Invoice PDF
@@ -619,6 +627,8 @@ function FinalizeStep({ formData, onUploadInvoiceData, savedInvoiceData, isUploa
       console.error('Error during finalization:', error);
       // Error handling is done in individual functions
     } finally {
+      isProcessingRef.current = false;
+      setIsProcessing(false);
       setIsFinalizing(false);
     }
   };
@@ -694,9 +704,9 @@ function FinalizeStep({ formData, onUploadInvoiceData, savedInvoiceData, isUploa
 
           <button
             onClick={handleFinalizeAndUpload}
-            disabled={isFinalizing || finalizationStatus === 'completed'}
+            disabled={isFinalizing || isProcessing || finalizationStatus === 'completed' || !!savedInvoiceData}
             className={`w-full py-4 px-6 rounded-xl transition-colors font-semibold text-lg flex items-center justify-center gap-3 shadow-md hover:shadow-lg ${
-              isFinalizing || finalizationStatus === 'completed'
+              isFinalizing || isProcessing || finalizationStatus === 'completed'
                 ? 'bg-gray-400 cursor-not-allowed'
                 : 'bg-green-600 hover:bg-green-700 text-white'
             }`}

@@ -7,7 +7,6 @@ const certificateMap = {
   "FHFS": "/certificate/fhfs",
   "HLO": "/certificate/hlo",
   "LCHS": "/certificate/lchs",
-  "PSFCCM": "/certificate/psfccm",
   // Add more course: path entries as needed
 };
 

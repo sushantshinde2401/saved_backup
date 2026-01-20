@@ -138,9 +138,14 @@ function NewStepper() {
       try {
         const parsedState = JSON.parse(saved);
         // Clear availableCertificates to force fresh load from API
+        // Preserve selectedCourses to maintain user selections
         return {
           ...parsedState,
-          availableCertificates: []
+          availableCertificates: [],
+          formData: {
+            ...parsedState.formData
+            // selectedCourses is now preserved from localStorage
+          }
         };
       } catch (e) {
         console.warn('Failed to parse saved stepper state:', e);
@@ -422,8 +427,7 @@ function NewStepper() {
         }
         break;
       case 4:
-        // InvoiceDetails step - validate delivery date
-        if (!state.formData.deliveryNoteDate) errors.push('Delivery Note Date is required');
+        // InvoiceDetails step - delivery date is now optional
         break;
       case 5:
         // Preview & Download step - no validation needed, just proceed

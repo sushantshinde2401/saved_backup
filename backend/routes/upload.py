@@ -1,4 +1,6 @@
 from flask import Blueprint, request, jsonify
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 from datetime import datetime
 import pytesseract
 from PIL import Image
@@ -6,13 +8,18 @@ import sys
 import os
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from config import Config
+from database import execute_query
 from utils.file_ops import allowed_file, generate_session_id
 from ocr.passport import extract_passport_front_data, extract_passport_back_data
 from ocr.cdc import extract_cdc_data
 
 upload_bp = Blueprint('upload', __name__)
 
+# Initialize limiter for this blueprint
+limiter = Limiter(key_func=get_remote_address)
+
 @upload_bp.route('/upload-images', methods=['POST', 'OPTIONS'])
+@limiter.limit("10 per minute")  # Limit file uploads to prevent abuse
 def upload_images():
     """
     Handle multiple file uploads, store images temporarily in session-based temp folder, and perform OCR processing
@@ -45,7 +52,7 @@ def upload_images():
         temp_file_paths = {}
 
         try:
-            for file_key in ['photo', 'signature', 'passport_front_img', 'passport_back_img', 'cdc_img', 'marksheet']:
+            for file_key in ['photo', 'signature', 'passport_front_img', 'passport_back_img', 'cdc_img', 'marksheet', 'coc_img']:
                 if file_key in request.files:
                     file = request.files[file_key]
                     if file and file.filename != '':
@@ -80,7 +87,7 @@ def upload_images():
                             mime_type = 'application/octet-stream'
 
                         # For image files, validate MIME type
-                        if file_key in ['photo', 'signature', 'passport_front_img', 'passport_back_img', 'cdc_img']:
+                        if file_key in ['photo', 'signature', 'passport_front_img', 'passport_back_img', 'cdc_img', 'coc_img']:
                             if mime_type not in ALLOWED_IMAGE_TYPES:
                                 # Clean up any already uploaded files
                                 for path in temp_file_paths.values():
@@ -90,12 +97,14 @@ def upload_images():
                                     os.rmdir(temp_session_folder)
                                 return jsonify({"error": f"Invalid image type for {file_key}. Allowed: JPEG, PNG"}), 400
 
-                        # Secure filename
+                        # Secure filename and create temp filename with field key prefix
                         from werkzeug.utils import secure_filename
                         filename = secure_filename(file.filename)
+                        ext = filename.rsplit('.', 1)[1] if '.' in filename else ''
+                        temp_filename = f"{file_key}.{ext}" if ext else file_key
 
-                        # Check for duplicate filenames in same session
-                        temp_file_path = f"{temp_session_folder}/{filename}"
+                        # Check for duplicate temp filenames in same session
+                        temp_file_path = f"{temp_session_folder}/{temp_filename}"
                         if os.path.exists(temp_file_path):
                             # Clean up any already uploaded files
                             for path in temp_file_paths.values():
@@ -103,15 +112,15 @@ def upload_images():
                                     os.remove(path)
                             if os.path.exists(temp_session_folder):
                                 os.rmdir(temp_session_folder)
-                            return jsonify({"error": f"Duplicate filename {filename} in session"}), 400
+                            return jsonify({"error": f"Duplicate filename {temp_filename} in session"}), 400
 
                         # Save file to temp session folder
                         with open(temp_file_path, 'wb') as f:
                             f.write(file_data)
 
-                        uploaded_files[file_key] = filename
+                        uploaded_files[file_key] = temp_filename
                         temp_file_paths[file_key] = temp_file_path
-                        print(f"[TEMP STORAGE] Saved {file_key}: {filename} to {temp_file_path}")
+                        print(f"[TEMP STORAGE] Saved {file_key}: {temp_filename} to {temp_file_path}")
         except Exception as file_error:
             # Clean up on any file processing error
             for path in temp_file_paths.values():
@@ -349,8 +358,6 @@ def get_image(image_id):
     Retrieve and serve an image from the database by its ID
     """
     try:
-        from database.db_connection import execute_query
-
         # Query for the image data
         result = execute_query("""
             SELECT file_data, mime_type, file_name

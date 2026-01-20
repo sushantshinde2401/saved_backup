@@ -14,10 +14,7 @@ operations/
 │   ├── CourseSelection.jsx    # Course selection interface
 │   ├── CoursePreview.js       # Course preview and management
 │   └── certificates/          # Certificate generation pages
-│       ├── DualCertificate.jsx    # STCW certificates
-│       ├── DualCertificate2.jsx   # MODU certificates
-│       ├── DualCertificate3.jsx   # H2S certificates
-│       └── DualCertificate4.jsx   # BOSIET certificates
+│       └── DynamicCertificate.jsx # Unified certificate generation
 ├── services/           # API services for operations
 └── README.md          # This file
 ```
@@ -40,9 +37,9 @@ operations/
 - Certificate type mapping
 
 ### Certificate Generation
-- Dynamic certificate generation with candidate data
-- Multiple certificate types (STCW, MODU, H2S, BOSIET)
-- Canvas-based certificate editing
+- Unified certificate generation with candidate data
+- Multiple certificate types (STCW, STSDSD, H2S, BOSIET)
+- Canvas-based certificate rendering
 - QR code integration for verification
 
 ## API Endpoints
@@ -78,11 +75,11 @@ All operations endpoints are prefixed with `/api/operations/`:
    - Generate certificates for completed courses
    - Track completion status
 
-5. **Generate Certificates** (`/certificate-form`, etc.)
-   - Dynamic certificate generation
-   - Canvas-based editing
-   - QR code integration
-   - PDF download and storage
+5. **Generate Certificates** (`/certificate/:certificateType`)
+    - Unified certificate generation
+    - Canvas-based rendering
+    - QR code integration
+    - PDF download and storage
 
 ## Dependencies
 

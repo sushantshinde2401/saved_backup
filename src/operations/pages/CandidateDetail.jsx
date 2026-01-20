@@ -18,7 +18,8 @@ import {
   FileText,
   CheckCircle,
   AlertCircle,
-  Flag
+  Flag,
+  Award
 } from "lucide-react";
 
 function CandidateDetails() {
@@ -40,6 +41,10 @@ function CandidateDetails() {
     passport: "",
     cdcNo: "",
     indosNo: "",
+    cocNo: "",
+    countryOfIssue: "",
+    grade: "",
+    idNo: "",
     email: "",
     phone: "",
     companyName: "",
@@ -51,8 +56,6 @@ function CandidateDetails() {
     session_id: sessionId || "",
   });
 
-  const [isAutoFilled, setIsAutoFilled] = useState(false);
-  const [fillStatus, setFillStatus] = useState("");
   const [companies, setCompanies] = useState([]);
   const [loadingCompanies, setLoadingCompanies] = useState(false);
 
@@ -88,113 +91,6 @@ function CandidateDetails() {
     fetchCompanies();
   }, []);
 
-  const handleFill = async () => {
-    try {
-      setFillStatus("Filling form with OCR data...");
-
-      let dataToUse = ocrData;
-
-      // If no OCR data in state, try to fetch from backend using single file
-      if (!dataToUse) {
-        console.log("Fetching OCR data from structured_passport_data.json");
-        try {
-          const res = await fetch(`http://127.0.0.1:5000/candidate/get-candidate-data/structured_passport_data.json`);
-          if (res.ok) {
-            const result = await res.json();
-            dataToUse = result.data;
-            console.log("Fetched data from backend:", dataToUse);
-          } else {
-            console.error("Failed to fetch from backend:", res.status, res.statusText);
-          }
-        } catch (error) {
-          console.error("Error fetching OCR data:", error);
-        }
-      }
-
-      if (!dataToUse) {
-        setFillStatus("No OCR data available");
-        console.warn("No OCR data found in state or backend");
-        return;
-      }
-
-      // Debug: Log the OCR data structure
-      console.log("=== OCR DATA ANALYSIS ===");
-      console.log("Full OCR Data received:", dataToUse);
-
-      const front = dataToUse.passport_front || {};
-      const back = dataToUse.passport_back || {};
-      const cdc = dataToUse.cdc || {};
-
-      console.log("Passport Front data:", front);
-      console.log("Passport Back data:", back);
-      console.log("CDC data:", cdc);
-
-      // Show raw text if available for debugging
-      if (front.raw_text) {
-        console.log("Raw passport front text:", front.raw_text.substring(0, 200) + "...");
-      }
-      if (back.raw_text) {
-        console.log("Raw passport back text:", back.raw_text.substring(0, 200) + "...");
-      }
-      if (cdc.raw_text) {
-        console.log("Raw CDC text:", cdc.raw_text.substring(0, 200) + "...");
-      }
-
-      // Simplified field mapping for essential fields only
-      const extractedData = {
-        lastName: front["Surname"] || front.surname || front["SURNAME"] || "",
-        firstName: front["Given Name(s)"] || front["Given Names"] || front.given_names ||
-                  front["GIVEN_NAMES"] || "",
-        dob: front["Date of Birth"] || front.date_of_birth || front["DATE_OF_BIRTH"] || "",
-        nationality: front["Nationality"] || front.nationality || front["NATIONALITY"] ||
-                    front["Country Code"] || front.country_code || front["COUNTRY_CODE"] || "",
-        address: back["Address"] || back.address || back["ADDRESS"] || "",
-        passport: front["Passport No."] || front["Passport No"] || front.passport_no ||
-                 front["PASSPORT_NO"] || "",
-        cdcNo: cdc.cdc_no || cdc["cdc_no"] || cdc["CDC_NO"] || "",
-        indosNo: cdc.indos_no || cdc["indos_no"] || cdc["INDOS_NO"] || "",
-      };
-
-      console.log("=== EXTRACTED DATA FOR FORM ===");
-      console.log("Extracted data:", extractedData);
-
-      // Count how many fields were successfully extracted
-      const filledFields = Object.entries(extractedData).filter(([key, value]) => value && value.trim() !== "").length;
-      console.log(`Successfully extracted ${filledFields} out of ${Object.keys(extractedData).length} fields`);
-
-      const updatedFormData = {
-        ...formData,
-        ...extractedData,
-        // Keep existing values for fields not in OCR
-        email: formData.email,
-        phone: formData.phone,
-        companyName: formData.companyName,
-        clientName: formData.clientName,
-        paymentStatus: formData.paymentStatus,
-        rollNo: formData.rollNo,
-        paymentProof: formData.paymentProof,
-      };
-
-      setFormData(updatedFormData);
-
-      // Save to localStorage for real-time access by certificate pages
-      localStorage.setItem('candidateData', JSON.stringify(updatedFormData));
-
-      // Dispatch custom event to notify certificate pages
-      window.dispatchEvent(new CustomEvent('candidateDataUpdated', { detail: updatedFormData }));
-
-      setIsAutoFilled(true);
-      setFillStatus(`Form filled! Extracted ${filledFields} fields from OCR data.`);
-
-      // Clear status after 5 seconds
-      setTimeout(() => setFillStatus(""), 5000);
-
-    } catch (err) {
-      console.error("Fill error:", err);
-      setFillStatus("Failed to fill form with OCR data");
-      setTimeout(() => setFillStatus(""), 3000);
-    }
-  };
 
 const handleChange = (e) => {
   const { id, value } = e.target;
@@ -262,8 +158,7 @@ const handleChange = (e) => {
         ...formData,
         // Add metadata
         submission_timestamp: new Date().toISOString(),
-        ocr_source: jsonFile || "manual_entry",
-        auto_filled: isAutoFilled
+        ocr_source: jsonFile || "manual_entry"
       };
 
       console.log("[SUBMIT] Sending candidate data to backend:", submissionData);
@@ -315,6 +210,10 @@ const handleChange = (e) => {
     passport: <Fingerprint size={16} />,
     cdcNo: <ShieldCheck size={16} />,
     indosNo: <BadgeCheck size={16} />,
+    cocNo: <ShieldCheck size={16} />,
+    countryOfIssue: <Flag size={16} />,
+    grade: <Award size={16} />,
+    idNo: <Fingerprint size={16} />,
     email: <Mail size={16} />,
     phone: <Phone size={16} />,
     companyName: <Building2 size={16} />,
@@ -374,108 +273,8 @@ const handleChange = (e) => {
               </p>
             </motion.div>
 
-            <div className="flex justify-between items-center mb-8">
-              <div className="flex items-center gap-2">
-                <FileText className="w-5 h-5 text-blue-600" />
-                <span className="text-lg font-semibold text-gray-700">Form Details</span>
-              </div>
-
-              {/* Enhanced OCR Controls */}
-              <div className="flex items-center gap-3">
-                {(ocrData || jsonFile) && (
-                  <>
-                    <motion.button
-                      type="button"
-                      onClick={handleFill}
-                      whileHover={{ scale: 1.05, y: -1 }}
-                      whileTap={{ scale: 0.95 }}
-                      className="group relative bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600 text-white px-6 py-3 rounded-full flex items-center gap-2 transition-all duration-300 shadow-lg"
-                    >
-                      <div className="absolute inset-0 bg-gradient-to-r from-green-400 to-emerald-400 rounded-full blur opacity-30 group-hover:opacity-50 transition-opacity duration-300"></div>
-                      <FileText size={16} className="relative z-10" />
-                      <span className="relative z-10 font-medium">Fill from OCR</span>
-                    </motion.button>
-
-                    <motion.button
-                      type="button"
-                      onClick={() => {
-                        console.log("Current OCR Data:", ocrData);
-                        console.log("JSON File:", jsonFile);
-                        alert(`OCR Data available: ${ocrData ? 'Yes' : 'No'}\nJSON File: ${jsonFile || 'None'}`);
-                      }}
-                      whileHover={{ scale: 1.05, y: -1 }}
-                      whileTap={{ scale: 0.95 }}
-                      className="bg-gray-500 hover:bg-gray-600 text-white px-4 py-3 rounded-full text-sm transition-all duration-300 shadow-lg"
-                    >
-                      Debug OCR
-                    </motion.button>
 
 
-                  </>
-                )}
-
-                {fillStatus && (
-                  <motion.div
-                    initial={{ scale: 0.8, opacity: 0 }}
-                    animate={{ scale: 1, opacity: 1 }}
-                    className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium shadow-lg ${
-                      fillStatus.includes('success')
-                        ? 'bg-green-100 text-green-700 border border-green-200'
-                        : fillStatus.includes('Failed')
-                        ? 'bg-red-100 text-red-700 border border-red-200'
-                        : 'bg-blue-100 text-blue-700 border border-blue-200'
-                    }`}>
-                    {fillStatus.includes('success') ? (
-                      <CheckCircle size={16} />
-                    ) : fillStatus.includes('Failed') ? (
-                      <AlertCircle size={16} />
-                    ) : (
-                      <FileText size={16} />
-                    )}
-                    {fillStatus}
-                  </motion.div>
-                )}
-              </div>
-            </div>
-
-            {/* Enhanced OCR Status Indicators */}
-            {(ocrData || jsonFile) && !isAutoFilled && (
-              <motion.div
-                initial={{ y: -10, opacity: 0 }}
-                animate={{ y: 0, opacity: 1 }}
-                transition={{ delay: 0.8, duration: 0.6 }}
-                className="mb-8 p-6 bg-gradient-to-r from-blue-50 to-cyan-50 border border-blue-200 rounded-2xl shadow-lg"
-              >
-                <div className="flex items-center gap-3 text-blue-700 mb-2">
-                  <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center">
-                    <FileText size={16} className="text-white" />
-                  </div>
-                  <span className="font-bold text-lg">OCR Data Available!</span>
-                </div>
-                <p className="text-blue-600 leading-relaxed">
-                  Click "Fill from OCR" to automatically populate the form with extracted document data.
-                </p>
-              </motion.div>
-            )}
-
-            {isAutoFilled && (
-              <motion.div
-                initial={{ y: -10, opacity: 0 }}
-                animate={{ y: 0, opacity: 1 }}
-                transition={{ delay: 0.8, duration: 0.6 }}
-                className="mb-8 p-6 bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-2xl shadow-lg"
-              >
-                <div className="flex items-center gap-3 text-green-700 mb-2">
-                  <div className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center">
-                    <CheckCircle size={16} className="text-white" />
-                  </div>
-                  <span className="font-bold text-lg">Form Auto-filled with OCR Data</span>
-                </div>
-                <p className="text-green-600 leading-relaxed">
-                  Please review and modify the information as needed before submitting.
-                </p>
-              </motion.div>
-            )}
 
             <motion.div
               initial={{ y: 20, opacity: 0 }}
@@ -485,20 +284,24 @@ const handleChange = (e) => {
             >
               {[
                 // OCR-extracted fields (autocomplete enabled)
-                ["lastName", "Last Name", "text", "family-name"],
-                ["firstName", "First Name", "text", "given-name"],
-                ["dob", "Date of Birth", "date", "bday"],
-                ["nationality", "Nationality", "text", "country-name"],
-                ["address", "Permanent Address", "text", "street-address"],
-                ["passport", "Passport No.", "text", "off"],
-                ["cdcNo", "CDC No.", "text", "off"],
-                ["indosNo", "INDOS No.", "text", "off"],
+                ["lastName", "Last Name", "text", "family-name", true],
+                ["firstName", "First Name", "text", "given-name", true],
+                ["dob", "Date of Birth", "date", "bday", true],
+                ["nationality", "Nationality", "text", "country-name", true],
+                ["address", "Permanent Address", "text", "street-address", true],
+                ["passport", "Passport No.", "text", "off", true],
+                ["cdcNo", "CDC No.", "text", "off", false],
+                ["indosNo", "INDOS No.", "text", "off", false],
+                ["cocNo", "Coc No.", "text", "off", false],
+                ["countryOfIssue", "Country Of Issue", "text", "off", false],
+                ["grade", "Grade", "text", "off", false],
+                ["idNo", "ID No.", "text", "off", false],
                 // Manual entry fields (autocomplete disabled)
-                ["email", "Email ID", "email", "off"],
-                ["phone", "Phone No.", "tel", "off"],
-                ["companyName", "Company Joining Name", "text", "off"],
-                ["rollNo", "ROLL NO", "text", "off"],
-              ].map(([id, label, type = "text", autocomplete = "off"], index) => (
+                ["email", "Email ID", "email", "off", false],
+                ["phone", "Phone No.", "tel", "off", false],
+                ["companyName", "Company Joining Name", "text", "off", false],
+                ["rollNo", "ROLL NO", "text", "off", false],
+              ].map(([id, label, type = "text", autocomplete = "off", required = false], index) => (
                 <motion.div
                   key={id}
                   initial={{ x: index % 2 === 0 ? -20 : 20, opacity: 0 }}
@@ -526,7 +329,7 @@ const handleChange = (e) => {
                       value={formData[id]}
                       onChange={handleChange}
                       autoComplete={autocomplete}
-                      required
+                      required={required}
                       className="w-full text-sm bg-white border-2 border-gray-200 rounded-xl px-4 py-3 focus:outline-none focus:border-blue-500 transition-colors duration-200 hover:border-blue-300 shadow-sm"
                       placeholder={`Enter ${label.toLowerCase()}`}
 
@@ -603,7 +406,6 @@ const handleChange = (e) => {
                     value={formData.personInCharge}
                     onChange={handleChange}
                     autoComplete="off"
-                    required
                     className="w-full text-sm bg-white border-2 border-gray-200 rounded-xl px-4 py-3 focus:outline-none focus:border-purple-500 transition-colors duration-200 hover:border-purple-300 shadow-sm appearance-none"
                   >
                     <option value="">Select Person</option>
@@ -637,7 +439,6 @@ const handleChange = (e) => {
                     value={formData.paymentStatus}
                     onChange={handleChange}
                     autoComplete="off"
-                    required
                     className="w-full text-sm bg-white border-2 border-gray-200 rounded-xl px-4 py-3 focus:outline-none focus:border-orange-500 transition-colors duration-200 hover:border-orange-300 shadow-sm appearance-none"
                   >
                     <option value="">Select Status</option>
@@ -698,16 +499,6 @@ const handleChange = (e) => {
                 <span className="relative z-10">Save & Continue</span>
               </motion.button>
 
-              <motion.button
-                type="button"
-                onClick={handleFill}
-                whileHover={{ scale: 1.05, y: -2 }}
-                whileTap={{ scale: 0.95 }}
-                className="group relative bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 text-white px-8 py-4 rounded-full font-bold text-lg shadow-2xl transition-all duration-300"
-              >
-                <div className="absolute inset-0 bg-gradient-to-r from-blue-400 to-purple-400 rounded-full blur opacity-30 group-hover:opacity-50 transition-opacity duration-300"></div>
-                <span className="relative z-10">Auto Fill</span>
-              </motion.button>
             </motion.div>
           </motion.form>
         </div>

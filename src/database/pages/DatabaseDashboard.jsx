@@ -10,7 +10,8 @@ import {
   ArrowLeft,
   Users,
   Settings,
-  Shield
+  Shield,
+  FileText
 } from 'lucide-react';
 import { DashboardLayout, UnifiedCard, BackButton, StatusBadge } from '../../shared/components/DesignSystem';
 
@@ -18,6 +19,14 @@ function DatabaseDashboard() {
   const navigate = useNavigate();
 
   const features = [
+    {
+      icon: FileText,
+      title: "Legacy Certificates",
+      description: "Manage and track legacy certificate records for candidates",
+      gradient: "from-green-500 to-teal-500",
+      status: "active",
+      path: "/legacy-certificates"
+    },
     {
       icon: Users,
       title: "Candidate Records",
@@ -83,27 +92,41 @@ function DatabaseDashboard() {
       {/* Features Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 max-w-7xl w-full mb-16">
         {features.map((feature, index) => (
-          <UnifiedCard key={index} gradient={feature.gradient}>
-            <div className="flex flex-col items-center justify-center gap-4 h-full">
-              <div className={`w-16 h-16 bg-gradient-to-r ${feature.gradient} rounded-full flex items-center justify-center shadow-lg`}>
-                <feature.icon className="w-8 h-8 text-white" />
+          <div
+            key={index}
+            onClick={() => feature.status === 'active' && feature.path && navigate(feature.path)}
+            className={feature.status === 'active' && feature.path ? 'cursor-pointer' : ''}
+          >
+            <UnifiedCard gradient={feature.gradient}>
+              <div className="flex flex-col items-center justify-center gap-4 h-full">
+                <div className={`w-16 h-16 bg-gradient-to-r ${feature.gradient} rounded-full flex items-center justify-center shadow-lg`}>
+                  <feature.icon className="w-8 h-8 text-white" />
+                </div>
+                <h3 className="text-xl font-bold text-gray-800 leading-tight">
+                  {feature.title}
+                </h3>
+                <p className="text-sm text-gray-600 opacity-80 leading-relaxed">
+                  {feature.description}
+                </p>
+                <div className="mt-2">
+                  {feature.status === 'active' ? (
+                    <StatusBadge status="success">
+                      <CheckCircle className="w-4 h-4 mr-1" />
+                      Active
+                    </StatusBadge>
+                  ) : (
+                    <StatusBadge status="info">
+                      <Shield className="w-4 h-4 mr-1" />
+                      Coming Soon
+                    </StatusBadge>
+                  )}
+                </div>
               </div>
-              <h3 className="text-xl font-bold text-gray-800 leading-tight">
-                {feature.title}
-              </h3>
-              <p className="text-sm text-gray-600 opacity-80 leading-relaxed">
-                {feature.description}
-              </p>
-              <div className="mt-2">
-                <StatusBadge status="info">
-                  <Shield className="w-4 h-4 mr-1" />
-                  Coming Soon
-                </StatusBadge>
-              </div>
-            </div>
-          </UnifiedCard>
+            </UnifiedCard>
+          </div>
         ))}
       </div>
+
 
       {/* Back to Home Button */}
       <div className="mt-8">

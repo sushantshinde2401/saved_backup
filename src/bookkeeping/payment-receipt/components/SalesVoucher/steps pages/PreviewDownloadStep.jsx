@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Download, Eye, FileText, X, Printer } from 'lucide-react';
+import { Eye, FileText } from 'lucide-react';
 
 function PreviewDownloadStep({ formData }) {
   const navigate = useNavigate();
@@ -15,9 +15,29 @@ function PreviewDownloadStep({ formData }) {
         const response = await fetch('http://localhost:5000/certificate/get-certificate-selections-for-receipt');
         if (response.ok) {
           const result = await response.json();
-          const allCertificates = result.data || [];
+          const aggregatedCertificates = result.data || [];
+          console.log('[PREVIEW] Aggregated certificates from API:', aggregatedCertificates);
+
+          // Flatten the aggregated data to get individual certificates
+          const allCertificates = [];
+          aggregatedCertificates.forEach(candidateGroup => {
+            if (candidateGroup.certificates) {
+              candidateGroup.certificates.forEach(cert => {
+                allCertificates.push({
+                  ...cert,
+                  candidate_name: candidateGroup.candidate_name,
+                  candidate_id: candidateGroup.candidate_id
+                });
+              });
+            }
+          });
+
+          console.log('[PREVIEW] Flattened certificates:', allCertificates);
+          console.log('[PREVIEW] Selected course IDs:', formData.selectedCourses);
+
           resolvedCourses = formData.selectedCourses.map(id => {
             const cert = allCertificates.find(c => c.id === id);
+            console.log(`[PREVIEW] Looking for cert id ${id}, found:`, cert);
             if (cert) {
               return {
                 id: cert.id,
@@ -29,6 +49,8 @@ function PreviewDownloadStep({ formData }) {
             }
             return null;
           }).filter(Boolean);
+
+          console.log('[PREVIEW] Resolved courses:', resolvedCourses);
         }
       } catch (error) {
         console.warn('Failed to resolve selected courses:', error);
@@ -76,7 +98,7 @@ function PreviewDownloadStep({ formData }) {
       paymentType: formData.paymentType || '',
       deliveryNote: formData.deliveryNote || '',
       dispatchDocNo: formData.dispatchDocNo || '',
-      deliveryNoteDate: formData.deliveryNoteDate || '',
+      deliveryNoteDate: formData.deliveryNoteDate || formData.dateReceived || '',
       dispatchThrough: formData.dispatchThrough || '',
       destination: formData.destination || '',
       termsOfDelivery: formData.termsOfDelivery || '',
@@ -108,19 +130,14 @@ function PreviewDownloadStep({ formData }) {
     });
   };
 
-  const handleDownload = () => {
-    if (invoiceRef.current) {
-      window.print();
-    }
-  };
 
 
   return (
     <div className="space-y-8">
       <div className="text-center mb-8">
         <FileText className="w-16 h-16 text-blue-600 mx-auto mb-4" />
-        <h3 className="text-2xl font-bold text-gray-800 mb-2">Preview & Download Invoice</h3>
-        <p className="text-gray-600">Review your invoice and download as PDF</p>
+        <h3 className="text-2xl font-bold text-gray-800 mb-2">Preview Invoice</h3>
+        <p className="text-gray-600">Review your invoice</p>
       </div>
 
       {/* Invoice Summary */}
@@ -159,35 +176,19 @@ function PreviewDownloadStep({ formData }) {
       </div>
 
       {/* Action Buttons - Prominently Displayed */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+      <div className="grid grid-cols-1 gap-8">
         {/* Preview PDF */}
-        <div className="bg-white border-2 border-blue-200 rounded-xl p-8 shadow-lg hover:shadow-xl transition-shadow">
+        <div className="bg-white border-2 border-blue-200 rounded-xl p-8 shadow-lg hover:shadow-xl transition-shadow max-w-md mx-auto">
           <div className="text-center">
             <Eye className="w-16 h-16 text-blue-600 mx-auto mb-6" />
             <h4 className="text-xl font-bold text-gray-800 mb-3">Preview Invoice</h4>
-            <p className="text-gray-600 text-base mb-6">View the complete invoice before downloading</p>
+            <p className="text-gray-600 text-base mb-6">View the complete invoice</p>
             <button
               onClick={handlePreview}
               className="w-full bg-blue-600 hover:bg-blue-700 text-white py-4 px-6 rounded-xl transition-colors font-semibold text-lg flex items-center justify-center gap-3 shadow-md hover:shadow-lg"
             >
               <Eye className="w-6 h-6" />
               Preview Invoice
-            </button>
-          </div>
-        </div>
-
-        {/* Download PDF */}
-        <div className="bg-white border-2 border-green-200 rounded-xl p-8 shadow-lg hover:shadow-xl transition-shadow">
-          <div className="text-center">
-            <Download className="w-16 h-16 text-green-600 mx-auto mb-6" />
-            <h4 className="text-xl font-bold text-gray-800 mb-3">Download PDF</h4>
-            <p className="text-gray-600 text-base mb-6">Download the invoice as a PDF file</p>
-            <button
-              onClick={handleDownload}
-              className="w-full bg-green-600 hover:bg-green-700 text-white py-4 px-6 rounded-xl transition-colors font-semibold text-lg flex items-center justify-center gap-3 shadow-md hover:shadow-lg"
-            >
-              <Download className="w-6 h-6" />
-              Download PDF
             </button>
           </div>
         </div>

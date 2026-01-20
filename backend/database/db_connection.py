@@ -432,43 +432,120 @@ def save_candidate_with_files(candidate_name, candidate_folder, candidate_folder
 
     except Exception as e:
         logger.error(f"[DB] ❌ Failed to save candidate: {e}")
-def insert_image_blob(candidate_name, session_id, file_name, file_type, file_data, mime_type, file_size):
+def insert_image_blob(candidate_id, file_type, file_data, mime_type, file_size, file_name=None, image_type=None, candidate_name=None):
     """
-    Insert an image file as BLOB data into candidate_uploads table
+    Insert an image file into candidate_uploads table with file storage
 
     Args:
-        candidate_name (str): Name of the candidate/session
-        session_id (str): Session ID
-        file_name (str): Original filename
+        candidate_id (int): Foreign key reference to candidates table
         file_type (str): File extension
         file_data (bytes): Binary file data
         mime_type (str): MIME type
         file_size (int): File size in bytes
+        file_name (str, optional): Original filename
+        image_type (str, optional): Type of image (photo, signature, etc.)
+        candidate_name (str, optional): Candidate name for backward compatibility
 
     Returns:
         int: ID of the inserted record
     """
+    import os
+    from config import Config
+
+    # Mapping from image_type to fixed filename
+    image_type_to_filename = {
+        'photo': 'photo.png',
+        'signature': 'signature.png',
+        'passport_front': 'passport_front.jpg',
+        'passport_back': 'passport_back.jpg',
+        'cdc': 'cdc.jpg',
+        'coc': 'coc.jpg',
+        'payment': 'payment.jpg',
+        'marksheet': 'marksheet.pdf'
+    }
+
+    # Determine fixed filename based on image_type
+    fixed_filename = image_type_to_filename.get(image_type, f"{image_type or 'unknown'}.{file_type}")
+
+    # Create candidate folder path
+    candidate_folder = f"CANDIDATE_{candidate_id}"
+    candidate_dir = os.path.join(Config.BASE_STORAGE_PATH, candidate_folder)
+
+    # Ensure candidate directory exists
+    try:
+        os.makedirs(candidate_dir, exist_ok=True)
+    except Exception as e:
+        logger.error(f"[FILE] ❌ Failed to create candidate directory {candidate_dir}: {e}")
+        raise
+
+    # Full file path
+    file_path = os.path.join(candidate_dir, fixed_filename)
+
+    # Save file to disk
+    try:
+        with open(file_path, 'wb') as f:
+            f.write(file_data)
+        logger.info(f"[FILE] ✅ Saved image to {file_path}")
+    except Exception as e:
+        logger.error(f"[FILE] ❌ Failed to save image to {file_path}: {e}")
+        raise
+
+    # Relative path for database storage
+    relative_path = f"{candidate_folder}/{fixed_filename}"
+
     query = """
         INSERT INTO candidate_uploads (
-            candidate_name, session_id, file_name, file_type, file_data,
-            mime_type, file_size, upload_time
-        ) VALUES (%s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+            candidate_id, candidate_name, file_name, file_type, file_path,
+            mime_type, file_size, image_type, upload_time
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
         RETURNING id
     """
 
     try:
         result = execute_query(query, (
-            candidate_name, session_id, file_name, file_type, file_data,
-            mime_type, file_size
+            candidate_id, candidate_name, file_name, file_type, relative_path,
+            mime_type, file_size, image_type
         ))
         if result:
             record_id = result[0]['id']
-            logger.info(f"[DB] ✅ Inserted image BLOB record ID: {record_id} for {file_name} ({file_size} bytes)")
+            logger.info(f"[DB] ✅ Inserted image file record ID: {record_id} for candidate {candidate_id} ({file_size} bytes) -> {relative_path}")
             return record_id
         else:
             raise Exception("No ID returned from insert")
     except Exception as e:
-        logger.error(f"[DB] ❌ Failed to insert image BLOB: {e}")
+        logger.error(f"[DB] ❌ Failed to insert image file record: {e}")
+        # Clean up file if DB insert fails
+        try:
+            if os.path.exists(file_path):
+                os.remove(file_path)
+                logger.info(f"[FILE] 🧹 Cleaned up file {file_path} after DB failure")
+        except Exception as cleanup_e:
+            logger.error(f"[FILE] ❌ Failed to clean up {file_path}: {cleanup_e}")
+        raise
+
+def get_candidate_images(candidate_id):
+    """
+    Retrieve all images for a specific candidate
+
+    Args:
+        candidate_id (int): Candidate ID to fetch images for
+
+    Returns:
+        list: List of image records with file_type, file_path, mime_type
+    """
+    query = """
+        SELECT file_type, file_path, mime_type, file_name, image_type, upload_time
+        FROM candidate_uploads
+        WHERE candidate_id = %s AND file_path IS NOT NULL AND file_path != ''
+        ORDER BY upload_time DESC
+    """
+
+    try:
+        results = execute_query(query, (candidate_id,))
+        logger.info(f"[DB] Retrieved {len(results)} images for candidate {candidate_id}")
+        return results
+    except Exception as e:
+        logger.error(f"[DB] Failed to retrieve candidate images for candidate {candidate_id}: {e}")
         raise
         raise
 def insert_receipt_invoice_data(receipt_data):
