@@ -3,7 +3,6 @@ import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 
 // Operations Section
 const HomePage = React.lazy(() => import('./operations/pages/HomePage'));
-const AdminPanel = React.lazy(() => import('./operations/pages/AdminPanel'));
 const UploadDocx = React.lazy(() => import('./operations/pages/UploadDocx'));
 const CandidateDetail = React.lazy(() => import('./operations/pages/CandidateDetail'));
 const CourseSelection = React.lazy(() => import('./operations/pages/CourseSelection'));
@@ -34,6 +33,7 @@ const LedgerDashboard = React.lazy(() => import('./bookkeeping/ledger-dashboard/
 
 // Database Section
 const DatabaseDashboard = React.lazy(() => import('./database/pages/DatabaseDashboard'));
+const CandidateRecords = React.lazy(() => import('./database/pages/CandidateRecords'));
 const LegacyCertificates = React.lazy(() => import('./database/pages/LegacyCertificates'));
 
 function App() {
@@ -45,7 +45,6 @@ function App() {
           <Route path="/" element={<HomePage />} />
 
           {/* Operations Section */}
-          <Route path="/admin-panel" element={<AdminPanel />} />
           <Route path="/upload-docx" element={<UploadDocx />} />
           <Route path="/candidate-details" element={<CandidateDetail />} />
           <Route path="/course-selection" element={<CourseSelection />} />
@@ -75,6 +74,7 @@ function App() {
 
           {/* Database Section */}
           <Route path="/database" element={<DatabaseDashboard />} />
+          <Route path="/candidate-records" element={<CandidateRecords />} />
           <Route path="/legacy-certificates" element={<LegacyCertificates />} />
         </Routes>
       </Suspense>

@@ -93,7 +93,7 @@ function LegacyCertificates() {
         expiry_date: formatLocalDate(data.expiry_date)
       };
 
-      const response = await axios.post('http://127.0.0.1:5000/legacy-certificates', payload);
+      const response = await axios.post('http://127.0.0.1:5000/misc/legacy-certificates', payload);
 
       if (response.data.status === 'inserted') {
         toast.success('New certificate added successfully.');

@@ -518,6 +518,193 @@ def add_legacy_certificate():
         return jsonify({"status": "error", "message": f"Database error: {str(e)}"}), 500
 
 
+@misc_bp.route('/legacy-certificates/search', methods=['GET'])
+def search_legacy_certificates():
+    """Search legacy certificates by candidate name, passport, or certificate number"""
+    try:
+        query = request.args.get('q', '').strip()
+        if not query:
+            return jsonify({"status": "error", "message": "Search query is required"}), 400
+
+        # Import execute_query
+        from database import execute_query
+
+        # Search query with ILIKE for case-insensitive search
+        search_query = """
+            SELECT id, candidate_name, passport, certificate_name, certificate_number,
+                   start_date, end_date, issue_date, expiry_date, created_at, updated_at
+            FROM legacy_certificates
+            WHERE candidate_name ILIKE %s
+               OR passport ILIKE %s
+               OR certificate_number ILIKE %s
+            ORDER BY updated_at DESC
+            LIMIT 100
+        """
+        search_pattern = f'%{query}%'
+        results = execute_query(search_query, (search_pattern, search_pattern, search_pattern), fetch=True)
+
+        # Format dates for JSON response
+        formatted_results = []
+        for row in results:
+            formatted_results.append({
+                'id': row['id'],
+                'candidate_name': row['candidate_name'],
+                'passport': row['passport'],
+                'certificate_name': row['certificate_name'],
+                'certificate_number': row['certificate_number'],
+                'start_date': row['start_date'].isoformat() if row['start_date'] else None,
+                'end_date': row['end_date'].isoformat() if row['end_date'] else None,
+                'issue_date': row['issue_date'].isoformat() if row['issue_date'] else None,
+                'expiry_date': row['expiry_date'].isoformat() if row['expiry_date'] else None,
+                'created_at': row['created_at'].isoformat() if row['created_at'] else None,
+                'updated_at': row['updated_at'].isoformat() if row['updated_at'] else None
+            })
+
+        return jsonify({
+            "status": "success",
+            "data": formatted_results,
+            "count": len(formatted_results)
+        }), 200
+
+    except Exception as e:
+        return jsonify({"status": "error", "message": f"Database error: {str(e)}"}), 500
+
+
+@misc_bp.route('/legacy-certificates/<int:certificate_id>', methods=['GET'])
+def get_legacy_certificate(certificate_id):
+    """Get a specific legacy certificate by ID"""
+    try:
+        from database import execute_query
+
+        query = """
+            SELECT id, candidate_name, passport, certificate_name, certificate_number,
+                   start_date, end_date, issue_date, expiry_date, created_at, updated_at
+            FROM legacy_certificates
+            WHERE id = %s
+        """
+        result = execute_query(query, (certificate_id,), fetch=True)
+
+        if not result:
+            return jsonify({"status": "error", "message": "Certificate not found"}), 404
+
+        row = result[0]
+        certificate_data = {
+            'id': row['id'],
+            'candidate_name': row['candidate_name'],
+            'passport': row['passport'],
+            'certificate_name': row['certificate_name'],
+            'certificate_number': row['certificate_number'],
+            'start_date': row['start_date'].isoformat() if row['start_date'] else None,
+            'end_date': row['end_date'].isoformat() if row['end_date'] else None,
+            'issue_date': row['issue_date'].isoformat() if row['issue_date'] else None,
+            'expiry_date': row['expiry_date'].isoformat() if row['expiry_date'] else None,
+            'created_at': row['created_at'].isoformat() if row['created_at'] else None,
+            'updated_at': row['updated_at'].isoformat() if row['updated_at'] else None
+        }
+
+        return jsonify({"status": "success", "data": certificate_data}), 200
+
+    except Exception as e:
+        return jsonify({"status": "error", "message": f"Database error: {str(e)}"}), 500
+
+
+@misc_bp.route('/legacy-certificates/<int:certificate_id>', methods=['PUT'])
+def update_legacy_certificate(certificate_id):
+    """Update a legacy certificate"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({"status": "error", "message": "No data provided"}), 400
+
+        # Extract fields
+        candidate_name = data.get('candidate_name', '').strip()
+        passport = data.get('passport', '').strip()
+        certificate_name = data.get('certificate_name', '').strip()
+        certificate_number = data.get('certificate_number', '').strip()
+        start_date = data.get('start_date', '').strip()
+        end_date = data.get('end_date', '').strip()
+        issue_date = data.get('issue_date', '').strip()
+        expiry_date = data.get('expiry_date', '').strip()
+
+        # Validate required fields
+        if not certificate_number:
+            return jsonify({"status": "error", "message": "certificate_number is required"}), 400
+        if not candidate_name:
+            return jsonify({"status": "error", "message": "candidate_name is required"}), 400
+        if not passport:
+            return jsonify({"status": "error", "message": "passport is required"}), 400
+
+        # Validate dates
+        try:
+            from datetime import datetime
+            start_date_obj = datetime.fromisoformat(start_date) if start_date else None
+            end_date_obj = datetime.fromisoformat(end_date) if end_date else None
+            issue_date_obj = datetime.fromisoformat(issue_date) if issue_date else None
+            expiry_date_obj = datetime.fromisoformat(expiry_date) if expiry_date else None
+
+            if not all([start_date_obj, end_date_obj, issue_date_obj, expiry_date_obj]):
+                return jsonify({"status": "error", "message": "All date fields are required"}), 400
+
+            if start_date_obj > end_date_obj:
+                return jsonify({"status": "error", "message": "start_date must be before or equal to end_date"}), 400
+            if issue_date_obj > expiry_date_obj:
+                return jsonify({"status": "error", "message": "issue_date must be before or equal to expiry_date"}), 400
+
+        except ValueError:
+            return jsonify({"status": "error", "message": "Invalid date format"}), 400
+
+        # Import execute_query
+        from database import execute_query
+
+        # Check if record exists
+        check_query = "SELECT id FROM legacy_certificates WHERE id = %s"
+        existing = execute_query(check_query, (certificate_id,), fetch=True)
+
+        if not existing:
+            return jsonify({"status": "error", "message": "Certificate not found"}), 404
+
+        # Update record
+        update_query = """
+            UPDATE legacy_certificates
+            SET candidate_name = %s, passport = %s, certificate_name = %s,
+                certificate_number = %s, start_date = %s, end_date = %s,
+                issue_date = %s, expiry_date = %s, updated_at = CURRENT_TIMESTAMP
+            WHERE id = %s
+        """
+        execute_query(update_query, (
+            candidate_name, passport, certificate_name, certificate_number,
+            start_date, end_date, issue_date, expiry_date, certificate_id
+        ), fetch=False)
+
+        return jsonify({"status": "success", "message": "Certificate updated successfully"}), 200
+
+    except Exception as e:
+        return jsonify({"status": "error", "message": f"Database error: {str(e)}"}), 500
+
+
+@misc_bp.route('/legacy-certificates/<int:certificate_id>', methods=['DELETE'])
+def delete_legacy_certificate(certificate_id):
+    """Delete a legacy certificate"""
+    try:
+        from database import execute_query
+
+        # Check if record exists
+        check_query = "SELECT id FROM legacy_certificates WHERE id = %s"
+        existing = execute_query(check_query, (certificate_id,), fetch=True)
+
+        if not existing:
+            return jsonify({"status": "error", "message": "Certificate not found"}), 404
+
+        # Delete record
+        delete_query = "DELETE FROM legacy_certificates WHERE id = %s"
+        execute_query(delete_query, (certificate_id,), fetch=False)
+
+        return jsonify({"status": "success", "message": "Certificate deleted successfully"}), 200
+
+    except Exception as e:
+        return jsonify({"status": "error", "message": f"Database error: {str(e)}"}), 500
+
+
 @misc_bp.route('/get-customers', methods=['GET'])
 def get_customers():
     """Get customers for payment entries"""

@@ -744,12 +744,24 @@ def upload_to_ledger():
             except Exception as idx_e:
                 logger.warning(f"[LEDGER] Could not create index: {idx_e}")
 
+        # Auto-populate certificate_id based on voucher_no
+        certificate_id = None
+        if data.get('voucher_no'):
+            receipt_query = """
+                SELECT certificate_id FROM ReceiptInvoiceData
+                WHERE invoice_no = %s AND certificate_id IS NOT NULL
+                LIMIT 1
+            """
+            receipt_result = execute_query(receipt_query, (data['voucher_no'],), fetch=True)
+            if receipt_result:
+                certificate_id = receipt_result[0]['certificate_id']
+
         # Insert into ClientLedger table
         query = """
             INSERT INTO ClientLedger (
                 company_name, date, particulars, voucher_no, voucher_type,
-                debit, credit, entry_type
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                debit, credit, entry_type, certificate_id
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
         """
 
@@ -761,7 +773,8 @@ def upload_to_ledger():
             data.get('voucher_type', 'Sales'),
             data['debit'],
             data['credit'],
-            data.get('entry_type', 'Manual')
+            data.get('entry_type', 'Manual'),
+            certificate_id
         )
 
         result = execute_query(query, params)
@@ -3600,11 +3613,22 @@ def save_invoice_image_helper(data):
         relative_path = f"{invoice_folder}/{fixed_filename}"
         file_size = len(image_binary)
 
+        # Auto-populate certificate_id based on invoice_no
+        certificate_id = None
+        receipt_query = """
+            SELECT certificate_id FROM ReceiptInvoiceData
+            WHERE invoice_no = %s AND certificate_id IS NOT NULL
+            LIMIT 1
+        """
+        receipt_result = execute_query(receipt_query, (data['invoice_no'],), fetch=True)
+        if receipt_result:
+            certificate_id = receipt_result[0]['certificate_id']
+
         # Insert/update into invoice_images table (without BLOB data)
         query = """
             INSERT INTO invoice_images (
-                invoice_no, file_path, image_type, file_name, file_size, voucher_type
-            ) VALUES (%s, %s, %s, %s, %s, %s)
+                invoice_no, file_path, image_type, file_name, file_size, voucher_type, certificate_id
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (invoice_no)
             DO UPDATE SET
                 file_path = EXCLUDED.file_path,
@@ -3612,6 +3636,7 @@ def save_invoice_image_helper(data):
                 file_name = EXCLUDED.file_name,
                 file_size = EXCLUDED.file_size,
                 voucher_type = EXCLUDED.voucher_type,
+                certificate_id = EXCLUDED.certificate_id,
                 generated_at = CURRENT_TIMESTAMP
             RETURNING id
         """
@@ -3622,7 +3647,8 @@ def save_invoice_image_helper(data):
             data.get('image_type', 'pdf'),
             fixed_filename,
             file_size,
-            voucher_type
+            voucher_type,
+            certificate_id
         ))
 
         if result:

@@ -653,13 +653,9 @@ def get_combined_candidate_data(candidate_name):
         """
         uploads_data = execute_query(uploads_query, (candidate_name,))
 
-        # 3. Get certificate selections with images
+        # 3. Get certificate selections with all columns
         cert_query = """
-            SELECT
-                cs.id, cs.candidate_id, cs.candidate_name, cs.client_name,
-                cs.certificate_name, cs.creation_date,
-                CASE WHEN cs.verification_image IS NOT NULL THEN true ELSE false END as has_verification_image,
-                CASE WHEN cs.certificate_image IS NOT NULL THEN true ELSE false END as has_certificate_image
+            SELECT cs.*
             FROM certificate_selections cs
             WHERE cs.candidate_name = %s
             ORDER BY cs.creation_date DESC
@@ -1013,5 +1009,42 @@ def get_candidate_uploads():
         return jsonify({
             "error": str(e),
             "message": "Failed to retrieve candidate uploads",
+            "status": "error"
+        }), 500 
+@candidate_bp.route('/delete-candidate/<int:candidate_id>', methods=['DELETE'])
+def delete_candidate(candidate_id):
+    """Delete a candidate by ID"""
+    try:
+        # First check if candidate exists
+        check_query = "SELECT id FROM candidates WHERE id = %s"
+        check_result = execute_query(check_query, (candidate_id,))
+
+        if not check_result:
+            return jsonify({
+                "error": "Candidate not found",
+                "message": f"No candidate found with ID {candidate_id}",
+                "status": "error"
+            }), 404
+
+        # Delete candidate uploads first (due to foreign key constraint)
+        delete_uploads_query = "DELETE FROM candidate_uploads WHERE candidate_id = %s"
+        execute_query(delete_uploads_query, (candidate_id,), fetch=False)
+
+        # Delete the candidate
+        delete_query = "DELETE FROM candidates WHERE id = %s"
+        execute_query(delete_query, (candidate_id,), fetch=False)
+
+        print(f"[DELETE] Successfully deleted candidate ID {candidate_id}")
+
+        return jsonify({
+            "status": "success",
+            "message": f"Successfully deleted candidate ID {candidate_id}"
+        }), 200
+
+    except Exception as e:
+        print(f"[ERROR] Failed to delete candidate {candidate_id}: {e}")
+        return jsonify({
+            "error": str(e),
+            "message": "Failed to delete candidate",
             "status": "error"
         }), 500

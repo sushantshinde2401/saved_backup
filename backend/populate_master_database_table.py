@@ -23,10 +23,11 @@ def create_master_table():
     """Create the Master_Database_Table_A table if it doesn't exist."""
     create_table_query = """
     CREATE TABLE IF NOT EXISTS Master_Database_Table_A (
+        id SERIAL PRIMARY KEY,
         creation_date DATE,
         client_name VARCHAR(255),
         client_id VARCHAR(50),
-        candidate_id INT PRIMARY KEY,
+        candidate_id INT NOT NULL,
         candidate_name VARCHAR(255),
         nationality VARCHAR(100),
         passport VARCHAR(50),
@@ -39,7 +40,8 @@ def create_master_table():
         delivery_note VARCHAR(100),
         delivery_date DATE,
         terms_of_delivery VARCHAR(100),
-        invoice_no VARCHAR(100)
+        invoice_no VARCHAR(100),
+        UNIQUE(candidate_id, certificate_name, invoice_no)
     );
     """
 

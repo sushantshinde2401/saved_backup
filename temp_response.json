@@ -1,0 +1,131 @@
+{
+  "data": {
+    "candidate_info": {
+      "candidate_name": "SUJIT SHEWALE_M846644",
+      "created_at": "Mon, 12 Jan 2026 05:36:56 GMT",
+      "id": 6,
+      "json_data": {
+        "address": "VILLAGE DHUN DHAIWALA,PO CHOHLA SAHIB TEHSIL AND DISTRICT,TARN TARAN, PIN: 143401, PUNJAB, INDIA.",
+        "cdcNo": "CDC9763",
+        "clientName": "ZAX MARINE SERVICES",
+        "cocNo": "COC0763",
+        "companyName": "ABC MARITIME TRAINING",
+        "countryOfIssue": "INDIA",
+        "dob": "2000-08-12",
+        "email": "ASHISHJAISWAL0701@GMAIL.COM",
+        "firstName": "SUJIT",
+        "grade": "ORDINARY SEAMAN",
+        "idNo": "HGB03655E3",
+        "indosNo": "IN09373",
+        "lastName": "SHEWALE",
+        "nationality": "INDIA",
+        "ocr_source": "manual_entry",
+        "passport": "M846644",
+        "paymentProof": null,
+        "paymentStatus": "CREDIT",
+        "personInCharge": "SHUBHAM",
+        "phone": "06394860044",
+        "rollNo": "215",
+        "session_id": "bc3a73cf-821c-4bfa-b12c-b457911767fe",
+        "submission_timestamp": "2026-01-12T05:37:02.307Z"
+      },
+      "last_updated": "Mon, 12 Jan 2026 05:36:56 GMT",
+      "session_id": "bc3a73cf-821c-4bfa-b12c-b457911767fe"
+    },
+    "candidate_name": "SUJIT SHEWALE_M846644",
+    "certificates": [
+      {
+        "candidate_id": 6,
+        "candidate_name": "SUJIT SHEWALE_M846644",
+        "certificate_image": "uploads/certificates/CERTIFICATE_021901001260031_15a0a650.pdf",
+        "certificate_name": "COMPRESSED AIR EMERGENCY BREATHING SYSTEM (CA-EBS) INITIAL DEPLOYMENT TRAINING",
+        "certificate_number": "021901001260031",
+        "client_name": "ZAX MARINE SERVICES",
+        "creation_date": "Mon, 12 Jan 2026 09:00:21 GMT",
+        "end_date": "Sat, 10 Jan 2026 00:00:00 GMT",
+        "expiry_date": "Thu, 09 Jan 2031 00:00:00 GMT",
+        "id": 21,
+        "issue_date": "Sat, 10 Jan 2026 00:00:00 GMT",
+        "serial_number": "0031",
+        "start_date": "Mon, 05 Jan 2026 00:00:00 GMT",
+        "status": "done",
+        "verification_image": "uploads/certificates/VERIFICATION_021901001260031_15a0a650.pdf"
+      }
+    ],
+    "data_sources": {
+      "certificate_records": 1,
+      "has_candidate_info": true,
+      "master_table_records": 1,
+      "upload_files": 4
+    },
+    "master_data": [
+      {
+        "candidate_id": 6,
+        "candidate_name": "SUJIT SHEWALE_M846644",
+        "cdcno": "CDC9763",
+        "certificate_id": "COM",
+        "certificate_name": "COMPRESSED AIR EMERGENCY BREATHING SYSTEM (CA-EBS) INITIAL DEPLOYMENT TRAINING",
+        "client_id": "ZAX",
+        "client_name": "ZAX MARINE SERVICES",
+        "companyname": "ABC MARITIME TRAINING",
+        "creation_date": "Mon, 12 Jan 2026 00:00:00 GMT",
+        "delivery_date": "Wed, 07 Jan 2026 00:00:00 GMT",
+        "delivery_note": "Note C",
+        "indosno": "IN09373",
+        "invoice_no": "AMA/FY-25-26/0001",
+        "nationality": "INDIA",
+        "passport": "M846644",
+        "person_in_charge": "SHUBHAM",
+        "terms_of_delivery": "bhg jhyt h"
+      }
+    ],
+    "uploads": [
+      {
+        "candidate_id": 6,
+        "candidate_name": "SUJIT SHEWALE_M846644",
+        "file_name": "signature.png",
+        "file_size": 18194,
+        "file_type": "png",
+        "id": 24,
+        "image_type": "signature",
+        "mime_type": "image/png",
+        "upload_time": "Mon, 12 Jan 2026 05:36:57 GMT"
+      },
+      {
+        "candidate_id": 6,
+        "candidate_name": "SUJIT SHEWALE_M846644",
+        "file_name": "photo.png",
+        "file_size": 19107,
+        "file_type": "png",
+        "id": 23,
+        "image_type": "photo",
+        "mime_type": "image/png",
+        "upload_time": "Mon, 12 Jan 2026 05:36:57 GMT"
+      },
+      {
+        "candidate_id": 6,
+        "candidate_name": "SUJIT SHEWALE_M846644",
+        "file_name": "passport_front_img.png",
+        "file_size": 293956,
+        "file_type": "png",
+        "id": 22,
+        "image_type": "passport_front",
+        "mime_type": "image/png",
+        "upload_time": "Mon, 12 Jan 2026 05:36:57 GMT"
+      },
+      {
+        "candidate_id": 6,
+        "candidate_name": "SUJIT SHEWALE_M846644",
+        "file_name": "passport_back_img.png",
+        "file_size": 171215,
+        "file_type": "png",
+        "id": 21,
+        "image_type": "passport_back",
+        "mime_type": "image/png",
+        "upload_time": "Mon, 12 Jan 2026 05:36:57 GMT"
+      }
+    ]
+  },
+  "message": "Retrieved combined data for candidate 'SUJIT SHEWALE_M846644'",
+  "status": "success"
+}

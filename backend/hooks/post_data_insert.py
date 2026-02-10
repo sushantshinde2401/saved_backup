@@ -116,7 +116,7 @@ def _insert_single_master_entry(candidate_id, specific_certificate_name=None, in
                 COALESCE(c.json_data->>'cdcNo', 'N/A') AS cdcNo,
                 COALESCE(c.json_data->>'indosNo', 'N/A') AS indosNo,
                 %s AS certificate_name,
-                UPPER(LEFT(%s, 3)) AS certificate_id,
+                cs.id AS certificate_id,
                 COALESCE(c.json_data->>'companyName', 'N/A') AS companyName,
                 COALESCE(c.json_data->>'personInCharge', 'N/A') AS person_in_charge,
                 COALESCE(%s, 'N/A') AS delivery_note,
@@ -126,27 +126,13 @@ def _insert_single_master_entry(candidate_id, specific_certificate_name=None, in
             FROM certificate_selections cs
             JOIN candidates c ON cs.candidate_id = c.id
             WHERE cs.candidate_id = %s
-            GROUP BY cs.candidate_id, cs.candidate_name, cs.client_name, c.json_data
-            ON CONFLICT (candidate_id, certificate_name) DO UPDATE SET
-                creation_date = EXCLUDED.creation_date,
-                client_name = EXCLUDED.client_name,
-                client_id = EXCLUDED.client_id,
-                candidate_name = EXCLUDED.candidate_name,
-                nationality = EXCLUDED.nationality,
-                passport = EXCLUDED.passport,
-                cdcNo = EXCLUDED.cdcNo,
-                indosNo = EXCLUDED.indosNo,
-                companyName = EXCLUDED.companyName,
-                person_in_charge = EXCLUDED.person_in_charge,
-                delivery_note = EXCLUDED.delivery_note,
-                delivery_date = EXCLUDED.delivery_date,
-                terms_of_delivery = EXCLUDED.terms_of_delivery,
+            GROUP BY cs.candidate_id, cs.candidate_name, cs.client_name, c.json_data, cs.id
+            ON CONFLICT (candidate_id, certificate_name, invoice_no) DO UPDATE SET
                 invoice_no = EXCLUDED.invoice_no;
             """
 
             params = (
                 specific_certificate_name,  # certificate_name
-                specific_certificate_name,  # certificate_id source
                 receipt_data.get('delivery_note') if receipt_data else 'N/A',
                 receipt_data.get('delivery_date') if receipt_data else None,
                 receipt_data.get('terms_of_delivery') if receipt_data else 'N/A',
@@ -185,34 +171,8 @@ def _insert_single_master_entry(candidate_id, specific_certificate_name=None, in
                 COALESCE(c.json_data->>'passport', 'N/A') AS passport,
                 COALESCE(c.json_data->>'cdcNo', 'N/A') AS cdcNo,
                 COALESCE(c.json_data->>'indosNo', 'N/A') AS indosNo,
-                CASE
-                    WHEN rid.selected_courses IS NOT NULL AND jsonb_array_length(rid.selected_courses) > 0
-                    THEN (
-                        SELECT string_agg(
-                            CASE
-                                WHEN cert->>'certificate_name' IS NOT NULL THEN cert->>'certificate_name'
-                                ELSE 'Unknown Certificate'
-                            END,
-                            ', '
-                        )
-                        FROM jsonb_array_elements(rid.selected_courses) AS cert
-                    )
-                    ELSE COALESCE(cs.certificate_name, 'N/A')
-                END AS certificate_name,
-                CASE
-                    WHEN rid.selected_courses IS NOT NULL AND jsonb_array_length(rid.selected_courses) > 0
-                    THEN UPPER(LEFT((
-                        SELECT string_agg(
-                            CASE
-                                WHEN cert->>'certificate_name' IS NOT NULL THEN cert->>'certificate_name'
-                                ELSE 'Unknown Certificate'
-                            END,
-                            ', '
-                        )
-                        FROM jsonb_array_elements(rid.selected_courses) AS cert
-                    ), 3))
-                    ELSE UPPER(LEFT(COALESCE(cs.certificate_name, 'UNK'), 3))
-                END AS certificate_id,
+                cs.certificate_name,
+                cs.id AS certificate_id,
                 COALESCE(c.json_data->>'companyName', 'N/A') AS companyName,
                 COALESCE(c.json_data->>'personInCharge', 'N/A') AS person_in_charge,
                 COALESCE(rid.delivery_note, 'N/A') AS delivery_note,
@@ -225,8 +185,8 @@ def _insert_single_master_entry(candidate_id, specific_certificate_name=None, in
             WHERE cs.candidate_id = %s
             GROUP BY cs.candidate_id, cs.candidate_name, cs.client_name, c.json_data,
                      rid.delivery_note, rid.delivery_date, rid.terms_of_delivery, rid.invoice_no, rid.selected_courses,
-                     cs.certificate_name
-            ON CONFLICT (candidate_id, certificate_name) DO UPDATE SET
+                     cs.certificate_name, cs.id
+            ON CONFLICT (candidate_id, certificate_name, invoice_no) DO UPDATE SET
                 creation_date = EXCLUDED.creation_date,
                 client_name = EXCLUDED.client_name,
                 client_id = EXCLUDED.client_id,

@@ -1,7 +1,7 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Briefcase, BookOpen, Database, Ship, Award, Shield, ArrowLeft } from 'lucide-react';
-import { DashboardLayout, UnifiedCard, FloatingActionButton } from '../../shared/components/DesignSystem';
+import { Briefcase, BookOpen, Database, Ship, Award, ArrowLeft } from 'lucide-react';
+import { DashboardLayout, UnifiedCard } from '../../shared/components/DesignSystem';
 
 function HomePage() {
   const navigate = useNavigate();
@@ -79,12 +79,6 @@ function HomePage() {
         ))}
       </div>
 
-      {/* Admin Panel Floating Button */}
-      <FloatingActionButton
-        onClick={() => navigate('/admin-panel')}
-        icon={Shield}
-        className="left-6"
-      />
     </DashboardLayout>
   );
 }

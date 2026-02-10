@@ -621,8 +621,8 @@ def insert_receipt_invoice_data(receipt_data):
                 customer_name, customer_phone, party_name, invoice_date,
                 amount, gst, gst_applied, cgst, sgst, final_amount,
                 delivery_note, dispatch_doc_no, delivery_date, dispatch_through,
-                destination, terms_of_delivery, selected_courses
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                destination, terms_of_delivery, selected_courses, certificate_id
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING invoice_no
         """
 
@@ -648,7 +648,37 @@ def insert_receipt_invoice_data(receipt_data):
             selected_courses_json = json.dumps([])  # Empty array for no courses
     
         logger.info(f"[DB] Processing selectedCourses: {receipt_data.get('selectedCourses')} -> JSON stored")
-    
+
+        # Auto-populate certificate_id if not provided but selectedCourses exist
+        certificate_id = receipt_data.get('certificate_id')
+        if certificate_id is None and receipt_data.get('candidate_id') and receipt_data.get('selectedCourses'):
+            try:
+                # Use the original selectedCourses from receipt_data
+                courses = receipt_data['selectedCourses']
+
+                if isinstance(courses, list) and len(courses) > 0:
+                    # Get the first certificate name
+                    first_course = courses[0]
+                    if isinstance(first_course, dict) and 'certificate_name' in first_course:
+                        certificate_name = first_course['certificate_name']
+                    elif isinstance(first_course, str):
+                        certificate_name = first_course
+                    else:
+                        certificate_name = str(first_course)
+
+                    # Look up certificate_id
+                    cert_query = """
+                        SELECT id FROM certificate_selections
+                        WHERE candidate_id = %s AND certificate_name = %s
+                        LIMIT 1
+                    """
+                    cert_result = execute_query(cert_query, (receipt_data['candidate_id'], certificate_name), fetch=True)
+                    if cert_result:
+                        certificate_id = cert_result[0]['id']
+                        logger.info(f"[DB] Auto-populated certificate_id: {certificate_id} for certificate: {certificate_name}")
+            except Exception as e:
+                logger.warning(f"[DB] Failed to auto-populate certificate_id: {e}")
+
         result = execute_query(query, (
             receipt_data['invoice_no'],
             receipt_data.get('candidate_id'),
@@ -670,7 +700,8 @@ def insert_receipt_invoice_data(receipt_data):
             receipt_data.get('dispatch_through'),
             receipt_data.get('destination'),
             receipt_data.get('terms_of_delivery'),
-            selected_courses_json  # JSON data for selected courses
+            selected_courses_json,  # JSON data for selected courses
+            certificate_id  # Auto-populated or provided certificate_id
         ))
 
         if result:

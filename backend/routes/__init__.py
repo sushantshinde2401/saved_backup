@@ -11,7 +11,7 @@ def register_blueprints(app):
     app.register_blueprint(upload_bp)
     app.register_blueprint(candidate_bp, url_prefix='/candidate')
     app.register_blueprint(certificate_bp, url_prefix='/certificate')
-    app.register_blueprint(misc_bp)
+    app.register_blueprint(misc_bp, url_prefix='/misc')
     app.register_blueprint(courses_bp, url_prefix='/api')
     app.register_blueprint(bookkeeping_bp, url_prefix='/api/bookkeeping')
     app.register_blueprint(files_bp, url_prefix='/api/files')

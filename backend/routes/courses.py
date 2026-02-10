@@ -312,10 +312,6 @@ def generate_certificate():
                     if insert_result:
                         certificate_selection_id = insert_result[0]['id']
                         logger.info(f"Certificate selection saved with ID: {certificate_selection_id}")
-
-                        # Update Master_Database_Table_A automatically
-                        from hooks.post_data_insert import update_master_table_after_certificate_insert
-                        update_master_table_after_certificate_insert(candidate_id)
                     else:
                         logger.error("Failed to save certificate data to database")
 

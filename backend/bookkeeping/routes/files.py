@@ -266,11 +266,24 @@ def save_invoice_image():
         relative_path = f"{invoice_folder}/{fixed_filename}"
         file_size = len(image_binary)
 
+        # Auto-populate certificate_id based on invoice_no
+        certificate_id = None
+        if data.get('invoice_no'):
+            from database.db_connection import execute_query as db_execute_query
+            receipt_query = """
+                SELECT certificate_id FROM ReceiptInvoiceData
+                WHERE invoice_no = %s AND certificate_id IS NOT NULL
+                LIMIT 1
+            """
+            receipt_result = db_execute_query(receipt_query, (data['invoice_no'],), fetch=True)
+            if receipt_result:
+                certificate_id = receipt_result[0]['certificate_id']
+
         # Insert/update into invoice_images table (without BLOB data)
         query = """
             INSERT INTO invoice_images (
-                invoice_no, file_path, image_type, file_name, file_size, voucher_type
-            ) VALUES (%s, %s, %s, %s, %s, %s)
+                invoice_no, file_path, image_type, file_name, file_size, voucher_type, certificate_id
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (invoice_no)
             DO UPDATE SET
                 file_path = EXCLUDED.file_path,
@@ -278,6 +291,7 @@ def save_invoice_image():
                 file_name = EXCLUDED.file_name,
                 file_size = EXCLUDED.file_size,
                 voucher_type = EXCLUDED.voucher_type,
+                certificate_id = EXCLUDED.certificate_id,
                 generated_at = CURRENT_TIMESTAMP
             RETURNING id
         """
@@ -288,7 +302,8 @@ def save_invoice_image():
             data.get('image_type', 'pdf'),
             fixed_filename,
             file_size,
-            voucher_type
+            voucher_type,
+            certificate_id
         ))
 
         if result:

@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { motion } from 'framer-motion';
 import {
   Database,
   Search,
@@ -32,7 +33,8 @@ function DatabaseDashboard() {
       title: "Candidate Records",
       description: "Comprehensive candidate data management and tracking",
       gradient: "from-blue-500 to-cyan-500",
-      status: "coming-soon"
+      status: "active",
+      path: "/candidate-records"
     },
     {
       icon: Search,
@@ -70,6 +72,7 @@ function DatabaseDashboard() {
       status: "coming-soon"
     }
   ];
+
 
   return (
     <DashboardLayout

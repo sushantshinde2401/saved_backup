@@ -145,10 +145,6 @@ def save_certificate_data():
         if insert_result:
             certificate_selection_id = insert_result[0]['id']
 
-            # Update Master_Database_Table_A automatically
-            from hooks.post_data_insert import update_master_table_after_certificate_insert
-            update_master_table_after_certificate_insert(candidate_id)
-
             # Get total count for response
             count_query = "SELECT COUNT(*) as total FROM certificate_selections"
             count_result = execute_query(count_query, fetch=True)
